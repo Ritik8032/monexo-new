@@ -1362,15 +1362,24 @@ app.get('/favicon.ico', (req, res) => {
 // Dynamic fallback handler for missing static icon or image assets to prevent image load errors
 app.get(['/static/icon/:filename', '/static/images/:filename', '/assets/:filename'], (req, res) => {
   const filename = req.params.filename;
-  const isAsset = req.path.startsWith('/assets/');
   
-  // Try to find the file in physical directories
-  const pathsToTry = [
-    path.join(currentDirname, 'static', 'images', filename),
-    path.join(currentDirname, 'static', 'icon', filename),
-    path.join(currentDirname, 'assets', filename),
-    path.join(currentDirname, filename)
-  ];
+  // Try to find the file in physical directories, prioritizing the requested directory
+  const pathsToTry = [];
+  if (req.path.startsWith('/static/icon/')) {
+    pathsToTry.push(path.join(currentDirname, 'static', 'icon', filename));
+    pathsToTry.push(path.join(currentDirname, 'static', 'images', filename));
+  } else if (req.path.startsWith('/static/images/')) {
+    pathsToTry.push(path.join(currentDirname, 'static', 'images', filename));
+    pathsToTry.push(path.join(currentDirname, 'static', 'icon', filename));
+  } else if (req.path.startsWith('/assets/')) {
+    pathsToTry.push(path.join(currentDirname, 'assets', filename));
+  }
+  
+  // General fallback paths
+  pathsToTry.push(path.join(currentDirname, 'static', 'images', filename));
+  pathsToTry.push(path.join(currentDirname, 'static', 'icon', filename));
+  pathsToTry.push(path.join(currentDirname, 'assets', filename));
+  pathsToTry.push(path.join(currentDirname, filename));
   
   let foundPath = null;
   for (const p of pathsToTry) {
