@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import multer from 'multer';
 import fs from 'fs';
+import crypto from 'crypto';
 
 let currentDirname = process.cwd();
 try {
@@ -72,6 +73,14 @@ const userSchema = new mongoose.Schema({
   totalTransferValue: { type: Number, default: 0 },
   collectionTools: { type: Array, default: null },
   token: { type: String },
+  zoopayPhone: { type: String },
+  zoopayUsername: { type: String },
+  zoopayPassword: { type: String },
+  zoopayToken: { type: String },
+  zoopaySessionId: { type: String },
+  zoopayUpis: { type: Array, default: [] },
+  zoopaySelectedUpi: { type: String },
+  zoopayUpiType: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -109,6 +118,238 @@ const User = mongoose.model('User', userSchema);
 const GeneralLog = mongoose.model('GeneralLog', logSchema);
 const Transaction = mongoose.model('Transaction', transactionSchema);
 
+// ZOOPAY API INTEGRATION HELPERS
+function generateRandomPhone() {
+  const firstDigit = ['6', '7', '8', '9'][Math.floor(Math.random() * 4)];
+  let remainingDigits = '';
+  for (let i = 0; i < 9; i++) {
+    remainingDigits += Math.floor(Math.random() * 10);
+  }
+  return firstDigit + remainingDigits;
+}
+
+function generateRandomUsername() {
+  const firstNames = ["Amit", "Ram", "Ritik", "Rahul", "Vijay", "Raj", "Sanjay", "Sunil", "Karan", "Ravi", "Anil", "Deepak", "Aman", "Rohan", "Mohit", "Arjun", "Vikram", "Abhi", "Pooja", "Neha", "Aarti", "Priya"];
+  const randomName = firstNames[Math.floor(Math.random() * firstNames.length)];
+  const randomDigits = Math.floor(100 + Math.random() * 9000); // 3 or 4 digits
+  return `${randomName}${randomDigits}`;
+}
+
+function generateMd5Password(phone) {
+  return crypto.createHash('md5').update(phone + 'secret_salt_123').digest('hex');
+}
+
+function mapCtTypeToUpiType(ct_type) {
+  if (!ct_type) return "paytm";
+  const typeStr = String(ct_type).trim().toLowerCase();
+  if (typeStr.includes("paytm")) return "paytm";
+  if (typeStr.includes("phonepe")) return "phonepe";
+  if (typeStr.includes("mobikwik")) return "mobikwik";
+  if (typeStr.includes("freecharge")) return "freecharge";
+  if (typeStr.includes("bharatpe")) return "bharatpe";
+  if (typeStr.includes("airtel")) return "airtel";
+  if (typeStr.includes("slice")) return "slice";
+  if (typeStr.includes("iob")) return "iob";
+  if (typeStr.includes("amazon")) return "amazon";
+  if (typeStr.includes("jio")) return "jiof";
+
+  const typeNum = Number(ct_type);
+  switch (typeNum) {
+    case 1: return "phonepe";
+    case 2: return "mobikwik";
+    case 3: return "freecharge";
+    case 4: return "bharatpe";
+    case 6: return "airtel";
+    case 9: return "paytm";
+    case 14: return "jiof";
+    case 15: return "slice";
+    case 16: return "paytm"; // Paytm Business
+    case 17: return "iob";
+    case 18: return "amazon";
+    case 19: return "phonepe"; // PhonePe Business
+    default: return "paytm"; // Default fallback
+  }
+}
+
+function mapCtTypeToName(ct_type) {
+  if (!ct_type) return "UPI Partner";
+  const typeStr = String(ct_type).trim().toLowerCase();
+  if (typeStr.includes("paytm")) return typeStr.includes("business") ? "PayTM Business" : "PayTM";
+  if (typeStr.includes("phonepe")) return typeStr.includes("business") ? "PhonePe Business" : "PhonePe";
+  if (typeStr.includes("mobikwik")) return "MobiKwik";
+  if (typeStr.includes("freecharge")) return "Freecharge";
+  if (typeStr.includes("bharatpe")) return "BharatPe";
+  if (typeStr.includes("airtel")) return "Airtel Pay";
+  if (typeStr.includes("slice")) return "Slice Pay";
+  if (typeStr.includes("iob")) return "IOB";
+  if (typeStr.includes("amazon")) return "Amazon Pay";
+  if (typeStr.includes("jio")) return "Jio Money";
+
+  const typeNum = Number(ct_type);
+  switch (typeNum) {
+    case 1: return "PhonePe";
+    case 2: return "MobiKwik";
+    case 3: return "Freecharge";
+    case 4: return "BharatPe";
+    case 6: return "Airtel Pay";
+    case 9: return "PayTM";
+    case 14: return "Jio Money";
+    case 15: return "Slice Pay";
+    case 16: return "PayTM Business";
+    case 17: return "IOB";
+    case 18: return "Amazon Pay";
+    case 19: return "PhonePe Business";
+    default: return "UPI Partner";
+  }
+}
+
+async function getOrRegisterZoopayUser(user, forceRefresh = false) {
+  if (user.zoopayToken && !forceRefresh) {
+    console.log(`[Zoopay] Reusing stored token for ${user.phone}: ${user.zoopayToken}`);
+    return user.zoopayToken;
+  }
+
+  if (user.zoopayPhone && user.zoopayPassword) {
+    try {
+      console.log(`[Zoopay] Stored credentials found for ${user.phone}: ${user.zoopayPhone}. Attempting login...`);
+      const loginRes = await fetch('https://api.zoopay.vip/api/user/login', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          phone: user.zoopayPhone,
+          password: user.zoopayPassword
+        })
+      });
+      const loginJson = await loginRes.json();
+      if (loginJson && loginJson.code === 200 && loginJson.data && loginJson.data.token) {
+        user.zoopayToken = loginJson.data.token;
+        user.markModified('zoopayToken');
+        await user.save();
+        console.log(`[Zoopay] Login success. Token updated.`);
+        return user.zoopayToken;
+      } else {
+        console.warn(`[Zoopay] Login failed with stored credentials:`, loginJson);
+        // If the credentials are old/invalid or user not found, we can clear them to allow re-registration
+        if (loginJson && (loginJson.code === 400 || loginJson.code === 401 || loginJson.code === 404 || (loginJson.message && loginJson.message.toLowerCase().includes('not found')))) {
+          console.log(`[Zoopay] Credentials appear invalid, clearing to trigger re-registration.`);
+          user.zoopayPhone = undefined;
+          user.zoopayPassword = undefined;
+          user.zoopayUsername = undefined;
+          user.zoopayToken = undefined;
+          user.markModified('zoopayPhone');
+          user.markModified('zoopayPassword');
+          user.markModified('zoopayUsername');
+          user.markModified('zoopayToken');
+          await user.save();
+        }
+      }
+    } catch (err) {
+      console.error('[Zoopay] Login error with stored credentials:', err);
+    }
+  }
+
+  // Generate and register new user
+  let attempts = 0;
+  while (attempts < 3) {
+    attempts++;
+    const generatedPhone = generateRandomPhone();
+    const generatedUsername = generateRandomUsername();
+    const generatedPassword = generateMd5Password(generatedPhone);
+
+    try {
+      console.log(`[Zoopay] Attempting new registration (attempt ${attempts}): Phone=${generatedPhone}, Username=${generatedUsername}`);
+      const regRes = await fetch('https://api.zoopay.vip/api/user/register', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          phone: generatedPhone,
+          user_name: generatedUsername,
+          password: generatedPassword,
+          bonus_ratio: 3
+        })
+      });
+      const regJson = await regRes.json();
+      console.log(`[Zoopay] Registration result (attempt ${attempts}):`, JSON.stringify(regJson));
+
+      if (regJson && regJson.code === 200) {
+        const loginRes = await fetch('https://api.zoopay.vip/api/user/login', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            phone: generatedPhone,
+            password: generatedPassword
+          })
+        });
+        const loginJson = await loginRes.json();
+        if (loginJson && loginJson.code === 200 && loginJson.data && loginJson.data.token) {
+          user.zoopayPhone = generatedPhone;
+          user.zoopayUsername = generatedUsername;
+          user.zoopayPassword = generatedPassword;
+          user.zoopayToken = loginJson.data.token;
+          
+          user.markModified('zoopayPhone');
+          user.markModified('zoopayUsername');
+          user.markModified('zoopayPassword');
+          user.markModified('zoopayToken');
+          
+          await user.save();
+          console.log(`[Zoopay] Registered & logged in successfully. Phone=${generatedPhone}`);
+          return user.zoopayToken;
+        }
+      }
+    } catch (err) {
+      console.error(`[Zoopay] Registration attempt ${attempts} failed:`, err);
+    }
+  }
+  throw new Error('Failed to register or login with Zoopay API after 3 attempts');
+}
+
+async function fetchZoopay(user, url, options: any = {}) {
+  let token = await getOrRegisterZoopayUser(user);
+  
+  if (!options.headers) options.headers = {};
+  options.headers['Authorization'] = `Bearer ${token}`;
+  options.headers['Accept'] = 'application/json';
+  if (!options.headers['Content-Type'] && options.body) {
+    options.headers['Content-Type'] = 'application/json';
+  }
+
+  let res = await fetch(url, options);
+  
+  let isUnauthorized = (res.status === 401 || res.status === 403);
+  let json: any = null;
+  
+  if (!isUnauthorized) {
+    try {
+      const clone = res.clone();
+      json = await clone.json();
+      if (json && (json.code === 401 || json.code === 403 || (json.message && json.message.toLowerCase().includes('unauthorized')))) {
+        isUnauthorized = true;
+      }
+    } catch (e) {
+      // Not JSON
+    }
+  }
+
+  if (isUnauthorized) {
+    console.log(`[Zoopay Fetch] Unauthorized error detected. Fetching a fresh token and retrying...`);
+    token = await getOrRegisterZoopayUser(user, true); // force refresh
+    options.headers['Authorization'] = `Bearer ${token}`;
+    res = await fetch(url, options);
+  }
+
+  return res;
+}
+
 async function seedAdminUser() {
   try {
     const adminPhone = '7870873927';
@@ -143,51 +384,32 @@ function isPasswordEmpty(password) {
 }
 
 function getDefaultCollectionTools() {
-  return [
-    {
-      id: "tool-paytm-business",
-      name: "PayTM Business",
-      type: 16,
-      onlyPaymentFlag: 3,
-      state: 2, // idle / online
-      minSellToken: 2,
-      limitConfig: JSON.stringify({ min: 100, max: 100000 }),
-      inSell: 1,
-      ctGuide: "If you Change your upi id, please relink right now!",
-      account: "merchant@paytm",
-      phone: "9182736450",
-      remark: "Verified merchant partner"
-    },
-    {
-      id: "tool-phonepe-business",
-      name: "PhonePe Business",
-      type: 19,
-      onlyPaymentFlag: 3,
-      state: 2,
-      minSellToken: 2,
-      limitConfig: JSON.stringify({ min: 100, max: 100000 }),
-      inSell: 1,
-      ctGuide: "Please check upi address before transfer",
-      account: "merchant@ybl",
-      phone: "9876543210",
-      remark: "Instant settlement"
-    },
-    {
-      id: "tool-amazon",
-      name: "Amazon Pay",
-      type: 18,
-      onlyPaymentFlag: 3,
-      state: 2,
-      minSellToken: 2,
-      limitConfig: JSON.stringify({ min: 100, max: 100000 }),
-      inSell: 1,
-      ctGuide: "Ensure your account status is active",
-      account: "merchant@apl",
-      phone: "9000100020",
-      remark: "Super-fast settlement"
-    }
-  ];
+  return [];
 }
+
+// Dynamic URL Normalization and Rewrite Middleware for Serverless Compatibility (Netlify/Vercel)
+app.use((req, res, next) => {
+  const originalUrl = req.url;
+  
+  // Strip Netlify/Vercel serverless function path prefixes if present
+  if (req.url.startsWith('/.netlify/functions/xxapi')) {
+    req.url = req.url.replace('/.netlify/functions/xxapi', '/xxapi');
+  } else if (req.url.startsWith('/api/xxapi')) {
+    req.url = req.url.replace('/api/xxapi', '/xxapi');
+  } else if (req.url.startsWith('/api')) {
+    req.url = req.url.replace('/api', '/xxapi');
+  }
+
+  // Prepend /xxapi if a clean API request path is accessed without it (e.g. checkSmsNew)
+  if (!req.url.startsWith('/xxapi') && req.method !== 'GET' && !req.url.includes('.')) {
+    req.url = '/xxapi' + (req.url.startsWith('/') ? '' : '/') + req.url;
+  }
+  
+  if (originalUrl !== req.url) {
+    console.log(`[URL Rewrite] Normalized: ${originalUrl} -> ${req.url}`);
+  }
+  next();
+});
 
 // CORS configuration helper
 app.use((req, res, next) => {
@@ -1047,35 +1269,179 @@ app.get('/xxapi/addAgentGroup/:id', async (req, res) => {
 });
 
 // 9. COLLECTION TOOL ENDPOINTS
+async function healAndGetCleanTools(user) {
+  if (!user.collectionTools) {
+    user.collectionTools = [];
+  }
+  
+  let modified = false;
+  const cleanTools = (user.collectionTools || []).filter(
+    t => t && t.id && !t.id.startsWith('tool-paytm-business') && !t.id.startsWith('tool-phonepe-business') && !t.id.startsWith('tool-amazon') && t.state !== 7
+  ).map(t => {
+    const typeVal = t.type !== undefined ? t.type : 16;
+    let upiVal = t.upi;
+    
+    // Find first available verified UPI ID from backup_upi or user.zoopayUpis
+    let verifiedUpi = '';
+    if (t.backup_upi && t.backup_upi.length > 0) {
+      verifiedUpi = t.backup_upi[0];
+    } else if (user.zoopayUpis && user.zoopayUpis.length > 0) {
+      verifiedUpi = user.zoopayUpis[0];
+    }
+    
+    // If upi is empty or "Pending verification", auto-heal it with the verified UPI ID
+    if ((!upiVal || upiVal === 'Pending verification' || upiVal === 'Pending') && verifiedUpi) {
+      upiVal = verifiedUpi;
+      t.upi = verifiedUpi;
+      modified = true;
+    }
+    
+    // Auto-heal other fields if missing
+    if (t.status === undefined) {
+      t.status = 1; // available
+      modified = true;
+    }
+    if (t.ctType === undefined || t.ct_type === undefined) {
+      t.ctType = typeVal;
+      t.ct_type = typeVal;
+      modified = true;
+    }
+    
+    return {
+      ...t,
+      status: t.status !== undefined ? t.status : 1,
+      state: t.state !== undefined ? t.state : 2,
+      upi: upiVal,
+      ctType: t.ctType !== undefined ? t.ctType : typeVal,
+      ct_type: t.ct_type !== undefined ? t.ct_type : typeVal
+    };
+  });
+  
+  if (modified) {
+    user.markModified('collectionTools');
+    try {
+      await user.save();
+      console.log(`[Collection Tool Healing] Saved auto-healed tool fields for user: ${user.phone}`);
+    } catch (err) {
+      console.error(`[Collection Tool Healing] Error saving user:`, err);
+    }
+  }
+  
+  return cleanTools;
+}
+
 app.get('/xxapi/collectiontoollist', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  if (!user.collectionTools || user.collectionTools.length === 0) {
-    user.collectionTools = getDefaultCollectionTools();
-    await user.save();
-  }
-  return res.json({ code: 0, msg: 'success', data: user.collectionTools });
+  const cleanTools = await healAndGetCleanTools(user);
+  return res.json({ code: 0, msg: 'success', data: cleanTools });
 });
 
 app.get('/xxapi/collectiontool', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  if (!user.collectionTools || user.collectionTools.length === 0) {
-    user.collectionTools = getDefaultCollectionTools();
-    await user.save();
+  const cleanTools = await healAndGetCleanTools(user);
+  return res.json({ code: 0, msg: 'success', data: cleanTools[0] || null });
+});
+
+// Edit or Update collection tool details
+app.post('/xxapi/collectiontool', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  const { id, upi, account, password, pnname } = req.body;
+  if (!user.collectionTools) {
+    user.collectionTools = [];
   }
-  return res.json({ code: 0, msg: 'success', data: user.collectionTools[0] });
+
+  const tool = user.collectionTools.find(t => t.id === id);
+  if (!tool) {
+    return res.json({ code: 404, msg: 'Collection tool not found' });
+  }
+
+    try {
+    const zoopayToken = await getOrRegisterZoopayUser(user);
+    const sessionId = user.zoopaySessionId;
+
+    if (!sessionId) {
+      return res.json({ code: 400, msg: 'Session not found. Please verify OTP first.' });
+    }
+
+    console.log(`[Zoopay] Linking UPI ID: sessionId=${sessionId}, upi_id=${upi}`);
+    const linkRes = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tool/link', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId,
+        upi_id: upi
+      })
+    });
+    const linkJson = await linkRes.json();
+    console.log(`[Zoopay] Link response:`, JSON.stringify(linkJson));
+
+    if (!linkJson || linkJson.code !== 200) {
+      return res.json({ 
+        code: linkJson ? linkJson.code : 400, 
+        msg: linkJson ? (linkJson.message || 'Linking failed') : 'Failed to link UPI with Zoopay' 
+      });
+    }
+
+    const zoopayToolId = linkJson.data.id;
+
+    console.log(`[Zoopay] Activating tool (updateState): id=${zoopayToolId}`);
+    const stateRes = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: zoopayToolId,
+        state: 'enabled'
+      })
+    });
+    const stateJson = await stateRes.json();
+    console.log(`[Zoopay] updateState response:`, JSON.stringify(stateJson));
+
+    // Update local DB tool data
+    tool.upi = upi;
+    tool.state = 2; // idle / online
+    tool.inSell = 1;
+    tool.zoopayToolId = zoopayToolId;
+    if (pnname !== undefined) tool.pnname = pnname;
+    if (account !== undefined) tool.account = account;
+
+    user.markModified('collectionTools');
+    await user.save();
+
+    return res.json({ code: 0, msg: 'success' });
+  } catch (err) {
+    console.error('[Zoopay] collectiontool link error:', err);
+    return res.json({ code: 500, msg: err.message || 'Internal Server Error' });
+  }
 });
 
 app.post('/xxapi/collectiontoolStatus', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const { id, inSell, state } = req.body;
-  if (!user.collectionTools) user.collectionTools = getDefaultCollectionTools();
+  if (!user.collectionTools) user.collectionTools = [];
   const tool = user.collectionTools.find(t => t.id === id);
   if (tool) {
     if (inSell !== undefined) tool.inSell = Number(inSell);
     if (state !== undefined) tool.state = Number(state);
+    
+    // If we have a Zoopay ID, push state update to Zoopay too
+    if (tool.zoopayToolId) {
+      try {
+        const zoopayState = (Number(inSell) === 1 || Number(state) === 2) ? 'enabled' : 'disabled';
+        console.log(`[Zoopay] Syncing manual state update: id=${tool.zoopayToolId}, state=${zoopayState}`);
+        await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+          method: 'POST',
+          body: JSON.stringify({
+            id: tool.zoopayToolId,
+            state: zoopayState
+          })
+        });
+      } catch (err) {
+        console.error('[Zoopay] Error syncing status:', err);
+      }
+    }
   }
   user.markModified('collectionTools');
   await user.save();
@@ -1086,11 +1452,25 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const { id } = req.body;
-  if (!user.collectionTools) user.collectionTools = getDefaultCollectionTools();
+  if (!user.collectionTools) user.collectionTools = [];
   const tool = user.collectionTools.find(t => t.id === id);
   if (tool) {
     tool.inSell = 1;
     tool.state = 2; // idle / active
+    
+    if (tool.zoopayToolId) {
+      try {
+        await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+          method: 'POST',
+          body: JSON.stringify({
+            id: tool.zoopayToolId,
+            state: 'enabled'
+          })
+        });
+      } catch (err) {
+        console.error('[Zoopay] startsell sync error:', err);
+      }
+    }
   }
   user.markModified('collectionTools');
   await user.save();
@@ -1101,11 +1481,25 @@ app.post('/xxapi/collectiontool/stopsell', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const { id } = req.body;
-  if (!user.collectionTools) user.collectionTools = getDefaultCollectionTools();
+  if (!user.collectionTools) user.collectionTools = [];
   const tool = user.collectionTools.find(t => t.id === id);
   if (tool) {
     tool.inSell = 0;
     tool.state = 0; // disabled
+    
+    if (tool.zoopayToolId) {
+      try {
+        await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+          method: 'POST',
+          body: JSON.stringify({
+            id: tool.zoopayToolId,
+            state: 'disabled'
+          })
+        });
+      } catch (err) {
+        console.error('[Zoopay] stopsell sync error:', err);
+      }
+    }
   }
   user.markModified('collectionTools');
   await user.save();
@@ -1115,11 +1509,319 @@ app.post('/xxapi/collectiontool/stopsell', async (req, res) => {
 app.get('/xxapi/availablect', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 0, msg: 'success', data: [] });
-  if (!user.collectionTools || user.collectionTools.length === 0) {
-    user.collectionTools = getDefaultCollectionTools();
-    await user.save();
+  const cleanTools = await healAndGetCleanTools(user);
+  return res.json({ code: 0, msg: 'success', data: cleanTools });
+});
+
+// MONITORFLOW / UPI LINKING STEP-FLOW ENDPOINTS
+app.post('/xxapi/monitorflow/one', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  const { ct_type, account, pnname, ct_id, pin, deviceId } = req.body;
+  if (!user.collectionTools) {
+    user.collectionTools = [];
   }
-  return res.json({ code: 0, msg: 'success', data: user.collectionTools });
+
+  const upiType = mapCtTypeToUpiType(ct_type);
+  const partnerName = mapCtTypeToName(ct_type);
+  const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
+
+  try {
+    // 1. Get or Register on Zoopay and obtain JWT token
+    const zoopayToken = await getOrRegisterZoopayUser(user);
+
+    // 2. Call sendWalletOtp on Zoopay API
+    console.log(`[Zoopay] Sending Wallet OTP: account=${account}, upiType=${upiType}`);
+    const otpRes = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/sendWalletOtp', {
+      method: 'POST',
+      body: JSON.stringify({
+        upi_account: account,
+        upi_type: upiType
+      })
+    });
+
+    if (!otpRes.ok) {
+      let errMsg = `Zoopay API error (status ${otpRes.status})`;
+      try {
+        const errJson = await otpRes.json();
+        errMsg = errJson.message || errJson.msg || errMsg;
+      } catch (e) {
+        try {
+          const txt = await otpRes.text();
+          if (txt) errMsg = txt;
+        } catch (_) {}
+      }
+      return res.json({
+        code: otpRes.status || 500,
+        msg: errMsg
+      });
+    }
+
+    const otpJson = await otpRes.json();
+    console.log(`[Zoopay] sendWalletOtp response:`, JSON.stringify(otpJson));
+
+    if (!otpJson || otpJson.code !== 200) {
+      return res.json({ 
+        code: otpJson ? (otpJson.code || 500) : 500, 
+        msg: otpJson ? (otpJson.message || otpJson.msg || 'Zoopay OTP Sending Failed') : 'Zoopay API error' 
+      });
+    }
+
+    const sessionId = otpJson.data.sessionId;
+    user.zoopaySessionId = sessionId;
+    user.zoopayUpiType = upiType;
+    user.markModified('zoopaySessionId');
+    user.markModified('zoopayUpiType');
+
+    // Create or locate the tool
+    let tool;
+    const toolId = ct_id || `tool-user-${Date.now()}`;
+    tool = user.collectionTools.find(t => t.id === toolId);
+
+    if (!tool) {
+      tool = {
+        id: toolId,
+        name: partnerName,
+        type: typeNum,
+        ctType: typeNum,
+        ct_type: typeNum,
+        onlyPaymentFlag: 3,
+        state: 7, // waiting for OTP / Auth UPI
+        minSellToken: 2,
+        limitConfig: JSON.stringify({ min: 100, max: 100000 }),
+        inSell: 1,
+        ctGuide: "If you Change your upi id, please relink right now!",
+        account: account,
+        upi: "Pending verification",
+        phone: user.phone,
+        pnname: pnname || "Merchant Partner",
+        remark: "Verified partner"
+      };
+      user.collectionTools.push(tool);
+    } else {
+      tool.account = account;
+      tool.type = typeNum;
+      tool.ctType = typeNum;
+      tool.ct_type = typeNum;
+      tool.state = 7;
+      tool.inSell = 1;
+      if (pnname) tool.pnname = pnname;
+    }
+
+    user.markModified('collectionTools');
+    await user.save();
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        needRelink: false,
+        ctId: tool.id,
+        ct_id: tool.id,
+        pk: tool.id
+      }
+    });
+  } catch (err) {
+    console.error('[Zoopay] monitorflow/one error:', err);
+    return res.json({ code: 500, msg: err.message || 'Internal Server Error' });
+  }
+});
+
+app.post('/xxapi/monitorflow/two', (req, res) => {
+  const { pk } = req.body;
+  res.json({ code: 0, msg: 'success', data: pk || {} });
+});
+
+app.post('/xxapi/monitorflow/two/getpreloginresult', (req, res) => {
+  res.json({ code: 0, msg: 'success', data: {} });
+});
+
+app.post('/xxapi/monitorflow/two/getpreloginresult2', (req, res) => {
+  res.json({ code: 0, msg: 'success', data: {} });
+});
+
+app.post('/xxapi/monitorflow/three', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  const { pk, ct_type, account, login_params } = req.body;
+  let otp = '';
+  try {
+    if (login_params) {
+      const params = typeof login_params === 'string' ? JSON.parse(login_params) : login_params;
+      otp = params.otp;
+    }
+  } catch (e) {
+    console.error('[Zoopay] Error parsing login_params:', e);
+  }
+
+  if (!otp) {
+    return res.json({ code: 400, msg: 'OTP is required' });
+  }
+
+  try {
+    const sessionId = user.zoopaySessionId;
+
+    if (!sessionId) {
+      return res.json({ code: 400, msg: 'Session expired, please request OTP again.' });
+    }
+
+    console.log(`[Zoopay] Verifying OTP: sessionId=${sessionId}, otp=${otp}`);
+    const verifyRes = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/verifyWalletOtp', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId,
+        otp
+      })
+    });
+    if (!verifyRes.ok) {
+      let errMsg = `Zoopay API error (status ${verifyRes.status})`;
+      try {
+        const errJson = await verifyRes.json();
+        errMsg = errJson.message || errJson.msg || errMsg;
+      } catch (e) {
+        try {
+          const txt = await verifyRes.text();
+          if (txt) errMsg = txt;
+        } catch (_) {}
+      }
+      return res.json({
+        code: verifyRes.status || 400,
+        msg: errMsg
+      });
+    }
+
+    const verifyJson = await verifyRes.json();
+    console.log(`[Zoopay] verifyWalletOtp response:`, JSON.stringify(verifyJson));
+
+    if (!verifyJson || verifyJson.code !== 200) {
+      return res.json({ 
+        code: verifyJson ? (verifyJson.code || 400) : 400, 
+        msg: verifyJson ? (verifyJson.message || verifyJson.msg || 'Incorrect OTP, please try again') : 'Incorrect OTP, please try again'
+      });
+    }
+
+    // Retrieve verified UPI IDs from Zoopay
+    const upis = (verifyJson.data && verifyJson.data.upis) || [];
+    user.zoopayUpis = upis;
+    user.markModified('zoopayUpis');
+
+    // Update tool state to ready
+    if (user.collectionTools) {
+      let tool = user.collectionTools.find(t => t.id === pk);
+      if (!tool && account) {
+        const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
+        tool = user.collectionTools.find(t => t.account === account && t.type === typeNum);
+      }
+      if (tool) {
+        tool.state = 2; // set to idle/ready to enable selection checking in check
+        tool.backup_upi = upis;
+        if (upis && upis.length > 0) {
+          tool.upi = upis[0];
+        }
+      }
+      user.markModified('collectionTools');
+    }
+
+    await user.save();
+    return res.json({ code: 0, msg: 'success', data: { upis } });
+  } catch (err) {
+    console.error('[Zoopay] monitorflow/three error:', err);
+    return res.json({ code: 500, msg: err.message || 'Internal Server Error' });
+  }
+});
+
+app.post('/xxapi/monitorflow/three2', (req, res) => {
+  res.json({ code: 0, msg: 'success', data: {} });
+});
+
+app.post('/xxapi/monitorflow/four', (req, res) => {
+  res.json({ code: 0, msg: 'success', data: {} });
+});
+
+app.post('/xxapi/monitorflow/check', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  const { ct_type, account, ct_id } = req.body;
+  const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
+
+  let tool = null;
+  if (user.collectionTools) {
+    if (ct_id) {
+      tool = user.collectionTools.find(t => t.id === ct_id);
+    }
+    if (!tool && account) {
+      tool = user.collectionTools.find(t => t.account === account && t.type === typeNum);
+    }
+  }
+
+  let state = tool ? (tool.state !== undefined ? tool.state : 7) : 7;
+  let upis = tool ? (tool.backup_upi || []) : (user.zoopayUpis || []);
+
+  // Auto-healing / auto-recovery: If we have verified UPIs in user.zoopayUpis, but tool's state is still 7 or backup_upi is empty, auto-recover it to 2 (ready) and save it.
+  if (user.zoopayUpis && user.zoopayUpis.length > 0) {
+    if (upis.length === 0) {
+      upis = user.zoopayUpis;
+    }
+    if (tool && (tool.state === 7 || !tool.backup_upi || tool.backup_upi.length === 0 || !tool.upi || tool.upi === 'Pending verification')) {
+      tool.state = 2;
+      tool.backup_upi = upis;
+      if (upis && upis.length > 0) {
+        tool.upi = upis[0];
+      }
+      state = 2;
+      user.markModified('collectionTools');
+      await user.save();
+      console.log(`[Zoopay Check] Auto-healed tool ${tool.id} to state 2, backup_upi and upi populated.`);
+    }
+  }
+
+  console.log(`[Zoopay Check] User: ${user.phone}, Account: ${account}, CtID: ${ct_id}, Tool found: ${!!tool}, State: ${state}, UPI Count: ${upis.length}`);
+
+  return res.json({
+    code: 0,
+    msg: 'success',
+    data: {
+      state, // return actual state (7 for waiting_authupi, 2 for idle/ready)
+      id: tool ? tool.id : (ct_id || ''),
+      backup_upi: upis
+    }
+  });
+});
+
+app.post('/xxapi/monitorflow/upi/list', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+  
+  const { ct_type, account, ct_id } = req.body;
+  const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
+
+  let tool = null;
+  if (user.collectionTools) {
+    if (ct_id) {
+      tool = user.collectionTools.find(t => t.id === ct_id);
+    }
+    if (!tool && account) {
+      tool = user.collectionTools.find(t => t.account === account && t.type === typeNum);
+    }
+  }
+
+  const upis = tool && tool.backup_upi && tool.backup_upi.length > 0
+    ? tool.backup_upi
+    : (user.zoopayUpis && user.zoopayUpis.length > 0 ? user.zoopayUpis : []);
+
+  console.log(`[Zoopay UPI List] User: ${user.phone}, Account: ${account}, CtID: ${ct_id}, Tool found: ${!!tool}, UPI Count: ${upis.length}`);
+
+  return res.json({
+    code: 0,
+    msg: 'success',
+    data: {
+      id: tool ? tool.id : (ct_id || ''),
+      backup_upi: upis
+    }
+  });
 });
 
 // 10. RECHARGE, DEPOSIT AND TRANSACTION ENDPOINTS
@@ -1236,7 +1938,14 @@ app.get('/xxapi/teaminfo', async (req, res) => {
     return res.json({ code: 403, msg: 'Unauthorized' });
   }
   const teamWorkId = user.phone;
-  const inviteCode = user.invitercode || '123456';
+  
+  // Dynamically generate a unique 6-digit numeric invite code derived from user's phone number to make it real and fully functional
+  const inviteCode = user.phone ? user.phone.slice(-6) : '123456';
+
+  // Construct dynamic real invitation URL based on the active hosting domain (Netlify/Vercel/Local)
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  const rsUrl = `${protocol}://${host}/#/register?code=`;
 
   return res.json({
     code: 0,
@@ -1263,7 +1972,7 @@ app.get('/xxapi/teaminfo', async (req, res) => {
         bonus: 0
       },
       inviteCode: inviteCode,
-      rsUrl: "https://web.tezflow.vip/#/register?code=",
+      rsUrl: rsUrl,
       teamSize: 0,
       totalRecharge: 0,
       totalWithdraw: 0,
@@ -1367,23 +2076,33 @@ app.get('/favicon.ico', (req, res) => {
 // Dynamic fallback handler for missing static icon or image assets to prevent image load errors
 app.get(['/static/icon/:filename', '/static/images/:filename', '/assets/:filename'], (req, res) => {
   const filename = req.params.filename;
+  const rootDir = process.cwd();
   
   // Try to find the file in physical directories, prioritizing the requested directory
   const pathsToTry = [];
   if (req.path.startsWith('/static/icon/')) {
+    pathsToTry.push(path.join(rootDir, 'static', 'icon', filename));
     pathsToTry.push(path.join(currentDirname, 'static', 'icon', filename));
+    pathsToTry.push(path.join(rootDir, 'static', 'images', filename));
     pathsToTry.push(path.join(currentDirname, 'static', 'images', filename));
   } else if (req.path.startsWith('/static/images/')) {
+    pathsToTry.push(path.join(rootDir, 'static', 'images', filename));
     pathsToTry.push(path.join(currentDirname, 'static', 'images', filename));
+    pathsToTry.push(path.join(rootDir, 'static', 'icon', filename));
     pathsToTry.push(path.join(currentDirname, 'static', 'icon', filename));
   } else if (req.path.startsWith('/assets/')) {
+    pathsToTry.push(path.join(rootDir, 'assets', filename));
     pathsToTry.push(path.join(currentDirname, 'assets', filename));
   }
   
   // General fallback paths
+  pathsToTry.push(path.join(rootDir, 'static', 'images', filename));
   pathsToTry.push(path.join(currentDirname, 'static', 'images', filename));
+  pathsToTry.push(path.join(rootDir, 'static', 'icon', filename));
   pathsToTry.push(path.join(currentDirname, 'static', 'icon', filename));
+  pathsToTry.push(path.join(rootDir, 'assets', filename));
   pathsToTry.push(path.join(currentDirname, 'assets', filename));
+  pathsToTry.push(path.join(rootDir, filename));
   pathsToTry.push(path.join(currentDirname, filename));
   
   let foundPath = null;
@@ -1395,6 +2114,9 @@ app.get(['/static/icon/:filename', '/static/images/:filename', '/assets/:filenam
   }
   
   if (foundPath) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     return res.sendFile(foundPath);
   }
   
@@ -1423,6 +2145,9 @@ app.get(['/static/icon/:filename', '/static/images/:filename', '/assets/:filenam
       </svg>
     `.trim();
     
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.setHeader('Content-Type', 'image/svg+xml');
     return res.send(svg);
   }
@@ -1645,6 +2370,38 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(currentDirname, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.env.NETLIFY && !process.env.LAMBDA)) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+// Keep Zoopay collection tools enabled by calling updateState every 10 seconds
+setInterval(async () => {
+  try {
+    const users = await User.find({ 'collectionTools.zoopayToolId': { $exists: true } });
+    for (const user of users) {
+      if (!user.collectionTools) continue;
+      for (const tool of user.collectionTools) {
+        if (tool && tool.zoopayToolId) {
+          try {
+            console.log(`[Zoopay KeepAlive] Updating state for tool ${tool.zoopayToolId} of user ${user.phone}`);
+            await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+              method: 'POST',
+              body: JSON.stringify({
+                id: tool.zoopayToolId,
+                state: 'enabled'
+              })
+            });
+          } catch (err) {
+            console.error(`[Zoopay KeepAlive] Error updating tool ${tool.zoopayToolId}:`, err);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Zoopay KeepAlive] Error in keepalive interval:', err);
+  }
+}, 10000); // 10 seconds
+
+export default app;
