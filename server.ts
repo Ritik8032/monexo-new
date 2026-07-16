@@ -2376,27 +2376,99 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
   });
 }
 
-// Keep Zoopay collection tools enabled by calling updateState every 10 seconds
+// Keep Zoopay collection tools enabled and monitor their status/availability in background every 10 seconds
 setInterval(async () => {
   try {
     const users = await User.find({ 'collectionTools.zoopayToolId': { $exists: true } });
     for (const user of users) {
       if (!user.collectionTools) continue;
-      for (const tool of user.collectionTools) {
+      
+      let userUpdated = false;
+      for (let i = 0; i < user.collectionTools.length; i++) {
+        const tool = user.collectionTools[i];
         if (tool && tool.zoopayToolId) {
           try {
-            console.log(`[Zoopay KeepAlive] Updating state for tool ${tool.zoopayToolId} of user ${user.phone}`);
-            await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+            console.log(`[Zoopay KeepAlive] Updating state and checking status for tool ${tool.zoopayToolId} of user ${user.phone}`);
+            const res = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
               method: 'POST',
               body: JSON.stringify({
                 id: tool.zoopayToolId,
                 state: 'enabled'
               })
             });
+            
+            if (res && res.ok) {
+              try {
+                const clone = res.clone();
+                const resJson = await clone.json();
+                console.log(`[Zoopay KeepAlive] Tool ${tool.zoopayToolId} update response:`, JSON.stringify(resJson));
+                
+                if (resJson && resJson.code === 200 && resJson.data) {
+                  const apiStatus = resJson.data.status; // e.g. "available", "unavailable", "disabled"
+                  
+                  if (apiStatus === 'available') {
+                    // Keep UPI online/active (idle)
+                    if (tool.status !== 1 || tool.state !== 2) {
+                      tool.status = 1; // available
+                      tool.state = 2; // idle (Active / Online)
+                      userUpdated = true;
+                    }
+                  } else {
+                    // status is NOT available (unavailable, disabled, or other)
+                    // Instant automatic sell off, status set to 0 (shows UnLink), state set to 5 (shows UPI unlinked warning)
+                    if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
+                      tool.inSell = 0;
+                      tool.status = 0; // unavailable / UnLink
+                      tool.state = 5; // loginerror / UPI unlinked - Please relink
+                      userUpdated = true;
+                    }
+                  }
+                } else {
+                  // Non-200 code inside JSON or missing data -> auto stop sell & unlink
+                  if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
+                    tool.inSell = 0;
+                    tool.status = 0;
+                    tool.state = 5;
+                    userUpdated = true;
+                  }
+                }
+              } catch (parseErr) {
+                console.error(`[Zoopay KeepAlive] JSON parse error for tool ${tool.zoopayToolId}:`, parseErr);
+                // Treat as error -> auto stop sell & unlink
+                if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
+                  tool.inSell = 0;
+                  tool.status = 0;
+                  tool.state = 5;
+                  userUpdated = true;
+                }
+              }
+            } else {
+              // HTTP error -> auto stop sell & unlink
+              console.log(`[Zoopay KeepAlive] HTTP status error ${res ? res.status : 'unknown'} for tool ${tool.zoopayToolId}`);
+              if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
+                tool.inSell = 0;
+                tool.status = 0;
+                tool.state = 5;
+                userUpdated = true;
+              }
+            }
           } catch (err) {
             console.error(`[Zoopay KeepAlive] Error updating tool ${tool.zoopayToolId}:`, err);
+            // On fetch network/timeout error -> auto stop sell & unlink to protect system
+            if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
+              tool.inSell = 0;
+              tool.status = 0;
+              tool.state = 5;
+              userUpdated = true;
+            }
           }
         }
+      }
+      
+      if (userUpdated) {
+        user.markModified('collectionTools');
+        await user.save();
+        console.log(`[Zoopay KeepAlive] User ${user.phone} collection tools auto-updated in DB due to status changes.`);
       }
     }
   } catch (err) {
