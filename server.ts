@@ -153,6 +153,7 @@ function mapCtTypeToUpiType(ct_type) {
   if (typeStr.includes("amazon")) return "amazon";
   if (typeStr.includes("jio")) return "jiof";
   if (typeStr.includes("navi")) return "navi";
+  if (typeStr.includes("freo")) return "freo";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
@@ -169,6 +170,7 @@ function mapCtTypeToUpiType(ct_type) {
     case 18: return "amazon";
     case 19: return "phonepe"; // PhonePe Business
     case 20: return "navi"; // Navi UPI
+    case 21: return "freo"; // Freo UPI
     default: return "paytm"; // Default fallback
   }
 }
@@ -187,6 +189,7 @@ function mapCtTypeToName(ct_type) {
   if (typeStr.includes("amazon")) return "Amazon Pay";
   if (typeStr.includes("jio")) return "Jio Money";
   if (typeStr.includes("navi")) return "Navi UPI";
+  if (typeStr.includes("freo")) return "Freo UPI";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
@@ -203,6 +206,7 @@ function mapCtTypeToName(ct_type) {
     case 18: return "Amazon Pay";
     case 19: return "PhonePe Business";
     case 20: return "Navi UPI";
+    case 21: return "Freo UPI";
     default: return "UPI Partner";
   }
 }
@@ -906,8 +910,8 @@ app.get('/xxapi/config', async (req, res) => {
         { id: 32, cover: "", name: "securityupdate", code: "", type: 1, content: "Update verified", crtDate: 1779259339, crtUser: "alan", sort: 4 }
       ],
       pinFlag: false,
-      ctTypes: [1, 9, 2, 3, 6, 20],
-      ctTypesPayType: { "1": 2, "2": 2, "3": 1, "6": 2, "9": 2, "20": 2 },
+      ctTypes: [1, 9, 2, 3, 6, 20, 21],
+      ctTypesPayType: { "1": 2, "2": 2, "3": 1, "6": 2, "9": 2, "20": 2, "21": 2 },
       ifFinishNewbieActivity: 0,
       rptPaymentMode: 1,
       webLicenseId: "19711455",

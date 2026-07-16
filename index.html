@@ -226,7 +226,9 @@
                         configData.body && 
                         configData.body.code === 0 && 
                         configData.body.data && 
-                        configData.body.data.newsList;
+                        configData.body.data.newsList &&
+                        configData.body.data.ctTypes &&
+                        configData.body.data.ctTypes.includes(21);
 
         if (!isValid) {
           console.log("[Setup] Pre-populating sessionStorage with default site config...");
@@ -255,8 +257,8 @@
                 { id: 32, cover: "", name: "securityupdate", code: "", type: 1, content: "Update verified", crtDate: 1779259339, crtUser: "alan", sort: 4 }
               ],
               pinFlag: false,
-              ctTypes: [1, 9, 2, 3, 6, 20],
-              ctTypesPayType: { "1": 2, "2": 2, "3": 1, "6": 2, "9": 2, "20": 2 },
+              ctTypes: [1, 9, 2, 3, 6, 20, 21],
+              ctTypesPayType: { "1": 2, "2": 2, "3": 1, "6": 2, "9": 2, "20": 2, "21": 2 },
               ifFinishNewbieActivity: 0,
               rptPaymentMode: 1,
               webLicenseId: "19711455",
