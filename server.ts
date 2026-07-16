@@ -47,8 +47,11 @@ mongoose.connect(MONGO_URI)
 
 // Mongoose Schemas
 const userSchema = new mongoose.Schema({
-  phone: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
+  phone: { type: String, sparse: true, index: true },
+  mobileNo: { type: String, sparse: true, index: true },
+  email: { type: String },
+  fullName: { type: String },
+  password: { type: String },
   repassword: { type: String },
   invitercode: { type: String },
   safetyCode: { type: String },
@@ -109,10 +112,11 @@ const Transaction = mongoose.model('Transaction', transactionSchema);
 async function seedAdminUser() {
   try {
     const adminPhone = '7870873927';
-    let admin = await User.findOne({ phone: adminPhone });
+    let admin = await User.findOne({ $or: [{ phone: adminPhone }, { mobileNo: adminPhone }] });
     if (!admin) {
       admin = new User({
         phone: adminPhone,
+        mobileNo: adminPhone,
         password: 'Ritik@123',
         repassword: 'Ritik@123',
         balance: 100000,
@@ -232,7 +236,7 @@ async function getUserByToken(req) {
   if (!token) return null;
 
   if (token === 'token-7870873927' || token.includes('token-7870873927')) {
-    return await User.findOne({ phone: '7870873927' });
+    return await User.findOne({ $or: [{ phone: '7870873927' }, { mobileNo: '7870873927' }] });
   }
   return await User.findOne({ token });
 }
@@ -253,7 +257,7 @@ app.post('/xxapi/register', async (req, res) => {
     }
 
     const token = `token-${phone}`;
-    let user = await User.findOne({ phone });
+    let user = await User.findOne({ $or: [{ phone }, { mobileNo: phone }] });
 
     if (user) {
       return res.json({ code: 400, msg: 'Phone number is already registered. Please login.' });
@@ -261,6 +265,7 @@ app.post('/xxapi/register', async (req, res) => {
 
     user = new User({
       phone,
+      mobileNo: phone, // Store in both fields for cross-system script compatibility
       password,
       repassword: repassword || password,
       invitercode: invitercode || '',
@@ -318,7 +323,7 @@ app.post('/xxapi/resetpassword', async (req, res) => {
       return res.json({ code: 400, msg: 'Incorrect OTP. Please enter 1234.' });
     }
 
-    const user = await User.findOne({ phone });
+    const user = await User.findOne({ $or: [{ phone }, { mobileNo: phone }] });
     if (!user) {
       return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
     }
@@ -358,8 +363,8 @@ app.post('/xxapi/sendLoginSms', async (req, res) => {
     return res.json({ code: 400, msg: 'Password cannot be empty' });
   }
 
-  // Check if user is registered in the database
-  const registeredUser = await User.findOne({ phone });
+  // Check if user is registered in the database (via either phone or mobileNo)
+  const registeredUser = await User.findOne({ $or: [{ phone }, { mobileNo: phone }] });
   if (!registeredUser) {
     return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
   }
@@ -405,7 +410,7 @@ app.post('/xxapi/login', async (req, res) => {
     }
 
     const token = `token-${phone}`;
-    let user = await User.findOne({ phone });
+    let user = await User.findOne({ $or: [{ phone }, { mobileNo: phone }] });
 
     if (!user) {
       return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
@@ -447,9 +452,9 @@ app.get('/xxapi/userinfo', async (req, res) => {
       data: {
         uid: user._id,
         id: user._id,
-        username: user.phone,
-        phone: user.phone,
-        teamWorkId: user.phone,
+        username: user.phone || user.mobileNo || '',
+        phone: user.phone || user.mobileNo || '',
+        teamWorkId: user.phone || user.mobileNo || '',
         balance: user.balance ?? 10000,
         commission: user.commission ?? 120,
         withdrawable: user.balance ?? 10000,
@@ -460,7 +465,7 @@ app.get('/xxapi/userinfo', async (req, res) => {
         bankCount: user.bankDetails ? user.bankDetails.length : 0,
         upiCount: user.upiDetails ? user.upiDetails.length : 0,
         kycStatus: user.kycStatus ?? 0,
-        realName: user.realName || '',
+        realName: user.realName || user.fullName || '',
         parentUser: user.parentUser || '',
         todayProfit: user.todayProfit ?? 0,
         trc20Address: user.trc20Address || '',
@@ -1495,7 +1500,12 @@ app.get('/xxapi/admin/users', requireAdmin, async (req, res) => {
       if (mongoose.Types.ObjectId.isValid(trimmed)) {
         filter = { _id: trimmed };
       } else {
-        filter = { phone: new RegExp(trimmed, 'i') };
+        filter = { 
+          $or: [
+            { phone: new RegExp(trimmed, 'i') }, 
+            { mobileNo: new RegExp(trimmed, 'i') }
+          ] 
+        };
       }
     }
     
@@ -1506,6 +1516,7 @@ app.get('/xxapi/admin/users', requireAdmin, async (req, res) => {
       const latestLog = await GeneralLog.findOne({
         $or: [
           { "body.phone": user.phone },
+          { "body.phone": user.mobileNo },
           { "headers.token": user.token },
           { "headers.indiatoken": user.token }
         ]
@@ -1513,12 +1524,12 @@ app.get('/xxapi/admin/users', requireAdmin, async (req, res) => {
       
       return {
         _id: user._id,
-        phone: user.phone,
+        phone: user.phone || user.mobileNo || 'N/A',
         balance: user.balance || 0,
         recharge: user.recharge || 0,
         vipLevel: user.vipLevel || 1,
         kycStatus: user.kycStatus || 0,
-        realName: user.realName || '',
+        realName: user.realName || user.fullName || '',
         upiDetails: user.upiDetails || [],
         net: user.net || 'WiFi/Cellular',
         ip: latestLog ? latestLog.ip : 'N/A',
@@ -1544,7 +1555,7 @@ app.post('/xxapi/admin/updateBalance', requireAdmin, async (req, res) => {
     const { userId, phone, amount, type } = req.body; // type: 'add' | 'subtract' | 'set'
     let filter = {};
     if (userId) filter._id = userId;
-    else if (phone) filter.phone = phone;
+    else if (phone) filter = { $or: [{ phone }, { mobileNo: phone }] };
     else {
       return res.json({ code: 400, msg: 'User ID or Phone is required' });
     }
