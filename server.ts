@@ -152,6 +152,7 @@ function mapCtTypeToUpiType(ct_type) {
   if (typeStr.includes("iob")) return "iob";
   if (typeStr.includes("amazon")) return "amazon";
   if (typeStr.includes("jio")) return "jiof";
+  if (typeStr.includes("navi")) return "navi";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
@@ -167,6 +168,7 @@ function mapCtTypeToUpiType(ct_type) {
     case 17: return "iob";
     case 18: return "amazon";
     case 19: return "phonepe"; // PhonePe Business
+    case 20: return "navi"; // Navi UPI
     default: return "paytm"; // Default fallback
   }
 }
@@ -184,6 +186,7 @@ function mapCtTypeToName(ct_type) {
   if (typeStr.includes("iob")) return "IOB";
   if (typeStr.includes("amazon")) return "Amazon Pay";
   if (typeStr.includes("jio")) return "Jio Money";
+  if (typeStr.includes("navi")) return "Navi UPI";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
@@ -199,6 +202,7 @@ function mapCtTypeToName(ct_type) {
     case 17: return "IOB";
     case 18: return "Amazon Pay";
     case 19: return "PhonePe Business";
+    case 20: return "Navi UPI";
     default: return "UPI Partner";
   }
 }
@@ -902,8 +906,8 @@ app.get('/xxapi/config', async (req, res) => {
         { id: 32, cover: "", name: "securityupdate", code: "", type: 1, content: "Update verified", crtDate: 1779259339, crtUser: "alan", sort: 4 }
       ],
       pinFlag: false,
-      ctTypes: [16, 1, 17, 2, 18, 3, 19, 4, 7, 9],
-      ctTypesPayType: { "1": 2, "2": 2, "3": 1, "4": 2, "7": 3, "9": 2, "16": 2, "17": 2, "18": 1, "19": 2 },
+      ctTypes: [1, 9, 2, 3, 6, 20],
+      ctTypesPayType: { "1": 2, "2": 2, "3": 1, "6": 2, "9": 2, "20": 2 },
       ifFinishNewbieActivity: 0,
       rptPaymentMode: 1,
       webLicenseId: "19711455",
@@ -1571,8 +1575,10 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
     const sessionId = otpJson.data.sessionId;
     user.zoopaySessionId = sessionId;
     user.zoopayUpiType = upiType;
+    user.zoopayUpis = []; // Clear stale UPI lists on new OTP request
     user.markModified('zoopaySessionId');
     user.markModified('zoopayUpiType');
+    user.markModified('zoopayUpis');
 
     // Create or locate the tool
     let tool;
@@ -1758,20 +1764,24 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
   }
 
   let state = tool ? (tool.state !== undefined ? tool.state : 7) : 7;
-  let upis = tool ? (tool.backup_upi || []) : (user.zoopayUpis || []);
+  let upis = tool && tool.backup_upi && tool.backup_upi.length > 0 ? tool.backup_upi : [];
 
-  // Auto-healing / auto-recovery: If we have verified UPIs in user.zoopayUpis, but tool's state is still 7 or backup_upi is empty, auto-recover it to 2 (ready) and save it.
-  if (user.zoopayUpis && user.zoopayUpis.length > 0) {
-    if (upis.length === 0) {
+  if (upis.length === 0 && user.zoopayUpis && user.zoopayUpis.length > 0) {
+    if (tool && tool.state !== 7) {
       upis = user.zoopayUpis;
     }
-    if (tool && (tool.state === 7 || !tool.backup_upi || tool.backup_upi.length === 0 || !tool.upi || tool.upi === 'Pending verification')) {
+  }
+
+  // Auto-healing / auto-recovery: Only auto-recover if NOT in state 7 (waiting OTP) to avoid premature bypass
+  if (user.zoopayUpis && user.zoopayUpis.length > 0 && tool && tool.state !== 7) {
+    if (tool.state === 7 || !tool.backup_upi || tool.backup_upi.length === 0 || !tool.upi || tool.upi === 'Pending verification') {
       tool.state = 2;
-      tool.backup_upi = upis;
-      if (upis && upis.length > 0) {
-        tool.upi = upis[0];
+      tool.backup_upi = user.zoopayUpis;
+      if (user.zoopayUpis && user.zoopayUpis.length > 0) {
+        tool.upi = user.zoopayUpis[0];
       }
       state = 2;
+      upis = user.zoopayUpis;
       user.markModified('collectionTools');
       await user.save();
       console.log(`[Zoopay Check] Auto-healed tool ${tool.id} to state 2, backup_upi and upi populated.`);
@@ -1810,7 +1820,7 @@ app.post('/xxapi/monitorflow/upi/list', async (req, res) => {
 
   const upis = tool && tool.backup_upi && tool.backup_upi.length > 0
     ? tool.backup_upi
-    : (user.zoopayUpis && user.zoopayUpis.length > 0 ? user.zoopayUpis : []);
+    : (tool && tool.state !== 7 && user.zoopayUpis && user.zoopayUpis.length > 0 ? user.zoopayUpis : []);
 
   console.log(`[Zoopay UPI List] User: ${user.phone}, Account: ${account}, CtID: ${ct_id}, Tool found: ${!!tool}, UPI Count: ${upis.length}`);
 
