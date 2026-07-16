@@ -400,8 +400,8 @@ app.use((req, res, next) => {
     req.url = req.url.replace('/api', '/xxapi');
   }
 
-  // Prepend /xxapi if a clean API request path is accessed without it (e.g. checkSmsNew)
-  if (!req.url.startsWith('/xxapi') && req.method !== 'GET' && !req.url.includes('.')) {
+  // Prepend /xxapi if a clean API request path is accessed without it (e.g. checkSmsNew or config)
+  if (!req.url.startsWith('/xxapi') && req.url !== '/' && !req.url.includes('.')) {
     req.url = '/xxapi' + (req.url.startsWith('/') ? '' : '/') + req.url;
   }
   
