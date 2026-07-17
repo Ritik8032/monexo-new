@@ -75,16 +75,16 @@ app.use(async (req, res, next) => {
     if (mongoose.connection.readyState !== 1) {
       console.log(`[Mongoose State Monitor] Database connection not ready (state: ${mongoose.connection.readyState}). Ensuring connection...`);
       if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(MONGO_URI);
+        await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 4000 });
       } else {
         let attempts = 0;
-        while (mongoose.connection.readyState !== 1 && attempts < 50) {
+        while (mongoose.connection.readyState !== 1 && attempts < 25) {
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
         if (mongoose.connection.readyState !== 1) {
           console.warn('[Mongoose State Monitor] Still not connected after waiting. Forcing connection...');
-          await mongoose.connect(MONGO_URI);
+          await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 4000 });
         }
       }
     }
@@ -92,21 +92,26 @@ app.use(async (req, res, next) => {
       seedAdminUser().catch(err => console.error('Error seeding admin in middleware:', err));
     }
   } catch (err) {
-    console.error('[Mongoose State Monitor] Error ensuring connection:', err);
+    console.error('[Mongoose State Monitor] Error ensuring connection:', err.message || err);
+    if (req.url.startsWith('/xxapi') || req.url.startsWith('/api')) {
+      return res.json({
+        code: 500,
+        msg: 'Database connection failed. Please ensure MONGODB_URI is set correctly in Vercel settings and Vercel IP addresses are whitelisted (add 0.0.0.0/0 to your IP Access List in MongoDB Atlas).'
+      });
+    }
   }
   next();
 });
 
 console.log('Connecting to MongoDB...');
 mongoose.set('bufferCommands', false); // CRITICAL: fail fast, don't hang
-mongoose.connect(MONGO_URI)
+mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
   .then(() => {
     console.log('Successfully connected to MongoDB.');
     seedAdminUser().catch(err => console.error('Error seeding admin on initial connection:', err));
   })
   .catch((err) => {
     console.error('Error connecting to MongoDB:', err);
-    console.warn('[AI Studio] Database offline or connection blocked - falling back to in-memory mode for failing operations.');
   });
 
 // Mongoose Schemas
