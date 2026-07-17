@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-50">
+<html lang="en" class="h-full bg-[#f2f3f8]">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Dashboard - TezFlow</title>
+  <title>Admin Panel - Purple Dashboard</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome CDN for Icons -->
@@ -11,67 +11,95 @@
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     body {
-      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-family: 'Ubuntu', sans-serif;
+      background-color: #f2f3f8;
     }
     .mono-font {
       font-family: 'JetBrains Mono', monospace;
     }
+    .purple-gradient {
+      background: linear-gradient(to right, #da8cff, #9a55ff);
+    }
+    .pink-gradient {
+      background: linear-gradient(to right, #ffbf96, #fe7096);
+    }
+    .blue-gradient {
+      background: linear-gradient(to right, #90caf9, #047edf);
+    }
+    .green-gradient {
+      background: linear-gradient(to right, #84d9d2, #07cdae);
+    }
+    .purple-text {
+      color: #b66dff;
+    }
+    .purple-bg {
+      background-color: #b66dff;
+    }
+    .purple-btn {
+      background-color: #b66dff;
+    }
+    .purple-btn:hover {
+      background-color: #a359ec;
+    }
+    [v-cloak] {
+      display: none !important;
+    }
   </style>
 </head>
-<body id="admin-app-body" class="h-full text-slate-800">
+<body class="h-full text-slate-700">
   <div id="app" class="min-h-full flex flex-col" v-cloak>
     
     <!-- 1. LOGIN SCREEN -->
-    <div v-if="!isLoggedIn" id="login-screen" class="flex-1 flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-slate-900">
+    <div v-if="!isLoggedIn" id="login-screen" class="flex-1 flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-slate-900 purple-gradient">
       <div class="sm:mx-auto sm:w-full sm:max-w-md">
         <div class="flex justify-center">
-          <div class="h-16 w-16 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <i class="fa-solid fa-user-shield text-3xl text-white"></i>
+          <div class="h-16 w-16 bg-white rounded-2xl flex items-center justify-center shadow-lg">
+            <i class="fa-solid fa-user-shield text-3xl purple-text"></i>
           </div>
         </div>
-        <h2 class="mt-6 text-center text-3xl font-extrabold text-white tracking-tight">TezFlow Control Panel</h2>
-        <p class="mt-2 text-center text-sm text-slate-400">
-          Enter admin credentials to access database logs and settings
+        <h2 class="mt-6 text-center text-3xl font-bold text-white tracking-tight">Monexo Control Panel</h2>
+        <p class="mt-2 text-center text-sm text-white/80">
+          Enter admin credentials to access database and manage users
         </p>
       </div>
 
       <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div class="bg-slate-800 py-8 px-4 shadow-xl rounded-2xl sm:px-10 border border-slate-700/50">
+        <div class="bg-white py-8 px-4 shadow-xl rounded-2xl sm:px-10 border border-slate-100">
           <form @submit.prevent="handleLogin" class="space-y-6">
             <div>
-              <label for="phone" class="block text-sm font-medium text-slate-300">Admin Username / Phone</label>
+              <label for="phone" class="block text-sm font-medium text-slate-700">Admin Username / Phone</label>
               <div class="mt-1 relative rounded-md shadow-sm">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <i class="fa-solid fa-phone text-slate-500"></i>
+                  <i class="fa-solid fa-phone text-slate-400"></i>
                 </div>
                 <input id="phone" type="text" v-model="loginForm.phone" required 
-                  class="block w-full pl-10 pr-3 py-3 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500" 
+                  class="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#b66dff]" 
                   placeholder="7870873927">
               </div>
             </div>
 
             <div>
-              <label for="password" class="block text-sm font-medium text-slate-300">Password</label>
+              <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
               <div class="mt-1 relative rounded-md shadow-sm">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <i class="fa-solid fa-lock text-slate-500"></i>
+                  <i class="fa-solid fa-lock text-slate-400"></i>
                 </div>
                 <input id="password" type="password" v-model="loginForm.password" required 
-                  class="block w-full pl-10 pr-3 py-3 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500" 
+                  class="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#b66dff]" 
                   placeholder="••••••••">
               </div>
             </div>
 
-            <div v-if="errorMsg" class="p-3 bg-red-900/40 border border-red-500/50 text-red-200 text-sm rounded-xl">
+            <div v-if="errorMsg" class="p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl">
               <i class="fa-solid fa-triangle-exclamation mr-2"></i> {{ errorMsg }}
             </div>
 
             <div>
               <button id="login-submit-btn" type="submit" :disabled="loading"
-                class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition duration-150 disabled:opacity-50">
+                class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white purple-gradient hover:opacity-95 focus:outline-none transition duration-150 disabled:opacity-50">
                 <span v-if="loading"><i class="fa-solid fa-circle-notch animate-spin mr-2"></i> Authenticating...</span>
                 <span v-else>Access Dashboard</span>
               </button>
@@ -82,463 +110,943 @@
     </div>
 
     <!-- 2. MAIN APPLICATION WORKSPACE -->
-    <div v-else id="admin-workspace" class="flex-1 flex flex-col md:flex-row min-h-screen">
+    <div v-else class="flex-1 flex flex-col min-h-screen">
       
-      <!-- Side Navigation Rail -->
-      <aside id="side-nav-rail" class="w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800">
-        <!-- Logo Header -->
-        <div class="h-16 flex items-center px-6 border-b border-slate-800">
-          <div class="h-9 w-9 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-cyan-500/20 mr-3">
-            <i class="fa-solid fa-user-shield text-sm text-white"></i>
-          </div>
-          <span class="text-lg font-bold text-white tracking-wider">TezFlow <span class="text-xs text-cyan-400 uppercase font-mono tracking-tight bg-cyan-950 px-1.5 py-0.5 rounded border border-cyan-800">Admin</span></span>
-        </div>
-
-        <!-- Navigation Tabs -->
-        <nav class="flex-1 px-4 py-6 space-y-2">
-          <button id="tab-btn-dashboard" @click="activeTab = 'dashboard'" 
-            :class="['w-full flex items-center px-4 py-3 rounded-xl text-sm font-semibold transition duration-150', activeTab === 'dashboard' ? 'bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white']">
-            <i class="fa-solid fa-chart-pie mr-3 text-lg"></i>
-            Dashboard Stats
+      <!-- Top Navbar -->
+      <nav class="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-6 sticky top-0 z-40 shadow-sm">
+        <div class="flex items-center gap-4">
+          <!-- Hamburger -->
+          <button @click="isSidebarCollapsed = !isSidebarCollapsed" class="text-slate-500 hover:text-slate-800 transition focus:outline-none">
+            <i class="fa-solid fa-bars text-lg"></i>
           </button>
           
-          <button id="tab-btn-users" @click="activeTab = 'users'" 
-            :class="['w-full flex items-center px-4 py-3 rounded-xl text-sm font-semibold transition duration-150', activeTab === 'users' ? 'bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white']">
-            <i class="fa-solid fa-users mr-3 text-lg"></i>
-            Manage Users
-          </button>
-        </nav>
-
-        <!-- Current Session User -->
-        <div class="p-4 border-t border-slate-800 flex items-center justify-between">
-          <div class="flex items-center">
-            <div class="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
-              AD
-            </div>
-            <div class="ml-3">
-              <p class="text-xs font-semibold text-slate-300">Ritik Admin</p>
-              <p class="text-[10px] text-slate-500">7870873927</p>
-            </div>
-          </div>
-          <button id="logout-btn" @click="handleLogout" class="p-2 text-slate-400 hover:text-red-400 transition" title="Logout">
-            <i class="fa-solid fa-right-from-bracket"></i>
-          </button>
-        </div>
-      </aside>
-
-      <!-- Content Area -->
-      <main id="main-content-pane" class="flex-1 bg-slate-50 overflow-y-auto px-4 py-8 md:px-8">
-        
-        <!-- Header -->
-        <header class="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900">
-              {{ activeTab === 'dashboard' ? 'Dashboard Overview' : 'Users Administration' }}
-            </h1>
-            <p class="text-sm text-slate-500">
-              {{ activeTab === 'dashboard' ? 'Real-time database volume, total transactions, and status statistics.' : 'Find, view details, and manage user balances instantly.' }}
-            </p>
-          </div>
+          <!-- Logo Title -->
           <div class="flex items-center gap-2">
-            <button @click="refreshData" class="flex items-center px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 transition shadow-sm">
-              <i :class="['fa-solid fa-arrows-rotate mr-2', fetching ? 'animate-spin' : '']"></i> Refresh
+            <div class="h-8 w-8 purple-gradient rounded-lg flex items-center justify-center shadow-md">
+              <i class="fa-solid fa-wallet text-sm text-white"></i>
+            </div>
+            <span class="text-xl font-bold tracking-tight text-slate-800">Monexo <span class="purple-text font-medium text-sm">Admin</span></span>
+          </div>
+        </div>
+
+        <!-- Right Menu -->
+        <div class="flex items-center gap-6">
+          <!-- Refresh -->
+          <button @click="refreshData" class="text-slate-500 hover:purple-text transition" title="Refresh">
+            <i :class="['fa-solid fa-arrows-rotate text-lg', fetching ? 'animate-spin' : '']"></i>
+          </button>
+
+          <!-- Notification -->
+          <div class="relative">
+            <i class="fa-regular fa-bell text-lg text-slate-500 cursor-pointer hover:purple-text transition"></i>
+            <span class="absolute -top-1.5 -right-1.5 bg-[#fe7096] text-white text-[9px] h-4 w-4 rounded-full flex items-center justify-center font-bold">3</span>
+          </div>
+
+          <!-- User Info Profile -->
+          <div class="flex items-center gap-3 border-l border-slate-200 pl-4">
+            <img src="/static/images/avatar.png" class="h-9 w-9 rounded-full border border-slate-200 object-cover" alt="Admin Avatar" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
+            <div class="hidden sm:block text-left">
+              <span class="block text-xs font-bold text-slate-800">Ritik Admin</span>
+              <span class="block text-[10px] text-slate-400 font-medium">Project Manager</span>
+            </div>
+            
+            <!-- Logout Button -->
+            <button @click="handleLogout" class="text-slate-400 hover:text-red-500 transition ml-2" title="Logout">
+              <i class="fa-solid fa-power-off text-lg"></i>
             </button>
           </div>
-        </header>
+        </div>
+      </nav>
 
-        <!-- 2A. DASHBOARD TAB -->
-        <div v-if="activeTab === 'dashboard'" id="dashboard-tab" class="space-y-8">
+      <!-- Main Workspace Body with Sidebar and Content -->
+      <div class="flex-1 flex flex-col lg:flex-row">
+        
+        <!-- Sidebar Navigation -->
+        <aside :class="['bg-white border-r border-slate-100 flex flex-col p-4 space-y-6 transition-all duration-300', isSidebarCollapsed ? 'hidden lg:flex lg:w-20 lg:items-center' : 'w-full lg:w-64']">
           
-          <!-- Metrics Grid -->
-          <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            
-            <!-- Card 1: Total Users -->
-            <div class="bg-white overflow-hidden shadow-sm rounded-2xl border border-slate-100 p-6 flex items-center hover:shadow-md transition duration-200">
-              <div class="p-3 rounded-xl bg-blue-50 text-blue-600 mr-4">
-                <i class="fa-solid fa-users text-2xl"></i>
-              </div>
-              <div>
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Users</p>
-                <h3 class="text-3xl font-bold text-slate-900 mt-1">{{ stats.totalUsers }}</h3>
-              </div>
+          <!-- Mini Profile Header -->
+          <div v-if="!isSidebarCollapsed" class="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 w-full">
+            <img src="/static/images/avatar.png" class="h-10 w-10 rounded-full border border-slate-200 object-cover" alt="Profile" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
+            <div>
+              <h4 class="text-sm font-bold text-slate-800">Ritik Admin</h4>
+              <span class="inline-flex items-center text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span> Active
+              </span>
             </div>
-
-            <!-- Card 2: Total Balance -->
-            <div class="bg-white overflow-hidden shadow-sm rounded-2xl border border-slate-100 p-6 flex items-center hover:shadow-md transition duration-200">
-              <div class="p-3 rounded-xl bg-emerald-50 text-emerald-600 mr-4">
-                <i class="fa-solid fa-wallet text-2xl"></i>
-              </div>
-              <div>
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Balances</p>
-                <h3 class="text-3xl font-bold text-slate-900 mt-1">₹{{ formatCurrency(stats.totalBalance) }}</h3>
-              </div>
-            </div>
-
-            <!-- Card 3: Total Recharge -->
-            <div class="bg-white overflow-hidden shadow-sm rounded-2xl border border-slate-100 p-6 flex items-center hover:shadow-md transition duration-200">
-              <div class="p-3 rounded-xl bg-amber-50 text-amber-600 mr-4">
-                <i class="fa-solid fa-arrow-up-right-from-square text-2xl"></i>
-              </div>
-              <div>
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Recharge</p>
-                <h3 class="text-3xl font-bold text-slate-900 mt-1">₹{{ formatCurrency(stats.totalRecharge) }}</h3>
-              </div>
-            </div>
-
-            <!-- Card 4: KYC Verified -->
-            <div class="bg-white overflow-hidden shadow-sm rounded-2xl border border-slate-100 p-6 flex items-center hover:shadow-md transition duration-200">
-              <div class="p-3 rounded-xl bg-cyan-50 text-cyan-600 mr-4">
-                <i class="fa-solid fa-id-card text-2xl"></i>
-              </div>
-              <div>
-                <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">KYC Verified</p>
-                <h3 class="text-3xl font-bold text-slate-900 mt-1">{{ stats.kycVerified }}</h3>
-              </div>
-            </div>
-
+          </div>
+          <div v-else class="flex justify-center w-full">
+            <img src="/static/images/avatar.png" class="h-10 w-10 rounded-full border border-slate-200 object-cover" alt="Profile" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
           </div>
 
-          <!-- Secondary Grid -->
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Navigation Links -->
+          <div class="flex flex-col space-y-1 w-full">
+            <span v-if="!isSidebarCollapsed" class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Navigation</span>
             
-            <!-- Quick Actions Panel -->
-            <div class="bg-white shadow-sm rounded-2xl border border-slate-100 p-6">
-              <h2 class="text-lg font-bold text-slate-900 mb-4">Quick Control Shortcuts</h2>
-              <div class="space-y-3">
-                <button @click="activeTab = 'users'" class="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition text-left">
-                  <div class="flex items-center">
-                    <div class="p-2 rounded-lg bg-cyan-100 text-cyan-700 mr-3">
+            <button @click="activeTab = 'dashboard'; selectedUser = null;" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'dashboard' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
+              :title="isSidebarCollapsed ? 'Dashboard' : ''">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-cube text-base"></i>
+                <span v-if="!isSidebarCollapsed">Dashboard</span>
+              </div>
+              <i v-if="!isSidebarCollapsed" class="fa-solid fa-house text-xs opacity-50"></i>
+            </button>
+
+            <button @click="activeTab = 'users'; selectedUser = null;" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'users' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
+              :title="isSidebarCollapsed ? 'Users List' : ''">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-users text-base"></i>
+                <span v-if="!isSidebarCollapsed">Users List</span>
+              </div>
+              <i v-if="!isSidebarCollapsed" class="fa-solid fa-angle-right text-xs opacity-50"></i>
+            </button>
+          </div>
+
+          <div v-if="!isSidebarCollapsed" class="pt-6 border-t border-slate-100 w-full">
+            <span class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Shortcuts</span>
+            <div class="mt-2 space-y-2">
+              <div class="bg-gradient-to-br from-purple-50 to-indigo-50 p-3.5 rounded-2xl border border-purple-100/50">
+                <p class="text-[11px] text-purple-700 font-bold">Database Mode</p>
+                <p class="text-[10px] text-slate-500 mt-1 leading-normal">Connected to cluster, operational with in-memory fallback protection.</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 p-6 lg:p-8 overflow-y-auto max-w-[1600px] mx-auto w-full">
+          
+          <!-- BREADCRUMB / HEADER -->
+          <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <div class="flex items-center gap-2 text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                <span>Overview</span>
+                <i class="fa-solid fa-chevron-right text-[8px]"></i>
+                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : 'Manage Users') }}</span>
+              </div>
+              <h1 class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-800 mt-1">
+                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : 'Find & Manage Users') }}
+              </h1>
+            </div>
+            
+            <div v-if="selectedUser" class="flex gap-2">
+              <button @click="selectedUser = null" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-bold text-slate-600 transition shadow-sm">
+                <i class="fa-solid fa-arrow-left"></i> Back to List
+              </button>
+            </div>
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB 1: DASHBOARD OVERVIEW                 -->
+          <!-- ========================================== -->
+          <div v-if="activeTab === 'dashboard' && !selectedUser" class="space-y-8">
+            
+            <!-- 3 Gradient Cards Grid (mimicking the Purple Admin screenshot) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              <!-- Card 1: Weekly Sales (Pink/Orange Gradient) -->
+              <div class="pink-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                <!-- Subtle background design overlay -->
+                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                
+                <div class="flex justify-between items-start z-10">
+                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Users</span>
+                  <i class="fa-solid fa-users text-2xl opacity-40"></i>
+                </div>
+                
+                <div class="z-10 mt-4">
+                  <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.totalUsers }}</h3>
+                  <p class="text-xs opacity-90 mt-2 font-medium">Increased by 60% this week</p>
+                </div>
+              </div>
+
+              <!-- Card 2: Weekly Orders (Blue Gradient) -->
+              <div class="blue-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                
+                <div class="flex justify-between items-start z-10">
+                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Wallet Balances</span>
+                  <i class="fa-solid fa-wallet text-2xl opacity-40"></i>
+                </div>
+                
+                <div class="z-10 mt-4">
+                  <h3 class="text-2xl lg:text-3xl font-bold tracking-tight">₹{{ formatCurrency(stats.totalBalance) }}</h3>
+                  <p class="text-xs opacity-90 mt-2 font-medium">Live ledger synchronization</p>
+                </div>
+              </div>
+
+              <!-- Card 3: Visitors Online (Teal/Green Gradient) -->
+              <div class="green-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                
+                <div class="flex justify-between items-start z-10">
+                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Verified KYC</span>
+                  <i class="fa-solid fa-circle-check text-2xl opacity-40"></i>
+                </div>
+                
+                <div class="z-10 mt-4">
+                  <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.kycVerified }} Users</h3>
+                  <p class="text-xs opacity-90 mt-2 font-medium">Increased by 5% compared to yesterday</p>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Staggered Layout: Visit Statistics & Traffic Sources -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              <!-- Left 2 Cols: Visit and Sales Statistics Custom Bar Chart -->
+              <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div class="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 class="text-lg font-bold text-slate-800">Visit &amp; Sales Statistics</h3>
+                    <p class="text-xs text-slate-400">Weekly activity logs and user traffic registration</p>
+                  </div>
+                  <div class="flex items-center gap-4 text-xs font-semibold">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#da8cff]"></span> CHN</span>
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#047edf]"></span> USA</span>
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#ffbf96]"></span> IND</span>
+                  </div>
+                </div>
+
+                <!-- Custom visual elegant bar chart structure (pure Tailwind CSS heights) -->
+                <div class="h-64 flex items-end justify-between px-4 pt-4 border-b border-slate-100">
+                  
+                  <!-- Jan -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[30%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[80%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[45%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">JAN</span>
+                  </div>
+
+                  <!-- Feb -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[55%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[30%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">FEB</span>
+                  </div>
+
+                  <!-- Mar -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[20%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[45%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[60%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">MAR</span>
+                  </div>
+
+                  <!-- Apr -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[65%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[70%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[25%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">APR</span>
+                  </div>
+
+                  <!-- May -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[90%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">MAY</span>
+                  </div>
+
+                  <!-- Jun -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[85%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[90%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[30%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">JUN</span>
+                  </div>
+
+                  <!-- Jul -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[50%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[35%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[65%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">JUL</span>
+                  </div>
+
+                  <!-- Aug -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[75%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[80%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">AUG</span>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Right 1 Col: Traffic Sources Elegant Circular Layout -->
+              <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-800">Traffic Sources</h3>
+                  <p class="text-xs text-slate-400">Transaction and wallet gateway shares</p>
+                </div>
+
+                <div class="my-6 flex justify-center">
+                  <!-- Circular Donut Mock Chart in SVG -->
+                  <div class="relative w-40 h-40">
+                    <svg viewBox="0 0 36 36" class="w-full h-full">
+                      <path class="text-slate-100" stroke-width="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <!-- Segment 1: PhonePe/UPI - 40% (Green) -->
+                      <path class="text-[#07cdae]" stroke-dasharray="40 100" stroke-width="4" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <!-- Segment 2: Bank Transfer - 30% (Blue) -->
+                      <path class="text-[#047edf]" stroke-dasharray="30 100" stroke-dashoffset="40" stroke-width="4" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <!-- Segment 3: Zoopay Direct - 30% (Pink) -->
+                      <path class="text-[#fe7096]" stroke-dasharray="30 100" stroke-dashoffset="70" stroke-width="4" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                      <span class="text-2xl font-bold text-slate-800">100%</span>
+                      <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">UPI Active</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="space-y-2 text-xs font-semibold">
+                  <div class="flex justify-between items-center">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#07cdae]"></span> UPI Gateway</span>
+                    <span class="text-slate-500">40%</span>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#047edf]"></span> Bank Deposits</span>
+                    <span class="text-slate-500">30%</span>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#fe7096]"></span> Zoopay API</span>
+                    <span class="text-slate-500">30%</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Bottom Section: Daily Stats and Quick shortcuts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              <!-- Shortcut controls -->
+              <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">Quick Navigation Shortcuts</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button @click="activeTab = 'users'" class="p-4 text-left border border-slate-100 hover:border-purple-200 hover:bg-slate-50/50 rounded-xl transition duration-150 group">
+                    <div class="h-10 w-10 rounded-lg purple-gradient flex items-center justify-center text-white mb-3">
                       <i class="fa-solid fa-magnifying-glass"></i>
                     </div>
-                    <div>
-                      <h4 class="text-sm font-semibold text-slate-800">Search User Details</h4>
-                      <p class="text-xs text-slate-500">Query users by UID or Phone</p>
-                    </div>
-                  </div>
-                  <i class="fa-solid fa-chevron-right text-slate-400 text-sm"></i>
-                </button>
-                <button @click="openBalanceShortCut" class="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition text-left">
-                  <div class="flex items-center">
-                    <div class="p-2 rounded-lg bg-emerald-100 text-emerald-700 mr-3">
-                      <i class="fa-solid fa-circle-plus"></i>
-                    </div>
-                    <div>
-                      <h4 class="text-sm font-semibold text-slate-800">Quick Fund Deposit</h4>
-                      <p class="text-xs text-slate-500">Deposit, deduct or adjust balances</p>
-                    </div>
-                  </div>
-                  <i class="fa-solid fa-chevron-right text-slate-400 text-sm"></i>
-                </button>
-              </div>
-            </div>
+                    <span class="block text-sm font-bold text-slate-800 group-hover:purple-text">Search User Base</span>
+                    <span class="block text-xs text-slate-400 mt-1">Lookup profiles with UIDs or mobile numbers instantly.</span>
+                  </button>
 
-            <!-- Daily Statistics -->
-            <div class="lg:col-span-2 bg-white shadow-sm rounded-2xl border border-slate-100 p-6">
-              <h2 class="text-lg font-bold text-slate-900 mb-4">Registration Activities</h2>
-              <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <div class="flex items-center">
-                  <div class="h-12 w-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl mr-4">
-                    <i class="fa-solid fa-calendar-day"></i>
-                  </div>
-                  <div>
-                    <h3 class="text-md font-semibold text-slate-800">Registered Today</h3>
-                    <p class="text-xs text-slate-500">Number of new registrations created today</p>
-                  </div>
-                </div>
-                <div class="text-right">
-                  <span class="text-3xl font-extrabold text-indigo-600">{{ stats.todayRegistrations }}</span>
-                  <span class="block text-[10px] text-slate-400 font-mono uppercase font-semibold">Today</span>
+                  <button @click="activeTab = 'users'" class="p-4 text-left border border-slate-100 hover:border-purple-200 hover:bg-slate-50/50 rounded-xl transition duration-150 group">
+                    <div class="h-10 w-10 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white mb-3">
+                      <i class="fa-solid fa-square-plus"></i>
+                    </div>
+                    <span class="block text-sm font-bold text-slate-800 group-hover:text-emerald-600">Fund Modification</span>
+                    <span class="block text-xs text-slate-400 mt-1">Adjust, deposit, or deduct ledger balances.</span>
+                  </button>
                 </div>
               </div>
-              <p class="mt-6 text-xs text-slate-400 leading-relaxed">
-                <i class="fa-solid fa-circle-info mr-1.5 text-slate-500"></i> All statistical indicators are computed directly from the live database cluster. Use the <strong>Refresh</strong> button at the top to fetch updated indicators.
-              </p>
-            </div>
 
-          </div>
-
-        </div>
-
-        <!-- 2B. USERS TAB -->
-        <div v-else-if="activeTab === 'users'" id="users-tab" class="space-y-6">
-          
-          <!-- Search & Operations Bar -->
-          <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="w-full md:max-w-md relative">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <i class="fa-solid fa-magnifying-glass text-slate-400"></i>
-              </div>
-              <input type="text" v-model="searchQuery" @keyup.enter="fetchUsers"
-                class="block w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-sm shadow-inner" 
-                placeholder="Find users by UID or Mobile number...">
-            </div>
-            <div class="flex gap-2 w-full md:w-auto">
-              <button @click="fetchUsers" class="flex-1 md:flex-initial px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition shadow-sm">
-                Search
-              </button>
-              <button @click="searchQuery = ''; fetchUsers();" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition">
-                Clear
-              </button>
-            </div>
-          </div>
-
-          <!-- Users Table Container -->
-          <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <div class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-slate-100">
-                <thead class="bg-slate-50">
-                  <tr>
-                    <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">UID</th>
-                    <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Mobile Number</th>
-                    <th scope="col" class="px-6 py-4 class-left text-xs font-bold text-slate-400 uppercase tracking-wider">Real Name</th>
-                    <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Current Balance</th>
-                    <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Recharge</th>
-                    <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">KYC Status</th>
-                    <th scope="col" class="relative px-6 py-4">
-                      <span class="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100 bg-white">
-                  <tr v-if="users.length === 0">
-                    <td colspan="7" class="px-6 py-10 text-center text-slate-500">
-                      <div class="flex flex-col items-center justify-center">
-                        <i class="fa-solid fa-users-slash text-4xl text-slate-300 mb-3"></i>
-                        <span class="text-sm font-medium">No users found in database</span>
-                        <span class="text-xs text-slate-400 mt-1">Try clearing search filters or add new test users.</span>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr v-for="user in users" :key="user._id" class="hover:bg-slate-50/50 transition">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-500">
-                      {{ user._id }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">
-                      {{ user.phone }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                      {{ user.realName || '—' }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-extrabold text-slate-900">
-                      ₹{{ formatCurrency(user.balance) }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                      ₹{{ formatCurrency(user.recharge) }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm">
-                      <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', user.kycStatus === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200']">
-                        {{ user.kycStatus === 1 ? 'Verified' : 'Pending' }}
-                      </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div class="flex items-center justify-end gap-2">
-                        <button @click="showUserDrawer(user)" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition text-xs font-bold">
-                          View details
-                        </button>
-                        <button @click="openQuickBalance(user)" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition text-xs font-bold">
-                          Adjust Balance
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-
-      </main>
-
-    </div>
-
-    <!-- 3. SLIDE-OVER DRAWER (USER DETAILS VIEW) -->
-    <div v-if="drawerOpen && selectedUser" id="user-details-drawer" class="fixed inset-0 overflow-hidden z-50">
-      <div class="absolute inset-0 overflow-hidden">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" @click="drawerOpen = false"></div>
-        
-        <div class="fixed inset-y-0 right-0 pl-10 max-w-full flex sm:pl-16">
-          <div class="w-screen max-w-md">
-            <div class="h-full flex flex-col bg-white shadow-2xl overflow-y-scroll">
-              
-              <!-- Drawer Header -->
-              <div class="px-6 py-5 bg-slate-900 text-white flex items-center justify-between">
+              <!-- Registration details -->
+              <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
                 <div>
-                  <h2 class="text-lg font-bold">User Details Profile</h2>
-                  <p class="text-xs text-slate-400 mono-font">UID: {{ selectedUser._id }}</p>
+                  <h3 class="text-lg font-bold text-slate-800">Registration Volume</h3>
+                  <p class="text-xs text-slate-400 mb-4">Today's active joining metrics</p>
                 </div>
-                <button @click="drawerOpen = false" class="text-slate-400 hover:text-white transition">
-                  <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="h-12 w-12 bg-[#da8cff]/10 rounded-xl flex items-center justify-center text-xl purple-text">
+                      <i class="fa-solid fa-calendar-day"></i>
+                    </div>
+                    <div>
+                      <h4 class="text-sm font-bold text-slate-800">Joined Today</h4>
+                      <p class="text-[11px] text-slate-400">New user accounts registered today</p>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-3xl font-extrabold purple-text">{{ stats.todayRegistrations }}</span>
+                    <span class="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">Accounts</span>
+                  </div>
+                </div>
+
+                <p class="text-[11px] text-slate-400 leading-normal mt-4">
+                  <i class="fa-solid fa-shield-halved mr-1.5 purple-text"></i> Ledger operations are audited server-side. Real-time connections to MongoDB are established with full automatic retries.
+                </p>
               </div>
 
-              <!-- Drawer Body -->
-              <div class="flex-1 p-6 space-y-8">
+            </div>
+
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB 2: USER'S LIST & FIND PAGE            -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'users' && !selectedUser" class="space-y-6">
+            
+            <!-- Search / Filter panel -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center">
+              <div class="w-full sm:flex-1 relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <i class="fa-solid fa-magnifying-glass text-slate-400"></i>
+                </div>
+                <input type="text" v-model="searchQuery" @keyup.enter="fetchUsers"
+                  class="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium" 
+                  placeholder="Find users by UID number or Mobile number...">
+              </div>
+              <div class="flex gap-2 w-full sm:w-auto">
+                <button @click="fetchUsers" class="flex-1 sm:flex-initial px-6 py-3 purple-btn hover:opacity-95 text-white rounded-xl text-sm font-bold transition shadow-md">
+                  Search
+                </button>
+                <button @click="searchQuery = ''; fetchUsers();" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition">
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <!-- Users table list -->
+            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div class="p-5 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div>
+                  <h3 class="text-base font-bold text-slate-800">Database User Registry</h3>
+                  <p class="text-xs text-slate-400">Total verified users and investment ledger balances</p>
+                </div>
+                <span class="text-xs text-slate-400 font-medium">Showing top 50 matches</span>
+              </div>
+
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-100">
+                  <thead class="bg-slate-50/70">
+                    <tr>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">UID (ID)</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Mobile Number</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Real Name</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Wallet Balance</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Recharge</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">KYC Status</th>
+                      <th scope="col" class="relative px-6 py-4">
+                        <span class="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 bg-white">
+                    <tr v-if="users.length === 0">
+                      <td colspan="7" class="px-6 py-12 text-center text-slate-500">
+                        <div class="flex flex-col items-center justify-center max-w-sm mx-auto">
+                          <i class="fa-solid fa-users-slash text-4xl text-slate-300 mb-3"></i>
+                          <h4 class="text-sm font-bold text-slate-700">No matching users found</h4>
+                          <p class="text-xs text-slate-400 mt-1">Try typing a complete UID number or mobile number to look up their records.</p>
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    <tr v-for="user in users" :key="user._id" class="hover:bg-slate-50/50 transition">
+                      <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
+                        {{ user._id }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-800">
+                        {{ user.phone }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-500">
+                        {{ user.realName || '—' }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-extrabold text-slate-900">
+                        ₹{{ formatCurrency(user.balance) }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-500">
+                        ₹{{ formatCurrency(user.recharge) }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold', user.kycStatus === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100']">
+                          {{ user.kycStatus === 1 ? 'Verified' : 'Pending' }}
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button @click="loadTakeActionWorkspace(user)" class="px-4 py-2 bg-[#b66dff] hover:bg-[#a359ec] text-white rounded-xl transition text-xs font-bold shadow-sm">
+                          Take Action
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ========================================== -->
+          <!-- DETAILED "TAKE ACTION" VIEW FOR A USER     -->
+          <!-- ========================================== -->
+          <div v-else-if="selectedUser" class="space-y-8">
+            
+            <!-- Quick Summary Panel -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div class="flex items-center gap-4">
+                <div class="h-14 w-14 purple-gradient rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-md">
+                  <i class="fa-solid fa-user-gear"></i>
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h2 class="text-xl font-bold text-slate-800">{{ selectedUser.phone }}</h2>
+                    <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold', selectedUser.kycStatus === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100']">
+                      {{ selectedUser.kycStatus === 1 ? 'KYC Verified' : 'KYC Pending' }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-slate-400 font-mono mt-1">UID: {{ selectedUser._id }}</p>
+                </div>
+              </div>
+              
+              <div class="flex flex-wrap gap-4 text-xs font-bold text-slate-500 bg-slate-50 px-4 py-3 rounded-xl border border-slate-100/50">
+                <span class="flex items-center gap-1.5"><i class="fa-solid fa-wifi text-emerald-500"></i> IP: <span class="text-slate-800 mono-font font-semibold">{{ selectedTelemetry.ip || 'N/A' }}</span></span>
+                <span class="h-3 w-[1px] bg-slate-200"></span>
+                <span class="flex items-center gap-1.5"><i class="fa-solid fa-link text-blue-500"></i> Net: <span class="text-slate-800 font-semibold">{{ selectedTelemetry.net || 'N/A' }}</span></span>
+                <span class="h-3 w-[1px] bg-slate-200"></span>
+                <span class="flex items-center gap-1.5" :title="selectedTelemetry.deviceType"><i class="fa-solid fa-mobile-screen-button text-purple-500"></i> Device: <span class="text-slate-800 font-semibold max-w-[150px] truncate">{{ parseUserAgent(selectedTelemetry.deviceType) }}</span></span>
+              </div>
+            </div>
+
+            <!-- Grid Layout of Action Categories -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              <!-- Left Column: Core Settings (KYC, Inverter/Investor, Partner details) -->
+              <div class="lg:col-span-5 space-y-8">
                 
-                <!-- Section 1: Profile Summary -->
-                <div class="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <div class="h-12 w-12 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white text-xl font-bold">
-                    {{ selectedUser.phone.slice(-2) }}
+                <!-- Category A: Identity, KYC Partner & UPI Details Form -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center gap-2 pb-4 border-b border-slate-50">
+                    <i class="fa-solid fa-passport purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">KYC &amp; Partner Details</h3>
                   </div>
-                  <div>
-                    <h3 class="font-bold text-slate-900 text-md">{{ selectedUser.phone }}</h3>
-                    <p class="text-xs text-slate-500">Real Name: {{ selectedUser.realName || '—' }}</p>
-                  </div>
+
+                  <form @submit.prevent="updateTakeActionProfile" class="space-y-4">
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Real Name (Full Name)</label>
+                      <input type="text" v-model="editUserForm.realName"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Registered Mobile Linked</label>
+                      <input type="text" v-model="editUserForm.phone"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">KYC Partner details</label>
+                      <input type="text" v-model="editUserForm.kycPartner" placeholder="e.g. Shriram Finance Partner, Digilocker"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">UPI KYC Partner Details</label>
+                      <input type="text" v-model="editUserForm.upiKycPartner" placeholder="e.g. PhonePe Merchant Verified, IDFC UPI"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">KYC Status</label>
+                      <select v-model="editUserForm.kycStatus"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                        <option :value="0">Pending Verification</option>
+                        <option :value="1">Verified / Approved</option>
+                      </select>
+                    </div>
+
+                    <button type="submit" :disabled="editProfileLoading"
+                      class="w-full py-3.5 purple-btn text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition duration-150 disabled:opacity-50">
+                      <span v-if="editProfileLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Saving Profile...</span>
+                      <span v-else>Save Integration Details</span>
+                    </button>
+                  </form>
                 </div>
 
-                <!-- Section 2: Account Balances -->
-                <div class="space-y-4">
-                  <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Balance & Limits</h4>
-                  <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <p class="text-[10px] text-slate-500 font-semibold uppercase">Wallet Balance</p>
-                      <p class="text-lg font-extrabold text-slate-900 mt-1">₹{{ formatCurrency(selectedUser.balance) }}</p>
-                    </div>
-                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      <p class="text-[10px] text-slate-500 font-semibold uppercase">Total Recharge</p>
-                      <p class="text-lg font-extrabold text-slate-900 mt-1">₹{{ formatCurrency(selectedUser.recharge) }}</p>
-                    </div>
+                <!-- Category B: Investor / Inverter details -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center gap-2 pb-4 border-b border-slate-50">
+                    <i class="fa-solid fa-chart-line purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">Inverter / Investor details</h3>
                   </div>
-                </div>
 
-                <!-- Section 3: Telemetry & Connection Metadata -->
-                <div class="space-y-4">
-                  <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Connection Telemetry</h4>
-                  <div class="bg-white rounded-xl border border-slate-100 divide-y divide-slate-100 text-sm overflow-hidden">
-                    <div class="flex justify-between p-3.5">
-                      <span class="text-slate-500 font-medium">IP Address</span>
-                      <span class="font-semibold text-slate-900 font-mono text-xs">{{ selectedUser.ip || 'N/A' }}</span>
+                  <form @submit.prevent="updateInvestorDetails" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Wallet Balance (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.balance"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Total Recharge (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.recharge"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                      </div>
                     </div>
-                    <div class="flex justify-between p-3.5">
-                      <span class="text-slate-500 font-medium">Device Type</span>
-                      <span class="font-semibold text-slate-800 text-xs text-right max-w-[200px] truncate" :title="selectedUser.deviceType">
-                        {{ parseUserAgent(selectedUser.deviceType) }}
-                      </span>
-                    </div>
-                    <div class="flex justify-between p-3.5">
-                      <span class="text-slate-500 font-medium">Network Link</span>
-                      <span class="font-semibold text-slate-900 text-xs">{{ selectedUser.net || 'WiFi/Cellular' }}</span>
-                    </div>
-                  </div>
-                </div>
 
-                <!-- Section 4: Linked UPI Accounts -->
-                <div class="space-y-4">
-                  <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Linked UPI Accounts</h4>
-                  <div v-if="selectedUser.upiDetails && selectedUser.upiDetails.length > 0" class="space-y-2">
-                    <div v-for="(upi, index) in selectedUser.upiDetails" :key="index" class="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
-                      <div class="flex items-center">
-                        <i class="fa-solid fa-link text-slate-400 mr-3"></i>
-                        <div>
-                          <p class="text-sm font-semibold text-slate-800">{{ upi.upiId || upi.upi || upi }}</p>
-                          <p class="text-[10px] text-slate-400">Account #{{ index + 1 }}</p>
+                    <div class="grid grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Commission (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.commission"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Today Profit (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.todayProfit"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Invited By (Inviter Code)</label>
+                        <input type="text" v-model="editUserForm.parentUser" placeholder="e.g. 7870873927"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Total Users Invited</label>
+                        <div class="mt-1 px-3.5 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 text-sm font-bold flex items-center gap-2 h-[46px]">
+                          <i class="fa-solid fa-users text-purple-500"></i> {{ selectedUser.invitedCount || 0 }} Users
                         </div>
                       </div>
-                      <span class="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-semibold border border-emerald-100">Linked</span>
-                    </div>
-                  </div>
-                  <div v-else class="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 text-sm">
-                    No UPI details linked yet
-                  </div>
-                </div>
-
-                <!-- Section 5: Direct Balance Adjustment Inside Drawer -->
-                <div class="p-4 bg-slate-900 text-white rounded-2xl space-y-4">
-                  <h4 class="text-sm font-bold">Adjust Funds Direct</h4>
-                  <form @submit.prevent="updateBalance(selectedUser)" class="space-y-3">
-                    <div>
-                      <label class="block text-xs font-medium text-slate-300">Operation Type</label>
-                      <div class="grid grid-cols-3 gap-2 mt-1">
-                        <button type="button" @click="adjForm.type = 'add'" :class="['py-1.5 rounded-lg text-xs font-bold text-center border transition', adjForm.type === 'add' ? 'bg-emerald-600 text-white border-transparent' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700']">
-                          Add
-                        </button>
-                        <button type="button" @click="adjForm.type = 'subtract'" :class="['py-1.5 rounded-lg text-xs font-bold text-center border transition', adjForm.type === 'subtract' ? 'bg-red-600 text-white border-transparent' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700']">
-                          Deduct
-                        </button>
-                        <button type="button" @click="adjForm.type = 'set'" :class="['py-1.5 rounded-lg text-xs font-bold text-center border transition', adjForm.type === 'set' ? 'bg-cyan-600 text-white border-transparent' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700']">
-                          Set Direct
-                        </button>
-                      </div>
                     </div>
 
                     <div>
-                      <label class="block text-xs font-medium text-slate-300">Amount (₹)</label>
-                      <input type="number" step="0.01" v-model.number="adjForm.amount" required
-                        class="mt-1 block w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                        placeholder="e.g. 500">
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Inverter Model / Inverter details</label>
+                      <textarea rows="3" v-model="editUserForm.inverterDetails" placeholder="Type specific system inverter details, nodes, serial numbers, capacity..."
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium"></textarea>
                     </div>
 
-                    <button type="submit" :disabled="adjLoading"
-                      class="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 rounded-xl text-xs font-bold tracking-wider uppercase shadow transition disabled:opacity-50">
-                      <span v-if="adjLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Saving...</span>
-                      <span v-else>Apply Balance Update</span>
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">VIP Tier level</label>
+                      <input type="number" v-model="editUserForm.vipLevel" min="1" max="10"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                    </div>
+
+                    <button type="submit" :disabled="editInvestorLoading"
+                      class="w-full py-3.5 purple-btn text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition duration-150 disabled:opacity-50">
+                      <span v-if="editInvestorLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Saving Investor info...</span>
+                      <span v-else>Update Investor &amp; Inverter Info</span>
                     </button>
                   </form>
                 </div>
 
               </div>
 
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+              <!-- Right Column: Ledger Histories and Add manual entry -->
+              <div class="lg:col-span-7 space-y-8">
+                
+                <!-- Sub-Tabs Navigation for transaction list -->
+                <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <h3 class="text-base font-bold text-slate-800">Financial Audit Ledgers</h3>
+                      <p class="text-xs text-slate-400">Inspecting transaction records mapped to UID</p>
+                    </div>
 
-    <!-- 4. QUICK BALANCE MODAL -->
-    <div v-if="modalOpen && selectedUser" id="balance-modal" class="fixed inset-0 overflow-y-auto z-50 flex items-center justify-center p-4">
-      <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" @click="modalOpen = false"></div>
-      
-      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 z-10">
-        <div class="px-6 py-4 bg-slate-950 text-white flex items-center justify-between">
-          <h3 class="font-bold">Adjust Wallet Balance</h3>
-          <button @click="modalOpen = false" class="text-slate-400 hover:text-white transition">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-        <div class="p-6 space-y-4">
-          <div class="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
-            <span class="block text-[10px] text-slate-500 font-bold uppercase">Target Phone</span>
-            <span class="text-md font-bold text-slate-900">{{ selectedUser.phone }}</span>
-            <span class="block text-xs text-slate-400 mt-1">Current Wallet Balance: <strong>₹{{ formatCurrency(selectedUser.balance) }}</strong></span>
-          </div>
+                    <div class="flex gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                      <button @click="ledgerTab = 'buy'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'buy' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                        Buy ({{ buyTransactions.length }})
+                      </button>
+                      <button @click="ledgerTab = 'sell'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'sell' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                        Sell ({{ sellTransactions.length }})
+                      </button>
+                      <button @click="ledgerTab = 'admin'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'admin' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                        Admin ({{ adminTransactions.length }})
+                      </button>
+                    </div>
+                  </div>
 
-          <form @submit.prevent="updateBalance(selectedUser)" class="space-y-4">
-            <div>
-              <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Adjustment Type</label>
-              <div class="grid grid-cols-3 gap-2 mt-1.5">
-                <button type="button" @click="adjForm.type = 'add'" :class="['py-2 rounded-xl text-xs font-bold text-center border transition', adjForm.type === 'add' ? 'bg-emerald-600 text-white border-transparent' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100']">
-                  Add Funds
-                </button>
-                <button type="button" @click="adjForm.type = 'subtract'" :class="['py-2 rounded-xl text-xs font-bold text-center border transition', adjForm.type === 'subtract' ? 'bg-red-600 text-white border-transparent' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100']">
-                  Deduct Funds
-                </button>
-                <button type="button" @click="adjForm.type = 'set'" :class="['py-2 rounded-xl text-xs font-bold text-center border transition', adjForm.type === 'set' ? 'bg-cyan-600 text-white border-transparent' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100']">
-                  Set Absolute
-                </button>
+                  <!-- Table content depending on active sub-tab -->
+                  <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
+                    
+                    <!-- BUY TRANSACTION TAB -->
+                    <table v-if="ledgerTab === 'buy'" class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70 sticky top-0 z-10">
+                        <tr>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">UTR</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
+                        <tr v-if="buyTransactions.length === 0">
+                          <td colspan="5" class="px-6 py-10 text-center text-slate-400">
+                            No Buy (recharge) transactions found.
+                          </td>
+                        </tr>
+                        <tr v-for="tx in buyTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
+                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
+                          <td class="px-5 py-3 font-semibold text-slate-800">{{ tx.utr || '—' }}</td>
+                          <td class="px-5 py-3 font-extrabold text-slate-900">₹{{ formatCurrency(tx.amount) }}</td>
+                          <td class="px-5 py-3">
+                            <span :class="['inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')]">
+                              {{ tx.payer_status === 3 ? 'Success' : (tx.payer_status === 4 ? 'Cancelled' : 'Pending') }}
+                            </span>
+                          </td>
+                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <!-- SELL TRANSACTION TAB -->
+                    <table v-if="ledgerTab === 'sell'" class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70 sticky top-0 z-10">
+                        <tr>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
+                        <tr v-if="sellTransactions.length === 0">
+                          <td colspan="4" class="px-6 py-10 text-center text-slate-400">
+                            No Sell (withdrawal) transactions found.
+                          </td>
+                        </tr>
+                        <tr v-for="tx in sellTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
+                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
+                          <td class="px-5 py-3 font-extrabold text-slate-900">₹{{ formatCurrency(tx.amount) }}</td>
+                          <td class="px-5 py-3">
+                            <span :class="['inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')]">
+                              {{ tx.payer_status === 3 ? 'Success' : (tx.payer_status === 4 ? 'Cancelled' : 'Pending') }}
+                            </span>
+                          </td>
+                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <!-- ADMIN ADJUSTMENT TRANSACTION TAB -->
+                    <table v-if="ledgerTab === 'admin'" class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70 sticky top-0 z-10">
+                        <tr>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Notes/Reason</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
+                        <tr v-if="adminTransactions.length === 0">
+                          <td colspan="5" class="px-6 py-10 text-center text-slate-400">
+                            No Admin transactions found.
+                          </td>
+                        </tr>
+                        <tr v-for="tx in adminTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
+                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
+                          <td class="px-5 py-3 font-extrabold text-slate-900" :class="tx.amount >= 0 ? 'text-emerald-600' : 'text-red-500'">
+                            {{ tx.amount >= 0 ? '+' : '' }}₹{{ formatCurrency(tx.amount) }}
+                          </td>
+                          <td class="px-5 py-3">
+                            <span class="inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px] bg-slate-100 text-slate-700">
+                              Success
+                            </span>
+                          </td>
+                          <td class="px-5 py-3 font-medium text-slate-600">{{ tx.reason_for_rejection || 'Admin Adjustment' }}</td>
+                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                  </div>
+                </div>
+
+                <!-- Dynamic Balance Management (New Feature) -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-scale-balanced purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">Direct Balance Management</h3>
+                    </div>
+                    <span class="text-xs bg-purple-50 text-purple-700 font-extrabold px-3 py-1 rounded-full">
+                      Current: ₹{{ formatCurrency(selectedUser.balance) }}
+                    </span>
+                  </div>
+
+                  <div class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Amount (₹)</label>
+                        <input type="number" step="0.01" v-model="balanceActionAmount" placeholder="e.g. 500"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                      </div>
+
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Reason / Notes</label>
+                        <input type="text" v-model="balanceActionReason" placeholder="e.g. Referral bonus reward"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3 pt-2">
+                      <button @click="handleBalanceAction('add')" :disabled="balanceActionLoading"
+                        class="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                        <i class="fa-solid fa-plus text-[10px]"></i> Deposit (+)
+                      </button>
+
+                      <button @click="handleBalanceAction('subtract')" :disabled="balanceActionLoading"
+                        class="py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                        <i class="fa-solid fa-minus text-[10px]"></i> Deduct (-)
+                      </button>
+
+                      <button @click="handleBalanceAction('set')" :disabled="balanceActionLoading"
+                        class="py-3 bg-slate-950 hover:bg-slate-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                        <i class="fa-solid fa-equals text-[10px]"></i> Set Balance (=)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Successfully Linked UPI Partners & Status Card (New Feature) -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-building-columns purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">Linked UPI Partners &amp; Selling Status</h3>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">KYC Binds</span>
+                  </div>
+
+                  <div class="space-y-4">
+                    <div v-if="!selectedUser.collectionTools || selectedUser.collectionTools.length === 0" class="py-6 text-center text-slate-400">
+                      <div class="flex flex-col items-center justify-center max-w-xs mx-auto">
+                        <i class="fa-solid fa-wallet text-2xl text-slate-200 mb-2"></i>
+                        <h4 class="text-xs font-bold text-slate-600">No linked UPI partners found</h4>
+                        <p class="text-[11px] text-slate-400 mt-0.5">The user has not linked any UPI accounts to this wallet yet.</p>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                      <div v-for="tool in selectedUser.collectionTools" :key="tool.id" class="p-4 bg-slate-50 rounded-xl border border-slate-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div class="space-y-1.5">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm font-extrabold text-slate-800 tracking-tight">{{ tool.upi }}</span>
+                            <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider', tool.state === 2 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100']">
+                              {{ tool.state === 2 ? 'Active / Linked' : 'Unlinked / Inactive' }}
+                            </span>
+                          </div>
+                          
+                          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
+                            <span>Phone: <span class="text-slate-700 font-bold">{{ tool.account || 'N/A' }}</span></span>
+                            <span>Name: <span class="text-slate-700 font-bold">{{ tool.pnname || 'N/A' }}</span></span>
+                            <span class="col-span-2 mt-0.5">
+                              Selling State: 
+                              <span :class="['font-bold', tool.inSell === 1 ? 'text-emerald-600' : 'text-slate-400']">
+                                {{ tool.inSell === 1 ? 'SELLING ENABLED' : 'SELLING DISABLED' }}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <!-- Action Toggles -->
+                        <div class="flex flex-row sm:flex-col gap-2 shrink-0">
+                          <button @click="toggleCollectionToolInSell(tool)" 
+                            :class="['px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition shadow-xs text-center border', tool.inSell === 1 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100']">
+                            {{ tool.inSell === 1 ? 'Disable Selling' : 'Enable Selling' }}
+                          </button>
+                          
+                          <button @click="toggleCollectionToolState(tool)" 
+                            :class="['px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition shadow-xs text-center border', tool.state === 2 ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100']">
+                            {{ tool.state === 2 ? 'Unlink UPI' : 'Activate/Link' }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Active Devices & Sessions (New Feature) -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-mobile-screen-button purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">Active Sessions &amp; Logged-in Devices</h3>
+                    </div>
+                    <span class="text-xs bg-indigo-50 text-indigo-700 font-extrabold px-3 py-1 rounded-full">
+                      {{ selectedUser.sessions ? selectedUser.sessions.length : 0 }} Active
+                    </span>
+                  </div>
+
+                  <div class="space-y-4">
+                    <div v-if="!selectedUser.sessions || selectedUser.sessions.length === 0" class="py-6 text-center text-slate-400">
+                      <div class="flex flex-col items-center justify-center max-w-xs mx-auto">
+                        <i class="fa-solid fa-shield text-2xl text-slate-200 mb-2"></i>
+                        <h4 class="text-xs font-bold text-slate-600">No active sessions tracked</h4>
+                        <p class="text-[11px] text-slate-400 mt-0.5">This user has no current active sessions registered.</p>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                      <div v-for="sess in selectedUser.sessions" :key="sess.token" class="p-4 bg-slate-50 rounded-xl border border-slate-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div class="space-y-1.5 flex-1">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm font-extrabold text-slate-800 tracking-tight flex items-center gap-1.5">
+                              <i v-if="sess.device && sess.device.toLowerCase().includes('phone')" class="fa-solid fa-mobile-screen text-indigo-500"></i>
+                              <i v-else-if="sess.device && sess.device.toLowerCase().includes('tablet')" class="fa-solid fa-tablet-screen-button text-indigo-500"></i>
+                              <i v-else class="fa-solid fa-laptop text-indigo-500"></i>
+                              {{ sess.device || 'Unknown Device' }}
+                            </span>
+                            <span class="text-xs bg-slate-200/60 text-slate-600 px-2 py-0.5 rounded-lg font-bold">
+                              {{ sess.browser || 'Browser' }}
+                            </span>
+                          </div>
+                          
+                          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
+                            <span>IP Address: <span class="text-slate-700 font-bold font-mono">{{ sess.ip || 'N/A' }}</span></span>
+                            <span>Location: <span class="text-slate-700 font-bold">{{ sess.location || 'N/A' }}</span></span>
+                            <span>Logged In: <span class="text-slate-700 font-bold">{{ formatDate(sess.loginTime) }}</span></span>
+                            <span>Last Active: <span class="text-indigo-600 font-extrabold">{{ formatDate(sess.lastActive) }}</span></span>
+                          </div>
+                        </div>
+
+                        <!-- Terminate Action -->
+                        <div class="shrink-0">
+                          <button @click="terminateUserSession(sess.token)" 
+                            class="w-full sm:w-auto px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs">
+                            <i class="fa-solid fa-arrow-right-from-bracket"></i> Terminate Session
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
+
             </div>
 
-            <div>
-              <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount (₹)</label>
-              <input type="number" step="0.01" v-model.number="adjForm.amount" required
-                class="mt-1.5 block w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                placeholder="Enter deposit/deduction amount...">
-            </div>
+          </div>
 
-            <div class="flex gap-2 pt-2">
-              <button type="button" @click="modalOpen = false" class="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
-                Cancel
-              </button>
-              <button type="submit" :disabled="adjLoading"
-                class="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition disabled:opacity-50">
-                <span v-if="adjLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Applying...</span>
-                <span v-else>Apply Adjust</span>
-              </button>
-            </div>
-          </form>
-        </div>
+        </main>
+
       </div>
+
     </div>
 
   </div>
@@ -574,16 +1082,47 @@
         const users = ref([]);
         const searchQuery = ref('');
 
-        // User Drawer & Modals state
-        const drawerOpen = ref(false);
-        const modalOpen = ref(false);
+        // Take Action Workspace Data
         const selectedUser = ref(null);
-        
-        const adjForm = reactive({
-          type: 'add',
-          amount: ''
+        const selectedTelemetry = ref({});
+        const buyTransactions = ref([]);
+        const sellTransactions = ref([]);
+        const adminTransactions = ref([]);
+        const ledgerTab = ref('buy');
+
+        const isSidebarCollapsed = ref(false);
+        const balanceActionAmount = ref('');
+        const balanceActionReason = ref('');
+        const balanceActionLoading = ref(false);
+        const autoRefreshTimer = ref(null);
+
+        // Edit Profile Form State
+        const editUserForm = reactive({
+          realName: '',
+          phone: '',
+          kycPartner: '',
+          upiKycPartner: '',
+          kycStatus: 0,
+          balance: 0,
+          recharge: 0,
+          commission: 0,
+          todayProfit: 0,
+          inverterDetails: '',
+          vipLevel: 1,
+          parentUser: ''
         });
-        const adjLoading = ref(false);
+        const editProfileLoading = ref(false);
+        const editInvestorLoading = ref(false);
+
+        // Add Transaction Form State
+        const addTxForm = reactive({
+          type: 'recharge',
+          amount: '',
+          utr: '',
+          status: 3,
+          reason: ''
+        });
+        const addTxLoading = ref(false);
 
         // Authorization Headers
         const getAuthHeaders = () => {
@@ -604,7 +1143,6 @@
           errorMsg.value = '';
           loading.value = true;
           try {
-            // Log in via normal bypass login endpoint
             const res = await fetch('/xxapi/login', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -621,11 +1159,12 @@
               isLoggedIn.value = true;
               activeTab.value = 'dashboard';
               refreshData();
+              startAutoRefresh();
             } else {
-              errorMsg.value = data.msg || 'Authentication failed. Please check user seeding.';
+              errorMsg.value = data.msg || 'Authentication failed. Please seed users first.';
             }
           } catch (e) {
-            errorMsg.value = 'Network error during login.';
+            errorMsg.value = 'Network connection error during login.';
           } finally {
             loading.value = false;
           }
@@ -636,10 +1175,13 @@
           isLoggedIn.value = false;
           loginForm.phone = '';
           loginForm.password = '';
+          stopAutoRefresh();
         };
 
         const refreshData = () => {
-          if (activeTab.value === 'dashboard') {
+          if (selectedUser.value) {
+            fetchUserDetail(selectedUser.value._id);
+          } else if (activeTab.value === 'dashboard') {
             fetchStats();
           } else {
             fetchUsers();
@@ -692,54 +1234,149 @@
           }
         };
 
-        const showUserDrawer = (user) => {
-          selectedUser.value = user;
-          adjForm.type = 'add';
-          adjForm.amount = '';
-          drawerOpen.value = true;
+        // Workspace Loader
+        const loadTakeActionWorkspace = (user) => {
+          fetchUserDetail(user._id);
         };
 
-        const openQuickBalance = (user) => {
-          selectedUser.value = user;
-          adjForm.type = 'add';
-          adjForm.amount = '';
-          modalOpen.value = true;
-        };
-
-        const openBalanceShortCut = () => {
-          activeTab.value = 'users';
-          fetchUsers();
-        };
-
-        const updateBalance = async (user) => {
-          if (!adjForm.amount || isNaN(adjForm.amount) || adjForm.amount <= 0) {
-            alert('Please enter a valid positive adjustment amount.');
-            return;
-          }
-          adjLoading.value = true;
+        const fetchUserDetail = async (userId) => {
+          fetching.value = true;
           try {
-            const res = await fetch('/xxapi/admin/updateBalance', {
+            const res = await fetch(`/xxapi/admin/userDetail?userId=${userId}`, {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              selectedUser.value = data.data.user;
+              selectedTelemetry.value = data.data.telemetry;
+              buyTransactions.value = data.data.buyTransactions;
+              sellTransactions.value = data.data.sellTransactions;
+              adminTransactions.value = data.data.adminTransactions;
+
+              // Populate edit forms
+              editUserForm.realName = selectedUser.value.realName || '';
+              editUserForm.phone = selectedUser.value.phone || '';
+              editUserForm.kycPartner = selectedUser.value.kycPartner || '';
+              editUserForm.upiKycPartner = selectedUser.value.upiKycPartner || '';
+              editUserForm.kycStatus = selectedUser.value.kycStatus || 0;
+              editUserForm.balance = selectedUser.value.balance || 0;
+              editUserForm.recharge = selectedUser.value.recharge || 0;
+              editUserForm.commission = selectedUser.value.commission || 0;
+              editUserForm.todayProfit = selectedUser.value.todayProfit || 0;
+              editUserForm.inverterDetails = selectedUser.value.inverterDetails || '';
+              editUserForm.vipLevel = selectedUser.value.vipLevel || 1;
+              editUserForm.parentUser = selectedUser.value.parentUser || '';
+            } else {
+              alert('Error loading user detailed profile: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Failed to connect to backend detailed profiles.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        // Submit Profile update
+        const updateTakeActionProfile = async () => {
+          editProfileLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/updateUserDetail', {
               method: 'POST',
               headers: getAuthHeaders(),
               body: JSON.stringify({
-                userId: user._id,
-                amount: adjForm.amount,
-                type: adjForm.type
+                userId: selectedUser.value._id,
+                fields: {
+                  realName: editUserForm.realName,
+                  phone: editUserForm.phone,
+                  kycPartner: editUserForm.kycPartner,
+                  upiKycPartner: editUserForm.upiKycPartner,
+                  kycStatus: editUserForm.kycStatus
+                }
               })
             });
             const data = await res.json();
             if (data.code === 0) {
-              alert(`Success: Balance updated to ₹${data.balance}`);
-              modalOpen.value = false;
-              drawerOpen.value = false;
-              refreshData();
+              alert('KYC & integration details saved successfully!');
+              fetchUserDetail(selectedUser.value._id);
             } else {
-              alert(`Error: ${data.msg}`);
+              alert('Error: ' + data.msg);
             }
           } catch (e) {
-            alert('Error contacting administrative server.');
+            alert('Failed to update integration details.');
           } finally {
-            adjLoading.value = false;
+            editProfileLoading.value = false;
+          }
+        };
+
+        // Submit Investor & Inverter update
+        const updateInvestorDetails = async () => {
+          editInvestorLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/updateUserDetail', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                fields: {
+                  balance: editUserForm.balance,
+                  recharge: editUserForm.recharge,
+                  commission: editUserForm.commission,
+                  todayProfit: editUserForm.todayProfit,
+                  inverterDetails: editUserForm.inverterDetails,
+                  vipLevel: editUserForm.vipLevel,
+                  parentUser: editUserForm.parentUser
+                }
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Investor & inverter parameters updated successfully!');
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to update parameters.');
+          } finally {
+            editInvestorLoading.value = false;
+          }
+        };
+
+        // Add custom log entry
+        const addCustomTransactionRecord = async () => {
+          if (!addTxForm.amount || isNaN(addTxForm.amount) || addTxForm.amount <= 0) {
+            alert('Please enter a valid amount.');
+            return;
+          }
+          addTxLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/addTransaction', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                type: addTxForm.type,
+                amount: addTxForm.amount,
+                utr: addTxForm.utr,
+                status: addTxForm.status,
+                reason: addTxForm.reason
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Transaction written to ledgers successfully!');
+              addTxForm.amount = '';
+              addTxForm.utr = '';
+              addTxForm.reason = '';
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to write custom transaction log.');
+          } finally {
+            addTxLoading.value = false;
           }
         };
 
@@ -759,11 +1396,217 @@
           return 'Mobile / Tablet Device';
         };
 
+        const formatDate = (val) => {
+          if (!val) return '—';
+          // val can be seconds or milliseconds or date object
+          let d = new Date(val);
+          if (typeof val === 'number' && val < 9999999999) {
+            d = new Date(val * 1000);
+          }
+          return d.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        };
+
+        const startAutoRefresh = () => {
+          if (autoRefreshTimer.value) clearInterval(autoRefreshTimer.value);
+          autoRefreshTimer.value = setInterval(() => {
+            if (isLoggedIn.value) {
+              if (selectedUser.value) {
+                fetchUserDetailSoft(selectedUser.value._id);
+              } else if (activeTab.value === 'dashboard') {
+                fetchStats();
+              } else if (activeTab.value === 'users') {
+                fetchUsers();
+              }
+            }
+          }, 8000);
+        };
+
+        const fetchUserDetailSoft = async (userId) => {
+          try {
+            const res = await fetch(`/xxapi/admin/userDetail?userId=${userId}`, {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              buyTransactions.value = data.data.buyTransactions;
+              sellTransactions.value = data.data.sellTransactions;
+              adminTransactions.value = data.data.adminTransactions;
+              selectedTelemetry.value = data.data.telemetry;
+              if (selectedUser.value) {
+                selectedUser.value.balance = data.data.user.balance;
+                selectedUser.value.recharge = data.data.user.recharge;
+                selectedUser.value.kycStatus = data.data.user.kycStatus;
+                selectedUser.value.collectionTools = data.data.user.collectionTools;
+                selectedUser.value.invitedCount = data.data.user.invitedCount;
+              }
+            }
+          } catch (e) {
+            console.error('Soft refresh error:', e);
+          }
+        };
+
+        const stopAutoRefresh = () => {
+          if (autoRefreshTimer.value) {
+            clearInterval(autoRefreshTimer.value);
+            autoRefreshTimer.value = null;
+          }
+        };
+
+        const handleBalanceAction = async (action) => {
+          const amt = Number(balanceActionAmount.value);
+          if (!amt || isNaN(amt) || amt <= 0) {
+            alert('Please enter a valid amount.');
+            return;
+          }
+          balanceActionLoading.value = true;
+          try {
+            let currentBal = Number(selectedUser.value.balance || 0);
+            let newBal = currentBal;
+            let delta = amt;
+            let actionLabel = 'Admin Adjustment';
+
+            if (action === 'add') {
+              newBal = currentBal + amt;
+              delta = amt;
+              actionLabel = 'Admin Fund Deposit';
+            } else if (action === 'subtract') {
+              newBal = currentBal - amt;
+              delta = -amt;
+              actionLabel = 'Admin Fund Deduction';
+            } else if (action === 'set') {
+              newBal = amt;
+              delta = newBal - currentBal;
+              actionLabel = 'Admin Fund Reset';
+            }
+
+            const reason = balanceActionReason.value.trim() || `${actionLabel} manually by Admin`;
+
+            // 1. Update user detail balance
+            const resDetail = await fetch('/xxapi/admin/updateUserDetail', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                fields: { balance: newBal }
+              })
+            });
+            const dataDetail = await resDetail.json();
+
+            if (dataDetail.code === 0) {
+              // 2. Add transaction record automatically
+              await fetch('/xxapi/admin/addTransaction', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                  userId: selectedUser.value._id,
+                  type: 'admin',
+                  amount: delta,
+                  status: 3,
+                  reason: reason
+                })
+              });
+
+              alert('Balance adjusted successfully!');
+              balanceActionAmount.value = '';
+              balanceActionReason.value = '';
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error updating balance: ' + dataDetail.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Network error managing user balance.');
+          } finally {
+            balanceActionLoading.value = false;
+          }
+        };
+
+        const toggleCollectionToolInSell = async (tool) => {
+          const newInSell = tool.inSell === 1 ? 0 : 1;
+          try {
+            const res = await fetch('/xxapi/admin/updateCollectionTool', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                toolId: tool.id,
+                inSell: newInSell
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert(`Selling status successfully ${newInSell === 1 ? 'Enabled' : 'Disabled'}!`);
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to update selling status.');
+          }
+        };
+
+        const toggleCollectionToolState = async (tool) => {
+          const newState = tool.state === 2 ? 1 : 2;
+          try {
+            const res = await fetch('/xxapi/admin/updateCollectionTool', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                toolId: tool.id,
+                state: newState
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert(`Link status successfully changed to ${newState === 2 ? 'Active' : 'Unlinked'}!`);
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to update link status.');
+          }
+        };
+
+        const terminateUserSession = async (tokenToLogout) => {
+          if (!confirm('Are you sure you want to remotely log out this session/device?')) {
+            return;
+          }
+          try {
+            const res = await fetch('/xxapi/admin/logoutUserSession', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                tokenToLogout: tokenToLogout
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Session terminated successfully!');
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error terminating session: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Failed to terminate session due to a network error.');
+          }
+        };
+
         onMounted(() => {
           const token = localStorage.getItem('admin_token');
           if (token && token === 'token-7870873927') {
             isLoggedIn.value = true;
             refreshData();
+            startAutoRefresh();
           }
         });
 
@@ -777,21 +1620,36 @@
           stats,
           users,
           searchQuery,
-          drawerOpen,
-          modalOpen,
           selectedUser,
-          adjForm,
-          adjLoading,
+          selectedTelemetry,
+          buyTransactions,
+          sellTransactions,
+          adminTransactions,
+          ledgerTab,
+          editUserForm,
+          editProfileLoading,
+          editInvestorLoading,
+          addTxForm,
+          addTxLoading,
+          isSidebarCollapsed,
+          balanceActionAmount,
+          balanceActionReason,
+          balanceActionLoading,
           handleLogin,
           handleLogout,
           refreshData,
           fetchUsers,
-          showUserDrawer,
-          openQuickBalance,
-          openBalanceShortCut,
-          updateBalance,
+          loadTakeActionWorkspace,
+          updateTakeActionProfile,
+          updateInvestorDetails,
+          addCustomTransactionRecord,
           formatCurrency,
-          parseUserAgent
+          parseUserAgent,
+          formatDate,
+          handleBalanceAction,
+          toggleCollectionToolInSell,
+          toggleCollectionToolState,
+          terminateUserSession
         };
       }
     }).mount('#app');
