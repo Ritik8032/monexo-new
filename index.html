@@ -99,6 +99,7 @@
           stack: e.error ? e.error.stack : ''
         };
         if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
+          e.preventDefault();
           return;
         }
         console.error("GLOBAL ERROR CAPTURED:", errorInfo);
@@ -115,6 +116,7 @@
           stack: e.reason ? e.reason.stack : ''
         };
         if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
+          e.preventDefault();
           return;
         }
         console.error("GLOBAL REJECTION CAPTURED:", errorInfo);
