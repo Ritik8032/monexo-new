@@ -46,9 +46,26 @@ function getHtmlFilePath(filename: string): string {
 const app = express();
 const PORT = 3000;
 
-// Enable JSON and URL-encoded parsing with generous limits
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// Smart serverless-compatible body parser wrapper
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+    return next();
+  }
+  express.json({ limit: '10mb' })(req, res, (err) => {
+    if (err) {
+      console.error('[Body Parser Error]', err.message || err);
+      req.body = {};
+      return next();
+    }
+    express.urlencoded({ limit: '10mb', extended: true })(req, res, (err) => {
+      if (err) {
+        console.error('[Urlencoded Parser Error]', err.message || err);
+      }
+      if (!req.body) req.body = {};
+      next();
+    });
+  });
+});
 
 // ONLY use multer if the request is actually multipart/form-data.
 // Since we don't use it anywhere, we can safely bypass it otherwise.
@@ -73,8 +90,14 @@ const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://Ritik:Ritik906087@td
 let cachedDbPromise = null;
 
 async function connectToDatabase() {
-  if (mongoose.connection.readyState === 1) {
+  const state = mongoose.connection.readyState;
+  if (state === 1) {
     return mongoose.connection;
+  }
+  
+  // If the connection is closed or closing, reset cached promise to trigger a clean reconnect
+  if (state === 0 || state === 3) {
+    cachedDbPromise = null;
   }
   
   if (!cachedDbPromise) {

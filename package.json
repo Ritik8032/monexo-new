@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "mkdir -p dist && cp -r assets static favicon.ico index.html admin.html robots.txt rsCfg.json dist/ && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "start": "node -e \"const fs = require('fs'); if (!fs.existsSync('dist/server.cjs')) { console.log('dist/server.cjs not found, running build...'); require('child_process').execSync('npm run build', {stdio: 'inherit'}); }\" && node dist/server.cjs",
     "preview": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "echo 'No lint step required'"
@@ -23,8 +23,7 @@
     "multer": "^2.2.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "serverless-http": "^4.0.0",
-    "vite": "^6.2.3"
+    "serverless-http": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
