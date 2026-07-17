@@ -456,7 +456,16 @@ app.use((req, res, next) => {
   }
 
   // Prepend /xxapi if a clean API request path is accessed without it (e.g. checkSmsNew or config)
-  if (!req.url.startsWith('/xxapi') && req.url !== '/' && !req.url.startsWith('/admin') && !req.url.includes('.')) {
+  const isFrontendRoute = [
+    '/buyinrdetail', '/buyinrinduspay', '/buyitokeninr', '/rechargeToken',
+    '/sell', '/my', '/login', '/rs', '/rscf', '/rslanding', '/registersuccess',
+    '/invite', '/myteam', '/activity', '/invitelinkmanage', '/authupi',
+    '/bindtg', '/kycpartner', '/linkkycpartner', '/test', '/home'
+  ].some(route => req.url.startsWith(route) || (req.path && req.path.startsWith(route)));
+
+  const acceptsHtml = !!(req.headers.accept && req.headers.accept.includes('text/html'));
+
+  if (!req.url.startsWith('/xxapi') && req.url !== '/' && !req.url.startsWith('/admin') && !req.url.includes('.') && !isFrontendRoute && !acceptsHtml) {
     req.url = '/xxapi' + (req.url.startsWith('/') ? '' : '/') + req.url;
   }
   
