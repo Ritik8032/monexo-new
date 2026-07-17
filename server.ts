@@ -267,7 +267,7 @@ function mapCtTypeToUpiType(ct_type) {
   if (typeStr.includes("iob")) return "iob";
   if (typeStr.includes("amazon")) return "amazon";
   if (typeStr.includes("jio")) return "jiof";
-  if (typeStr.includes("navi")) return "navi";
+  if (typeStr.includes("navi")) return "naviu";
   if (typeStr.includes("freo")) return "freo";
 
   const typeNum = Number(ct_type);
@@ -284,7 +284,7 @@ function mapCtTypeToUpiType(ct_type) {
     case 17: return "iob";
     case 18: return "amazon";
     case 19: return "phonepe"; // PhonePe Business
-    case 20: return "navi"; // Navi UPI
+    case 20: return "naviu"; // Navi UPI
     case 21: return "freo"; // Freo UPI
     default: return "paytm"; // Default fallback
   }
