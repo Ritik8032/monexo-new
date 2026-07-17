@@ -201,6 +201,16 @@
               </div>
               <i v-if="!isSidebarCollapsed" class="fa-solid fa-angle-right text-xs opacity-50"></i>
             </button>
+
+            <button @click="activeTab = 'nodes'; selectedUser = null; fetchNodes();" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodes' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
+              :title="isSidebarCollapsed ? 'Node Settings' : ''">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-circle-nodes text-base"></i>
+                <span v-if="!isSidebarCollapsed">Node Settings</span>
+              </div>
+              <i v-if="!isSidebarCollapsed" class="fa-solid fa-angle-right text-xs opacity-50"></i>
+            </button>
           </div>
 
           <div v-if="!isSidebarCollapsed" class="pt-6 border-t border-slate-100 w-full">
@@ -223,10 +233,10 @@
               <div class="flex items-center gap-2 text-xs text-slate-400 font-semibold uppercase tracking-wider">
                 <span>Overview</span>
                 <i class="fa-solid fa-chevron-right text-[8px]"></i>
-                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : 'Manage Users') }}</span>
+                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : (activeTab === 'nodes' ? 'Node Settings' : 'Manage Users')) }}</span>
               </div>
               <h1 class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-800 mt-1">
-                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : 'Find & Manage Users') }}
+                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : (activeTab === 'nodes' ? 'Admin Payment Nodes' : 'Find & Manage Users')) }}
               </h1>
             </div>
             
@@ -596,9 +606,199 @@
           </div>
 
           <!-- ========================================== -->
+          <!-- TAB 4: ADMIN PAYMENT NODES (NODE SETTINGS) -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'nodes' && !selectedUser" class="space-y-6">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              <!-- Left Column: Add / Edit Form -->
+              <div class="lg:col-span-5">
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-circle-nodes purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">{{ isEditingNode ? 'Modify Payment Node' : 'Register Payment Node' }}</h3>
+                    </div>
+                    <button v-if="isEditingNode" @click="resetNodeForm" class="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg border border-red-100 hover:bg-red-100 transition">
+                      Cancel Edit
+                    </button>
+                  </div>
+
+                  <form @submit.prevent="saveNode" class="space-y-4">
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Payee / Recipient Name</label>
+                      <input type="text" v-model="editNodeForm.name" required placeholder="e.g. Monexo Merchant"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Node Type</label>
+                      <div class="grid grid-cols-2 gap-3">
+                        <button type="button" @click="editNodeForm.type = 'bank'"
+                          :class="['py-3 px-4 rounded-xl border font-semibold text-sm transition flex items-center justify-center gap-2', editNodeForm.type === 'bank' ? 'bg-[#b66dff]/10 border-[#b66dff] text-[#b66dff]' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100']">
+                          <i class="fa-solid fa-building-columns"></i> Bank Account
+                        </button>
+                        <button type="button" @click="editNodeForm.type = 'upi'"
+                          :class="['py-3 px-4 rounded-xl border font-semibold text-sm transition flex items-center justify-center gap-2', editNodeForm.type === 'upi' ? 'bg-[#b66dff]/10 border-[#b66dff] text-[#b66dff]' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100']">
+                          <i class="fa-solid fa-qrcode"></i> UPI ID
+                        </button>
+                      </div>
+                    </div>
+
+                    <div v-if="editNodeForm.type === 'bank'">
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Bank Name</label>
+                      <input type="text" v-model="editNodeForm.bankName" required placeholder="e.g. State Bank of India"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {{ editNodeForm.type === 'bank' ? 'Bank Account Number' : 'UPI ID / VPA' }}
+                      </label>
+                      <input type="text" v-model="editNodeForm.accountNumber" required :placeholder="editNodeForm.type === 'bank' ? 'e.g. 918273645019' : 'e.g. monexo@upi'"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div v-if="editNodeForm.type === 'bank'">
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">IFSC Code</label>
+                      <input type="text" v-model="editNodeForm.ifsc" required placeholder="e.g. SBIN0001234"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Target Amount (₹)</label>
+                      <input type="number" v-model.number="editNodeForm.amount" required placeholder="e.g. 1000"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      <span class="text-[10px] text-slate-400 font-medium mt-1 block">When users place orders for this amount, these payment details will be served.</span>
+                    </div>
+
+                    <div class="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
+                      <div>
+                        <span class="block text-xs font-bold text-slate-700">Node Active Status</span>
+                        <span class="block text-[10px] text-slate-400">Toggle whether this account is currently serving buy orders.</span>
+                      </div>
+                      <label class="relative inline-flex items-center cursor-pointer select-none">
+                        <input type="checkbox" v-model="editNodeForm.status" class="sr-only peer">
+                        <div class="w-11 h-6 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#b66dff]"></div>
+                      </label>
+                    </div>
+
+                    <button type="submit" class="w-full py-3.5 purple-btn text-white rounded-xl text-sm font-bold shadow-md transition hover:opacity-95 flex items-center justify-center gap-2">
+                      <i class="fa-solid fa-floppy-disk"></i> {{ isEditingNode ? 'Update Payment Node' : 'Create Payment Node' }}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Right Column: List of existing Nodes -->
+              <div class="lg:col-span-7">
+                <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-full">
+                  <div class="p-5 border-b border-slate-50 flex justify-between items-center">
+                    <div>
+                      <h3 class="text-base font-bold text-slate-800">Serving Payment Nodes Registry</h3>
+                      <p class="text-xs text-slate-400">Database nodes configured to receive deposit amounts from users</p>
+                    </div>
+                    <button @click="fetchNodes" class="p-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-600 transition" title="Refresh list">
+                      <i class="fa-solid fa-rotate-right text-xs"></i>
+                    </button>
+                  </div>
+
+                  <div class="flex-1 overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70">
+                        <tr>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Type / Recipient</th>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Details</th>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Serving Amount</th>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="relative px-5 py-3.5">
+                            <span class="sr-only">Actions</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody class="bg-white divide-y divide-slate-100 text-sm">
+                        <tr v-for="node in nodes" :key="node._id" class="hover:bg-slate-50/50 transition">
+                          <!-- Type / Recipient -->
+                          <td class="px-5 py-4">
+                            <div class="flex items-center gap-3">
+                              <div :class="['h-9 w-9 rounded-xl flex items-center justify-center text-sm', node.type === 'bank' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-purple-50 text-purple-600 border border-purple-100']">
+                                <i :class="node.type === 'bank' ? 'fa-solid fa-building-columns' : 'fa-solid fa-qrcode'"></i>
+                              </div>
+                              <div>
+                                <span class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">{{ node.type }}</span>
+                                <span class="block font-bold text-slate-800">{{ node.name }}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <!-- Details -->
+                          <td class="px-5 py-4">
+                            <div class="text-xs">
+                              <div v-if="node.type === 'bank'">
+                                <span class="block font-semibold text-slate-700">Bank: <span class="text-slate-500 font-normal">{{ node.bankName }}</span></span>
+                                <span class="block font-semibold text-slate-700">Acc: <span class="text-slate-800 font-mono">{{ node.accountNumber }}</span></span>
+                                <span class="block font-semibold text-slate-700">IFSC: <span class="text-slate-800 font-mono">{{ node.ifsc }}</span></span>
+                              </div>
+                              <div v-else>
+                                <span class="block font-semibold text-slate-700">UPI ID:</span>
+                                <span class="block text-slate-800 font-mono font-bold select-all bg-purple-50/50 px-1.5 py-0.5 rounded border border-purple-100/30 inline-block">{{ node.accountNumber }}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <!-- Serving Amount -->
+                          <td class="px-5 py-4">
+                            <span class="inline-flex items-center gap-1 bg-slate-50 text-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 font-bold text-xs">
+                              ₹{{ formatCurrency(node.amount) }}
+                            </span>
+                          </td>
+
+                          <!-- Status -->
+                          <td class="px-5 py-4">
+                            <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider', node.status ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-50 text-slate-400 border border-slate-200']">
+                              <span :class="['h-1.5 w-1.5 rounded-full mr-1.5', node.status ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300']"></span>
+                              {{ node.status ? 'Serving' : 'Inactive' }}
+                            </span>
+                          </td>
+
+                          <!-- Actions -->
+                          <td class="px-5 py-4 text-right">
+                            <div class="flex items-center justify-end gap-1.5">
+                              <button @click="editNode(node)" class="p-2 text-slate-400 hover:text-[#b66dff] hover:bg-purple-50 rounded-lg transition" title="Modify Details">
+                                <i class="fa-solid fa-pencil"></i>
+                              </button>
+                              <button @click="deleteNode(node._id)" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Delete Node">
+                                <i class="fa-solid fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        <!-- Empty State -->
+                        <tr v-if="nodes.length === 0">
+                          <td colspan="5" class="px-5 py-12 text-center">
+                            <div class="max-w-[240px] mx-auto text-slate-400 space-y-2">
+                              <i class="fa-solid fa-circle-nodes text-3xl opacity-30"></i>
+                              <p class="text-sm font-bold text-slate-600">No payment nodes defined</p>
+                              <p class="text-xs">Create your first serving UPI/Bank details node in the registration form on the left.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- ========================================== -->
           <!-- DETAILED "TAKE ACTION" VIEW FOR A USER     -->
           <!-- ========================================== -->
-          <div v-else-if="selectedUser" class="space-y-8">
+          <div v-else-if="selectedUser" class="space-y-8 font-sans">
             
             <!-- Quick Summary Panel -->
             <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -1082,6 +1282,19 @@
         const users = ref([]);
         const searchQuery = ref('');
 
+        const nodes = ref([]);
+        const isEditingNode = ref(false);
+        const editNodeForm = reactive({
+          _id: '',
+          name: '',
+          type: 'bank',
+          bankName: '',
+          accountNumber: '',
+          ifsc: '',
+          amount: '',
+          status: true
+        });
+
         // Take Action Workspace Data
         const selectedUser = ref(null);
         const selectedTelemetry = ref({});
@@ -1183,6 +1396,8 @@
             fetchUserDetail(selectedUser.value._id);
           } else if (activeTab.value === 'dashboard') {
             fetchStats();
+          } else if (activeTab.value === 'nodes') {
+            fetchNodes();
           } else {
             fetchUsers();
           }
@@ -1420,6 +1635,8 @@
                 fetchUserDetailSoft(selectedUser.value._id);
               } else if (activeTab.value === 'dashboard') {
                 fetchStats();
+              } else if (activeTab.value === 'nodes') {
+                fetchNodes();
               } else if (activeTab.value === 'users') {
                 fetchUsers();
               }
@@ -1601,6 +1818,115 @@
           }
         };
 
+        const fetchNodes = async () => {
+          fetching.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/nodes', {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              nodes.value = data.data;
+            } else {
+              alert('Failed to load nodes: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Failed to load payment nodes.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        const saveNode = async () => {
+          if (!editNodeForm.name || !editNodeForm.accountNumber || editNodeForm.amount === '') {
+            alert('Please fill all required fields.');
+            return;
+          }
+          fetching.value = true;
+          try {
+            const isEdit = !!editNodeForm._id;
+            const url = isEdit ? `/xxapi/admin/nodes/${editNodeForm._id}` : '/xxapi/admin/nodes';
+            const method = isEdit ? 'PUT' : 'POST';
+            
+            const res = await fetch(url, {
+              method,
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                name: editNodeForm.name,
+                type: editNodeForm.type,
+                bankName: editNodeForm.bankName,
+                accountNumber: editNodeForm.accountNumber,
+                ifsc: editNodeForm.ifsc,
+                amount: Number(editNodeForm.amount),
+                status: editNodeForm.status
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert(isEdit ? 'Payment Node updated successfully!' : 'Payment Node created successfully!');
+              resetNodeForm();
+              fetchNodes();
+            } else {
+              alert('Error saving node: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Network error saving node.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        const editNode = (node) => {
+          isEditingNode.value = true;
+          editNodeForm._id = node._id;
+          editNodeForm.name = node.name;
+          editNodeForm.type = node.type;
+          editNodeForm.bankName = node.bankName;
+          editNodeForm.accountNumber = node.accountNumber;
+          editNodeForm.ifsc = node.ifsc;
+          editNodeForm.amount = node.amount;
+          editNodeForm.status = node.status;
+        };
+
+        const deleteNode = async (nodeId) => {
+          if (!confirm('Are you sure you want to delete this Payment Node?')) {
+            return;
+          }
+          fetching.value = true;
+          try {
+            const res = await fetch(`/xxapi/admin/nodes/${nodeId}`, {
+              method: 'DELETE',
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Payment Node deleted successfully!');
+              fetchNodes();
+            } else {
+              alert('Error deleting node: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Network error deleting node.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        const resetNodeForm = () => {
+          isEditingNode.value = false;
+          editNodeForm._id = '';
+          editNodeForm.name = '';
+          editNodeForm.type = 'bank';
+          editNodeForm.bankName = '';
+          editNodeForm.accountNumber = '';
+          editNodeForm.ifsc = '';
+          editNodeForm.amount = '';
+          editNodeForm.status = true;
+        };
+
         onMounted(() => {
           const token = localStorage.getItem('admin_token');
           if (token && token === 'token-7870873927') {
@@ -1649,7 +1975,15 @@
           handleBalanceAction,
           toggleCollectionToolInSell,
           toggleCollectionToolState,
-          terminateUserSession
+          terminateUserSession,
+          nodes,
+          isEditingNode,
+          editNodeForm,
+          fetchNodes,
+          saveNode,
+          editNode,
+          deleteNode,
+          resetNodeForm
         };
       }
     }).mount('#app');

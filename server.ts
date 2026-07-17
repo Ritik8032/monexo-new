@@ -152,6 +152,19 @@ const User = mongoose.model('User', userSchema);
 const GeneralLog = mongoose.model('GeneralLog', logSchema);
 const Transaction = mongoose.model('Transaction', transactionSchema);
 
+const paymentNodeSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  type: { type: String, enum: ['upi', 'bank'], default: 'bank' },
+  bankName: { type: String, default: '' },
+  accountNumber: { type: String, required: true },
+  ifsc: { type: String, default: '' },
+  amount: { type: Number, required: true },
+  status: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const PaymentNode = mongoose.models.PaymentNode || mongoose.model('PaymentNode', paymentNodeSchema);
+
 // ZOOPAY API INTEGRATION HELPERS
 function generateRandomPhone() {
   const firstDigit = ['6', '7', '8', '9'][Math.floor(Math.random() * 4)];
@@ -1484,6 +1497,45 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
 app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
   const id = req.query.id || 'TXN' + Math.floor(100000 + Math.random() * 900000);
   const amount = req.query.amount || '500';
+
+  // Try to find if there is an existing transaction with this rptNo
+  let tx = await Transaction.findOne({ rptNo: id });
+  if (!tx) {
+    // Also try to find any pending transaction with matching amount
+    tx = await Transaction.findOne({ amount: Number(amount), payer_status: 1 }).sort({ ctime: -1 });
+  }
+
+  let payee_bankname = "State Bank of India";
+  let payment_method = "bank";
+  let payee_recipients_name = "Admin";
+  let payee_ifsc = "SBIN0001234";
+  let payee_bank_account = "9876543210";
+
+  if (tx) {
+    payee_bankname = tx.payee_bankname || payee_bankname;
+    payment_method = tx.payment_method === 1 ? "upi" : "bank";
+    payee_recipients_name = tx.payee_recipients_name || payee_recipients_name;
+    payee_ifsc = tx.payee_ifsc || payee_ifsc;
+    payee_bank_account = tx.payee_bank_account || payee_bank_account;
+  } else {
+    // Look up active Node for this amount
+    const activeNode = await PaymentNode.findOne({ amount: Number(amount), status: true })
+                       || await PaymentNode.findOne({ status: true });
+    if (activeNode) {
+      payee_recipients_name = activeNode.name;
+      payee_bank_account = activeNode.accountNumber;
+      if (activeNode.type === 'upi') {
+        payment_method = "upi";
+        payee_bankname = "UPI";
+        payee_ifsc = "";
+      } else {
+        payment_method = "bank";
+        payee_bankname = activeNode.bankName;
+        payee_ifsc = activeNode.ifsc;
+      }
+    }
+  }
+
   return res.json({
     code: 0,
     msg: 'success',
@@ -1491,18 +1543,18 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
       id: id,
       orderid: id,
       amount: amount,
-      payee_bankname: "State Bank of India",
-      payment_method: "bank",
-      payee_recipients_name: "Admin",
-      payee_ifsc: "SBIN0001234",
-      payee_bank_account: "9876543210",
-      reason_for_rejection: "",
-      payer_status: 1,
-      confirm_mode: 0,
+      payee_bankname: payee_bankname,
+      payment_method: payment_method,
+      payee_recipients_name: payee_recipients_name,
+      payee_ifsc: payee_ifsc,
+      payee_bank_account: payee_bank_account,
+      reason_for_rejection: tx ? (tx.reason_for_rejection || "") : "",
+      payer_status: tx ? tx.payer_status : 1,
+      confirm_mode: tx ? (tx.confirm_mode || 0) : 0,
       ctType: 1,
       ct_type: 1,
-      countdown: 600,
-      ctime: req.query.ctime || Date.now(),
+      countdown: tx ? (tx.countdown || 600) : 600,
+      ctime: tx ? (tx.ctime * 1000) : (req.query.ctime || Date.now()),
       walletDomain: "https://example.com"
     }
   });
@@ -2127,7 +2179,11 @@ app.all('/xxapi/rechargeConfirm', async (req, res) => {
   const amount = Number(req.body.amount || req.query.amount || 1000);
   const rptNo = `RPT${Date.now()}`;
   
-  const tx = new Transaction({
+  // Look up active Node for this amount
+  const activeNode = await PaymentNode.findOne({ amount: amount, status: true })
+                     || await PaymentNode.findOne({ status: true });
+
+  const txData: any = {
     userId: user._id,
     phone: user.phone,
     rptNo: rptNo,
@@ -2135,7 +2191,23 @@ app.all('/xxapi/rechargeConfirm', async (req, res) => {
     type: 'recharge',
     currentStep: 0,
     payer_status: 1
-  });
+  };
+
+  if (activeNode) {
+    txData.payee_recipients_name = activeNode.name;
+    txData.payee_bank_account = activeNode.accountNumber;
+    if (activeNode.type === 'upi') {
+      txData.payment_method = 1; // upi
+      txData.payee_bankname = 'UPI';
+      txData.payee_ifsc = '';
+    } else {
+      txData.payment_method = 0; // bank
+      txData.payee_bankname = activeNode.bankName;
+      txData.payee_ifsc = activeNode.ifsc;
+    }
+  }
+
+  const tx = new Transaction(txData);
   await tx.save();
   
   return res.json({
@@ -2814,6 +2886,78 @@ app.post('/xxapi/admin/updateCollectionTool', requireAdmin, async (req, res) => 
   } catch (err) {
     console.error('Update collection tool error:', err);
     return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin Payment Nodes APIs
+app.get('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
+  try {
+    const nodes = await PaymentNode.find().sort({ createdAt: -1 });
+    return res.json({ code: 0, msg: 'success', data: nodes });
+  } catch (err) {
+    console.error('Get nodes error:', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.post('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
+  try {
+    const { name, type, bankName, accountNumber, ifsc, amount, status } = req.body;
+    if (!name || !type || !accountNumber || amount === undefined) {
+      return res.json({ code: 400, msg: 'Missing required fields' });
+    }
+    const node = new PaymentNode({
+      name,
+      type,
+      bankName: bankName || '',
+      accountNumber,
+      ifsc: ifsc || '',
+      amount: Number(amount),
+      status: status !== undefined ? Boolean(status) : true
+    });
+    await node.save();
+    return res.json({ code: 0, msg: 'success', data: node });
+  } catch (err) {
+    console.error('Create node error:', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.put('/xxapi/admin/nodes/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, type, bankName, accountNumber, ifsc, amount, status } = req.body;
+    const node = await PaymentNode.findById(id);
+    if (!node) {
+      return res.json({ code: 404, msg: 'Node not found' });
+    }
+    if (name !== undefined) node.name = name;
+    if (type !== undefined) node.type = type;
+    if (bankName !== undefined) node.bankName = bankName;
+    if (accountNumber !== undefined) node.accountNumber = accountNumber;
+    if (ifsc !== undefined) node.ifsc = ifsc;
+    if (amount !== undefined) node.amount = Number(amount);
+    if (status !== undefined) node.status = Boolean(status);
+    
+    await node.save();
+    return res.json({ code: 0, msg: 'success', data: node });
+  } catch (err) {
+    console.error('Update node error:', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.delete('/xxapi/admin/nodes/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await PaymentNode.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.json({ code: 404, msg: 'Node not found' });
+    }
+    return res.json({ code: 0, msg: 'success' });
+  } catch (err) {
+    console.error('Delete node error:', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
   }
 });
 
