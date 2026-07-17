@@ -61,22 +61,29 @@
       })();
 
       // 0. Global Error and Rejection Logging
-      function isIgnorableError(msg) {
+      function isIgnorableError(msg, stack) {
         if (!msg) return true;
-        const lower = String(msg).toLowerCase();
+        const lowerMsg = String(msg).toLowerCase();
+        const lowerStack = stack ? String(stack).toLowerCase() : '';
+        function matches(str) {
+          const lowerStr = str.toLowerCase();
+          return lowerMsg.indexOf(lowerStr) !== -1 || lowerStack.indexOf(lowerStr) !== -1;
+        }
         return (
-          lower.indexOf('failed to fetch') !== -1 ||
-          lower.indexOf('load failed') !== -1 ||
-          lower.indexOf('[object object]') !== -1 ||
-          lower.indexOf('networkerror') !== -1 ||
-          lower.indexOf('aborted') !== -1 ||
-          lower.indexOf('timeout') !== -1 ||
-          lower.indexOf('image load error') !== -1 ||
-          lower.indexOf('load error') !== -1 ||
-          lower.indexOf('script error') !== -1 ||
-          lower.indexOf('avoided redundant navigation') !== -1 ||
-          lower.indexOf('navigationDuplicated') !== -1 ||
-          lower.indexOf('navigation duplicated') !== -1
+          matches('failed to fetch') ||
+          matches('load failed') ||
+          matches('[object object]') ||
+          matches('networkerror') ||
+          matches('aborted') ||
+          matches('timeout') ||
+          matches('image load error') ||
+          matches('load error') ||
+          matches('script error') ||
+          matches('avoided redundant navigation') ||
+          matches('navigationduplicated') ||
+          matches('navigation duplicated') ||
+          matches('createroutererror') ||
+          matches('createnavigationduplicatederror')
         );
       }
 
@@ -91,7 +98,7 @@
           colno: e.colno,
           stack: e.error ? e.error.stack : ''
         };
-        if (isIgnorableError(errorInfo.message)) {
+        if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
           return;
         }
         console.error("GLOBAL ERROR CAPTURED:", errorInfo);
@@ -107,7 +114,7 @@
           message: e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled rejection',
           stack: e.reason ? e.reason.stack : ''
         };
-        if (isIgnorableError(errorInfo.message)) {
+        if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
           return;
         }
         console.error("GLOBAL REJECTION CAPTURED:", errorInfo);
