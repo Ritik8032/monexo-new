@@ -70,58 +70,55 @@ app.use((req, res, next) => {
 // MongoDB Connection
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://Ritik:Ritik906087@tdm.uwkxmdo.mongodb.net/TDM?retryWrites=true&w=majority';
 
+let cachedDbPromise = null;
+
+async function connectToDatabase() {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+  
+  if (!cachedDbPromise) {
+    console.log('[Database] Connecting to MongoDB...');
+    mongoose.set('bufferCommands', false); // CRITICAL: fail fast, don't hang
+    
+    cachedDbPromise = mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 10000,
+    }).then(conn => {
+      console.log('[Database] Successfully connected to MongoDB.');
+      seedAdminUser().catch(err => console.error('Error seeding admin on connection:', err));
+      return conn;
+    }).catch(err => {
+      cachedDbPromise = null; // Reset on failure so we retry next time
+      console.error('[Database] Connection failed:', err);
+      throw err;
+    });
+  }
+  
+  return cachedDbPromise;
+}
+
 // Middleware to guarantee MongoDB connection in Serverless / Netlify environments
 app.use(async (req, res, next) => {
   // Only monitor connection for API endpoints
   const isApiRequest = req.url && (req.url.startsWith('/xxapi') || req.url.startsWith('/api') || req.path.startsWith('/xxapi') || req.path.startsWith('/api'));
   
+  if (!isApiRequest) {
+    return next();
+  }
+
   try {
-    if (mongoose.connection.readyState !== 1) {
-      console.log(`[Mongoose State Monitor] Database connection not ready (state: ${mongoose.connection.readyState}). Ensuring connection...`);
-      if (mongoose.connection.readyState === 0) {
-        // Fast fail on serverless, set timeout to 2500ms
-        await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 2500 });
-      } else {
-        let attempts = 0;
-        // Wait at most 1 second (10 * 100ms)
-        while (mongoose.connection.readyState !== 1 && attempts < 10) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-        if (mongoose.connection.readyState !== 1) {
-          console.warn('[Mongoose State Monitor] Still not connected after waiting. Forcing connection with fast timeout...');
-          await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 2000 });
-        }
-      }
-    }
-    
-    if (mongoose.connection.readyState === 1) {
-      seedAdminUser().catch(err => console.error('Error seeding admin in middleware:', err));
-    } else {
-      throw new Error('Database connection is not ready (readyState is not 1).');
-    }
+    await connectToDatabase();
+    next();
   } catch (err) {
     console.error('[Mongoose State Monitor] Error ensuring connection:', err.message || err);
-    if (isApiRequest) {
-      return res.json({
-        code: 500,
-        msg: `Database connection failed: ${err.message || 'Timeout'}. Please ensure MONGODB_URI is correct and IP 0.0.0.0/0 (allow all IPs) is whitelisted in MongoDB Atlas Network Access.`
-      });
-    }
+    return res.status(500).json({
+      code: 500,
+      msg: `Database connection failed: ${err.message || 'Timeout'}. Please ensure MONGODB_URI is correct and IP 0.0.0.0/0 (allow all IPs) is whitelisted in MongoDB Atlas Network Access.`
+    });
   }
-  next();
 });
 
-console.log('Connecting to MongoDB...');
-mongoose.set('bufferCommands', false); // CRITICAL: fail fast, don't hang
-mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
-  .then(() => {
-    console.log('Successfully connected to MongoDB.');
-    seedAdminUser().catch(err => console.error('Error seeding admin on initial connection:', err));
-  })
-  .catch((err) => {
-    console.error('Error connecting to MongoDB:', err);
-  });
 
 // Mongoose Schemas
 const userSchema = new mongoose.Schema({
