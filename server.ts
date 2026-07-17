@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+mongoose.set('bufferCommands', false); // Disable buffering globally so queries fail fast if connection is not ready
 import multer from 'multer';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -3270,6 +3271,8 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
   // Keep Zoopay collection tools enabled and monitor their status/availability in background every 10 seconds
   setInterval(async () => {
     try {
+      // Guarantee DB connection before query
+      await connectToDatabase();
       const users = await User.find({ 'collectionTools.zoopayToolId': { $exists: true } });
       for (const user of users) {
         if (!user.collectionTools) continue;
