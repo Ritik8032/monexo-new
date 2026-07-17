@@ -1604,6 +1604,111 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
   });
 });
 
+app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  const { order_id, ct_id, ctType, confirm_mode } = req.body;
+  if (!order_id) {
+    return res.json({ code: 400, msg: 'Missing order_id' });
+  }
+
+  const ctime = Math.floor(Date.now() / 1000);
+
+  let amount = 500;
+  let payee_recipients_name = "Monexo Merchant";
+  let payee_bank_account = "918273645019";
+  let payee_ifsc = "SBIN0001234";
+  let payee_bankname = "State Bank of India";
+  let payment_method = 1; // UPI by default
+
+  if (order_id.startsWith('NODE_')) {
+    const nodeId = order_id.replace('NODE_', '');
+    try {
+      const node = await PaymentNode.findById(nodeId);
+      if (node) {
+        amount = node.amount;
+        payee_recipients_name = node.name;
+        payee_bank_account = node.accountNumber;
+        payee_ifsc = node.ifsc;
+        payee_bankname = node.bankName;
+        payment_method = node.type === 'upi' ? 1 : 0;
+      }
+    } catch (e) {
+      console.error('Error finding payment node in pickuppaymentslip:', e);
+    }
+  } else {
+    // Mock order lookups
+    const mockList = {
+      "M10001": 500,
+      "M10002": 1000,
+      "M10003": 5000,
+      "M10004": 10000,
+      "M10005": 50000
+    };
+    if (mockList[order_id]) {
+      amount = mockList[order_id];
+    }
+    
+    // Look up any active PaymentNode to populate bank/UPI details
+    const node = await PaymentNode.findOne({ status: true });
+    if (node) {
+      payee_recipients_name = node.name;
+      payee_bank_account = node.accountNumber;
+      payee_ifsc = node.ifsc;
+      payee_bankname = node.bankName;
+      payment_method = node.type === 'upi' ? 1 : 0;
+    }
+  }
+
+  // Create or update transaction in DB
+  let tx = await Transaction.findOne({ rptNo: order_id });
+  if (tx) {
+    tx.payer_status = 1; // active / paying
+    tx.ctime = ctime;
+    tx.amount = amount;
+    tx.payee_recipients_name = payee_recipients_name;
+    tx.payee_bank_account = payee_bank_account;
+    tx.payee_ifsc = payee_ifsc;
+    tx.payee_bankname = payee_bankname;
+    tx.payment_method = payment_method;
+    tx.confirm_mode = Number(confirm_mode || 0);
+    await tx.save();
+  } else {
+    tx = new Transaction({
+      userId: user._id,
+      phone: user.phone,
+      rptNo: order_id,
+      amount: amount,
+      payer_status: 1, // active / paying
+      payee_recipients_name: payee_recipients_name,
+      payee_bank_account: payee_bank_account,
+      payee_ifsc: payee_ifsc,
+      payee_bankname: payee_bankname,
+      payment_method: payment_method,
+      confirm_mode: Number(confirm_mode || 0),
+      ctime: ctime,
+      type: 'recharge'
+    });
+    await tx.save();
+  }
+
+  const resolvedCtId = ct_id || '1';
+  const redirectUrl = `/buyinrdetail/${order_id}/${resolvedCtId}/0/${ctime}/1`;
+
+  return res.json({
+    code: 0,
+    msg: 'success',
+    data: {
+      orderid: order_id,
+      ctime: ctime,
+      walletDomain: redirectUrl,
+      ctAccount: payee_bank_account,
+      status: 1
+    }
+  });
+});
+
 app.get('/xxapi/buyitoken/check', async (req, res) => {
   return res.json({
     code: 0,
