@@ -16,6 +16,25 @@ try {
   currentDirname = __dirname;
 }
 
+function getHtmlFilePath(filename: string): string {
+  const pathsToTry = [
+    path.join(currentDirname, filename),
+    path.join(process.cwd(), filename),
+    path.join(process.cwd(), 'dist', filename),
+    path.join(currentDirname, '..', filename),
+    path.join(currentDirname, '..', '..', filename),
+    path.join(currentDirname, '..', 'dist', filename),
+    path.join(currentDirname, '..', '..', 'dist', filename),
+  ];
+  
+  for (const p of pathsToTry) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return path.join(currentDirname, filename);
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -2697,7 +2716,7 @@ async function requireAdmin(req, res, next) {
 
 // 1. Serves the file admin.html directly
 app.get('/admin', (req, res) => {
-  res.sendFile(path.join(currentDirname, 'admin.html'));
+  res.sendFile(getHtmlFilePath('admin.html'));
 });
 
 // 2. Admin Stats
@@ -3188,7 +3207,7 @@ app.get('*', (req, res) => {
     return res.status(404).send('Not Found');
   }
   
-  res.sendFile(path.join(currentDirname, 'index.html'));
+  res.sendFile(getHtmlFilePath('index.html'));
 });
 
 if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.env.NETLIFY && !process.env.LAMBDA)) {
