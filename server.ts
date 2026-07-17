@@ -7,6 +7,14 @@ import multer from 'multer';
 import fs from 'fs';
 import crypto from 'crypto';
 
+// Global error handlers to prevent process crashes under any serverless/cloud/container environments
+process.on('uncaughtException', (err) => {
+  console.error('[Global Uncaught Exception Handled]', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Global Unhandled Rejection Handled]', reason);
+});
+
 let currentDirname = process.cwd();
 try {
   // @ts-ignore
