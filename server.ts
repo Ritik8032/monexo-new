@@ -80,6 +80,9 @@ app.use(async (req, res, next) => {
         }
       }
     }
+    if (mongoose.connection.readyState === 1) {
+      seedAdminUser().catch(err => console.error('Error seeding admin in middleware:', err));
+    }
   } catch (err) {
     console.error('[Mongoose State Monitor] Error ensuring connection:', err);
   }
@@ -89,7 +92,10 @@ app.use(async (req, res, next) => {
 console.log('Connecting to MongoDB...');
 mongoose.set('bufferCommands', false); // CRITICAL: fail fast, don't hang
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('Successfully connected to MongoDB.'))
+  .then(() => {
+    console.log('Successfully connected to MongoDB.');
+    seedAdminUser().catch(err => console.error('Error seeding admin on initial connection:', err));
+  })
   .catch((err) => {
     console.error('Error connecting to MongoDB:', err);
     console.warn('[AI Studio] Database offline or connection blocked - falling back to in-memory mode for failing operations.');
@@ -424,7 +430,9 @@ async function fetchZoopay(user, url, options: any = {}) {
   return res;
 }
 
+let adminSeeded = false;
 async function seedAdminUser() {
+  if (adminSeeded) return;
   try {
     const adminPhone = '7870873927';
     let admin = await User.findOne({ $or: [{ phone: adminPhone }, { mobileNo: adminPhone }] });
@@ -445,11 +453,11 @@ async function seedAdminUser() {
       admin.password = 'Ritik@123';
       await admin.save();
     }
+    adminSeeded = true;
   } catch (err) {
     console.error('Error seeding admin user:', err);
   }
 }
-seedAdminUser();
 
 function isPasswordEmpty(password) {
   if (password === undefined || password === null) return true;
