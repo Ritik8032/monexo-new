@@ -46,24 +46,25 @@ function getHtmlFilePath(filename: string): string {
 const app = express();
 const PORT = 3000;
 
-const upload = multer();
-
 // Enable JSON and URL-encoded parsing with generous limits
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
-app.use(upload.any());
 
-// Gracefully handle multer errors (e.g. Multipart: Boundary not found)
-app.use((err, req, res, next) => {
-  if (err) {
-    console.error('[Multer / BodyParser Error Handler]', err.message);
-    if (err.message && err.message.includes('Boundary not found')) {
-      // Skip the error and let express parse the body via urlencoded/json
-      return next();
-    }
-    return res.json({ code: 400, msg: err.message });
+// ONLY use multer if the request is actually multipart/form-data.
+// Since we don't use it anywhere, we can safely bypass it otherwise.
+const upload = multer();
+app.use((req, res, next) => {
+  if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    upload.any()(req, res, (err) => {
+      if (err) {
+        console.error('[Multer Error Handler]', err.message);
+        return res.json({ code: 400, msg: err.message });
+      }
+      next();
+    });
+  } else {
+    next();
   }
-  next();
 });
 
 // MongoDB Connection
@@ -71,32 +72,40 @@ const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://Ritik:Ritik906087@td
 
 // Middleware to guarantee MongoDB connection in Serverless / Netlify environments
 app.use(async (req, res, next) => {
+  // Only monitor connection for API endpoints
+  const isApiRequest = req.url && (req.url.startsWith('/xxapi') || req.url.startsWith('/api') || req.path.startsWith('/xxapi') || req.path.startsWith('/api'));
+  
   try {
     if (mongoose.connection.readyState !== 1) {
       console.log(`[Mongoose State Monitor] Database connection not ready (state: ${mongoose.connection.readyState}). Ensuring connection...`);
       if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 4000 });
+        // Fast fail on serverless, set timeout to 2500ms
+        await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 2500 });
       } else {
         let attempts = 0;
-        while (mongoose.connection.readyState !== 1 && attempts < 25) {
+        // Wait at most 1 second (10 * 100ms)
+        while (mongoose.connection.readyState !== 1 && attempts < 10) {
           await new Promise(resolve => setTimeout(resolve, 100));
           attempts++;
         }
         if (mongoose.connection.readyState !== 1) {
-          console.warn('[Mongoose State Monitor] Still not connected after waiting. Forcing connection...');
-          await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 4000 });
+          console.warn('[Mongoose State Monitor] Still not connected after waiting. Forcing connection with fast timeout...');
+          await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 2000 });
         }
       }
     }
+    
     if (mongoose.connection.readyState === 1) {
       seedAdminUser().catch(err => console.error('Error seeding admin in middleware:', err));
+    } else {
+      throw new Error('Database connection is not ready (readyState is not 1).');
     }
   } catch (err) {
     console.error('[Mongoose State Monitor] Error ensuring connection:', err.message || err);
-    if (req.url.startsWith('/xxapi') || req.url.startsWith('/api')) {
+    if (isApiRequest) {
       return res.json({
         code: 500,
-        msg: 'Database connection failed. Please ensure MONGODB_URI is set correctly in Vercel settings and Vercel IP addresses are whitelisted (add 0.0.0.0/0 to your IP Access List in MongoDB Atlas).'
+        msg: `Database connection failed: ${err.message || 'Timeout'}. Please ensure MONGODB_URI is correct and IP 0.0.0.0/0 (allow all IPs) is whitelisted in MongoDB Atlas Network Access.`
       });
     }
   }
