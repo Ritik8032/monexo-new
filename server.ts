@@ -731,8 +731,14 @@ async function getUserByToken(req) {
       const session = user.sessions.find(s => s.token === token);
       if (session) {
         session.lastActive = new Date();
-        user.markModified('sessions');
-        await user.save();
+        try {
+          await User.updateOne(
+            { _id: user._id, "sessions.token": token },
+            { $set: { "sessions.$.lastActive": session.lastActive } }
+          );
+        } catch (err) {
+          console.error("Failed to update session activity atomic:", err);
+        }
       }
     }
   }
