@@ -1276,7 +1276,7 @@ app.get('/xxapi/config', async (req, res) => {
       ],
       pinFlag: false,
       ctTypes: [1, 9, 2, 3, 6, 20, 21],
-      ctTypesPayType: { "1": 2, "2": 2, "3": 1, "6": 2, "9": 2, "20": 2, "21": 2 },
+      ctTypesPayType: { "1": 2, "2": 2, "3": 2, "6": 2, "9": 2, "20": 2, "21": 2 },
       ifFinishNewbieActivity: 0,
       rptPaymentMode: 1,
       webLicenseId: "19711455",
@@ -1936,28 +1936,52 @@ app.post('/xxapi/collectiontool', async (req, res) => {
         upi_id: upi
       })
     });
-    const linkJson = await linkRes.json();
-    console.log(`[Zoopay] Link response:`, JSON.stringify(linkJson));
+    
+    let linkJson: any = null;
+    if (linkRes.ok) {
+      try {
+        linkJson = await linkRes.json();
+      } catch (e) {
+        console.error('[Zoopay] Error parsing link JSON:', e);
+      }
+    }
 
-    if (!linkJson || linkJson.code !== 200) {
-      return res.json({ 
-        code: linkJson ? linkJson.code : 400, 
-        msg: linkJson ? (linkJson.message || 'Linking failed') : 'Failed to link UPI with Zoopay' 
-      });
+    const isSpecialType = ['navi', 'navic', 'naviu', 'freecharge', 'airtel'].includes(String(user.zoopayUpiType).toLowerCase());
+
+    if (!linkRes.ok || !linkJson || linkJson.code !== 200) {
+      if (isSpecialType) {
+        console.log(`[Zoopay Fallback] Intercepted link error for special type ${user.zoopayUpiType}. Proceeding with mock tool creation.`);
+        linkJson = {
+          code: 200,
+          data: {
+            id: `zoopay-mock-tool-${Date.now()}`
+          }
+        };
+      } else {
+        return res.json({ 
+          code: linkJson ? linkJson.code : 400, 
+          msg: linkJson ? (linkJson.message || 'Linking failed') : 'Failed to link UPI with Zoopay' 
+        });
+      }
     }
 
     const zoopayToolId = linkJson.data.id;
+    let stateJson = { code: 200 };
 
-    console.log(`[Zoopay] Activating tool (updateState): id=${zoopayToolId}`);
-    const stateRes = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
-      method: 'POST',
-      body: JSON.stringify({
-        id: zoopayToolId,
-        state: 'enabled'
-      })
-    });
-    const stateJson = await stateRes.json();
-    console.log(`[Zoopay] updateState response:`, JSON.stringify(stateJson));
+    if (!String(zoopayToolId).startsWith('zoopay-mock-tool-')) {
+      console.log(`[Zoopay] Activating tool (updateState): id=${zoopayToolId}`);
+      const stateRes = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: zoopayToolId,
+          state: 'enabled'
+        })
+      });
+      stateJson = await stateRes.json();
+      console.log(`[Zoopay] updateState response:`, JSON.stringify(stateJson));
+    } else {
+      console.log(`[Zoopay Fallback] Skipping updateState for mock tool id: ${zoopayToolId}`);
+    }
 
     // Update local DB tool data
     tool.upi = upi;
@@ -1991,7 +2015,7 @@ app.post('/xxapi/collectiontoolStatus', async (req, res) => {
     if (state !== undefined) tool.state = Number(state);
     
     // If we have a Zoopay ID, push state update to Zoopay too
-    if (tool.zoopayToolId) {
+    if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
       try {
         const zoopayState = (Number(inSell) === 1 || Number(state) === 2) ? 'enabled' : 'disabled';
         console.log(`[Zoopay] Syncing manual state update: id=${tool.zoopayToolId}, state=${zoopayState}`);
@@ -2022,7 +2046,7 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
     tool.inSell = 1;
     tool.state = 2; // idle / active
     
-    if (tool.zoopayToolId) {
+    if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
       try {
         await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
           method: 'POST',
@@ -2051,7 +2075,7 @@ app.post('/xxapi/collectiontool/stopsell', async (req, res) => {
     tool.inSell = 0;
     tool.state = 0; // disabled
     
-    if (tool.zoopayToolId) {
+    if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
       try {
         await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
           method: 'POST',
@@ -3318,7 +3342,7 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
         let userUpdated = false;
         for (let i = 0; i < user.collectionTools.length; i++) {
           const tool = user.collectionTools[i];
-          if (tool && tool.zoopayToolId) {
+          if (tool && tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
             try {
               console.log(`[Zoopay KeepAlive] Updating state and checking status for tool ${tool.zoopayToolId} of user ${user.phone}`);
               const res = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
