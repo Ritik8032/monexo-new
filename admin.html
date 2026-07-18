@@ -1,0 +1,1992 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-[#f2f3f8]">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel - Purple Dashboard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome CDN for Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Ubuntu', sans-serif;
+      background-color: #f2f3f8;
+    }
+    .mono-font {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .purple-gradient {
+      background: linear-gradient(to right, #da8cff, #9a55ff);
+    }
+    .pink-gradient {
+      background: linear-gradient(to right, #ffbf96, #fe7096);
+    }
+    .blue-gradient {
+      background: linear-gradient(to right, #90caf9, #047edf);
+    }
+    .green-gradient {
+      background: linear-gradient(to right, #84d9d2, #07cdae);
+    }
+    .purple-text {
+      color: #b66dff;
+    }
+    .purple-bg {
+      background-color: #b66dff;
+    }
+    .purple-btn {
+      background-color: #b66dff;
+    }
+    .purple-btn:hover {
+      background-color: #a359ec;
+    }
+    [v-cloak] {
+      display: none !important;
+    }
+  </style>
+</head>
+<body class="h-full text-slate-700">
+  <div id="app" class="min-h-full flex flex-col" v-cloak>
+    
+    <!-- 1. LOGIN SCREEN -->
+    <div v-if="!isLoggedIn" id="login-screen" class="flex-1 flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-slate-900 purple-gradient">
+      <div class="sm:mx-auto sm:w-full sm:max-w-md">
+        <div class="flex justify-center">
+          <div class="h-16 w-16 bg-white rounded-2xl flex items-center justify-center shadow-lg">
+            <i class="fa-solid fa-user-shield text-3xl purple-text"></i>
+          </div>
+        </div>
+        <h2 class="mt-6 text-center text-3xl font-bold text-white tracking-tight">Monexo Control Panel</h2>
+        <p class="mt-2 text-center text-sm text-white/80">
+          Enter admin credentials to access database and manage users
+        </p>
+      </div>
+
+      <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div class="bg-white py-8 px-4 shadow-xl rounded-2xl sm:px-10 border border-slate-100">
+          <form @submit.prevent="handleLogin" class="space-y-6">
+            <div>
+              <label for="phone" class="block text-sm font-medium text-slate-700">Admin Username / Phone</label>
+              <div class="mt-1 relative rounded-md shadow-sm">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <i class="fa-solid fa-phone text-slate-400"></i>
+                </div>
+                <input id="phone" type="text" v-model="loginForm.phone" required 
+                  class="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#b66dff]" 
+                  placeholder="7870873927">
+              </div>
+            </div>
+
+            <div>
+              <label for="password" class="block text-sm font-medium text-slate-700">Password</label>
+              <div class="mt-1 relative rounded-md shadow-sm">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <i class="fa-solid fa-lock text-slate-400"></i>
+                </div>
+                <input id="password" type="password" v-model="loginForm.password" required 
+                  class="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#b66dff]" 
+                  placeholder="••••••••">
+              </div>
+            </div>
+
+            <div v-if="errorMsg" class="p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl">
+              <i class="fa-solid fa-triangle-exclamation mr-2"></i> {{ errorMsg }}
+            </div>
+
+            <div>
+              <button id="login-submit-btn" type="submit" :disabled="loading"
+                class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white purple-gradient hover:opacity-95 focus:outline-none transition duration-150 disabled:opacity-50">
+                <span v-if="loading"><i class="fa-solid fa-circle-notch animate-spin mr-2"></i> Authenticating...</span>
+                <span v-else>Access Dashboard</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. MAIN APPLICATION WORKSPACE -->
+    <div v-else class="flex-1 flex flex-col min-h-screen">
+      
+      <!-- Top Navbar -->
+      <nav class="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-6 sticky top-0 z-40 shadow-sm">
+        <div class="flex items-center gap-4">
+          <!-- Hamburger -->
+          <button @click="isSidebarCollapsed = !isSidebarCollapsed" class="text-slate-500 hover:text-slate-800 transition focus:outline-none">
+            <i class="fa-solid fa-bars text-lg"></i>
+          </button>
+          
+          <!-- Logo Title -->
+          <div class="flex items-center gap-2">
+            <div class="h-8 w-8 purple-gradient rounded-lg flex items-center justify-center shadow-md">
+              <i class="fa-solid fa-wallet text-sm text-white"></i>
+            </div>
+            <span class="text-xl font-bold tracking-tight text-slate-800">Monexo <span class="purple-text font-medium text-sm">Admin</span></span>
+          </div>
+        </div>
+
+        <!-- Right Menu -->
+        <div class="flex items-center gap-6">
+          <!-- Refresh -->
+          <button @click="refreshData" class="text-slate-500 hover:purple-text transition" title="Refresh">
+            <i :class="['fa-solid fa-arrows-rotate text-lg', fetching ? 'animate-spin' : '']"></i>
+          </button>
+
+          <!-- Notification -->
+          <div class="relative">
+            <i class="fa-regular fa-bell text-lg text-slate-500 cursor-pointer hover:purple-text transition"></i>
+            <span class="absolute -top-1.5 -right-1.5 bg-[#fe7096] text-white text-[9px] h-4 w-4 rounded-full flex items-center justify-center font-bold">3</span>
+          </div>
+
+          <!-- User Info Profile -->
+          <div class="flex items-center gap-3 border-l border-slate-200 pl-4">
+            <img src="/static/images/avatar.png" class="h-9 w-9 rounded-full border border-slate-200 object-cover" alt="Admin Avatar" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
+            <div class="hidden sm:block text-left">
+              <span class="block text-xs font-bold text-slate-800">Ritik Admin</span>
+              <span class="block text-[10px] text-slate-400 font-medium">Project Manager</span>
+            </div>
+            
+            <!-- Logout Button -->
+            <button @click="handleLogout" class="text-slate-400 hover:text-red-500 transition ml-2" title="Logout">
+              <i class="fa-solid fa-power-off text-lg"></i>
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Main Workspace Body with Sidebar and Content -->
+      <div class="flex-1 flex flex-col lg:flex-row">
+        
+        <!-- Sidebar Navigation -->
+        <aside :class="['bg-white border-r border-slate-100 flex flex-col p-4 space-y-6 transition-all duration-300', isSidebarCollapsed ? 'hidden lg:flex lg:w-20 lg:items-center' : 'w-full lg:w-64']">
+          
+          <!-- Mini Profile Header -->
+          <div v-if="!isSidebarCollapsed" class="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 w-full">
+            <img src="/static/images/avatar.png" class="h-10 w-10 rounded-full border border-slate-200 object-cover" alt="Profile" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
+            <div>
+              <h4 class="text-sm font-bold text-slate-800">Ritik Admin</h4>
+              <span class="inline-flex items-center text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span> Active
+              </span>
+            </div>
+          </div>
+          <div v-else class="flex justify-center w-full">
+            <img src="/static/images/avatar.png" class="h-10 w-10 rounded-full border border-slate-200 object-cover" alt="Profile" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
+          </div>
+
+          <!-- Navigation Links -->
+          <div class="flex flex-col space-y-1 w-full">
+            <span v-if="!isSidebarCollapsed" class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Navigation</span>
+            
+            <button @click="activeTab = 'dashboard'; selectedUser = null;" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'dashboard' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
+              :title="isSidebarCollapsed ? 'Dashboard' : ''">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-cube text-base"></i>
+                <span v-if="!isSidebarCollapsed">Dashboard</span>
+              </div>
+              <i v-if="!isSidebarCollapsed" class="fa-solid fa-house text-xs opacity-50"></i>
+            </button>
+
+            <button @click="activeTab = 'users'; selectedUser = null;" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'users' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
+              :title="isSidebarCollapsed ? 'Users List' : ''">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-users text-base"></i>
+                <span v-if="!isSidebarCollapsed">Users List</span>
+              </div>
+              <i v-if="!isSidebarCollapsed" class="fa-solid fa-angle-right text-xs opacity-50"></i>
+            </button>
+
+            <button @click="activeTab = 'nodes'; selectedUser = null; fetchNodes();" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodes' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
+              :title="isSidebarCollapsed ? 'Node Settings' : ''">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-circle-nodes text-base"></i>
+                <span v-if="!isSidebarCollapsed">Node Settings</span>
+              </div>
+              <i v-if="!isSidebarCollapsed" class="fa-solid fa-angle-right text-xs opacity-50"></i>
+            </button>
+          </div>
+
+          <div v-if="!isSidebarCollapsed" class="pt-6 border-t border-slate-100 w-full">
+            <span class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Shortcuts</span>
+            <div class="mt-2 space-y-2">
+              <div class="bg-gradient-to-br from-purple-50 to-indigo-50 p-3.5 rounded-2xl border border-purple-100/50">
+                <p class="text-[11px] text-purple-700 font-bold">Database Mode</p>
+                <p class="text-[10px] text-slate-500 mt-1 leading-normal">Connected to cluster, operational with in-memory fallback protection.</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 p-6 lg:p-8 overflow-y-auto max-w-[1600px] mx-auto w-full">
+          
+          <!-- BREADCRUMB / HEADER -->
+          <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <div class="flex items-center gap-2 text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                <span>Overview</span>
+                <i class="fa-solid fa-chevron-right text-[8px]"></i>
+                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : (activeTab === 'nodes' ? 'Node Settings' : 'Manage Users')) }}</span>
+              </div>
+              <h1 class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-800 mt-1">
+                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : (activeTab === 'nodes' ? 'Admin Payment Nodes' : 'Find & Manage Users')) }}
+              </h1>
+            </div>
+            
+            <div v-if="selectedUser" class="flex gap-2">
+              <button @click="selectedUser = null" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-bold text-slate-600 transition shadow-sm">
+                <i class="fa-solid fa-arrow-left"></i> Back to List
+              </button>
+            </div>
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB 1: DASHBOARD OVERVIEW                 -->
+          <!-- ========================================== -->
+          <div v-if="activeTab === 'dashboard' && !selectedUser" class="space-y-8">
+            
+            <!-- 3 Gradient Cards Grid (mimicking the Purple Admin screenshot) -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              <!-- Card 1: Weekly Sales (Pink/Orange Gradient) -->
+              <div class="pink-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                <!-- Subtle background design overlay -->
+                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                
+                <div class="flex justify-between items-start z-10">
+                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Users</span>
+                  <i class="fa-solid fa-users text-2xl opacity-40"></i>
+                </div>
+                
+                <div class="z-10 mt-4">
+                  <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.totalUsers }}</h3>
+                  <p class="text-xs opacity-90 mt-2 font-medium">Increased by 60% this week</p>
+                </div>
+              </div>
+
+              <!-- Card 2: Weekly Orders (Blue Gradient) -->
+              <div class="blue-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                
+                <div class="flex justify-between items-start z-10">
+                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Wallet Balances</span>
+                  <i class="fa-solid fa-wallet text-2xl opacity-40"></i>
+                </div>
+                
+                <div class="z-10 mt-4">
+                  <h3 class="text-2xl lg:text-3xl font-bold tracking-tight">₹{{ formatCurrency(stats.totalBalance) }}</h3>
+                  <p class="text-xs opacity-90 mt-2 font-medium">Live ledger synchronization</p>
+                </div>
+              </div>
+
+              <!-- Card 3: Visitors Online (Teal/Green Gradient) -->
+              <div class="green-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                
+                <div class="flex justify-between items-start z-10">
+                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Verified KYC</span>
+                  <i class="fa-solid fa-circle-check text-2xl opacity-40"></i>
+                </div>
+                
+                <div class="z-10 mt-4">
+                  <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.kycVerified }} Users</h3>
+                  <p class="text-xs opacity-90 mt-2 font-medium">Increased by 5% compared to yesterday</p>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Staggered Layout: Visit Statistics & Traffic Sources -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              <!-- Left 2 Cols: Visit and Sales Statistics Custom Bar Chart -->
+              <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div class="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 class="text-lg font-bold text-slate-800">Visit &amp; Sales Statistics</h3>
+                    <p class="text-xs text-slate-400">Weekly activity logs and user traffic registration</p>
+                  </div>
+                  <div class="flex items-center gap-4 text-xs font-semibold">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#da8cff]"></span> CHN</span>
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#047edf]"></span> USA</span>
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#ffbf96]"></span> IND</span>
+                  </div>
+                </div>
+
+                <!-- Custom visual elegant bar chart structure (pure Tailwind CSS heights) -->
+                <div class="h-64 flex items-end justify-between px-4 pt-4 border-b border-slate-100">
+                  
+                  <!-- Jan -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[30%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[80%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[45%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">JAN</span>
+                  </div>
+
+                  <!-- Feb -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[55%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[30%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">FEB</span>
+                  </div>
+
+                  <!-- Mar -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[20%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[45%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[60%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">MAR</span>
+                  </div>
+
+                  <!-- Apr -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[65%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[70%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[25%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">APR</span>
+                  </div>
+
+                  <!-- May -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[90%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">MAY</span>
+                  </div>
+
+                  <!-- Jun -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[85%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[90%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[30%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">JUN</span>
+                  </div>
+
+                  <!-- Jul -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[50%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[35%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[65%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">JUL</span>
+                  </div>
+
+                  <!-- Aug -->
+                  <div class="flex flex-col items-center gap-2 w-10">
+                    <div class="flex items-end gap-1 h-48 w-full justify-center">
+                      <div class="w-1.5 bg-[#da8cff] rounded-t-sm h-[40%]"></div>
+                      <div class="w-1.5 bg-[#047edf] rounded-t-sm h-[75%]"></div>
+                      <div class="w-1.5 bg-[#ffbf96] rounded-t-sm h-[80%]"></div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">AUG</span>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Right 1 Col: Traffic Sources Elegant Circular Layout -->
+              <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-800">Traffic Sources</h3>
+                  <p class="text-xs text-slate-400">Transaction and wallet gateway shares</p>
+                </div>
+
+                <div class="my-6 flex justify-center">
+                  <!-- Circular Donut Mock Chart in SVG -->
+                  <div class="relative w-40 h-40">
+                    <svg viewBox="0 0 36 36" class="w-full h-full">
+                      <path class="text-slate-100" stroke-width="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <!-- Segment 1: PhonePe/UPI - 40% (Green) -->
+                      <path class="text-[#07cdae]" stroke-dasharray="40 100" stroke-width="4" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <!-- Segment 2: Bank Transfer - 30% (Blue) -->
+                      <path class="text-[#047edf]" stroke-dasharray="30 100" stroke-dashoffset="40" stroke-width="4" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <!-- Segment 3: Zoopay Direct - 30% (Pink) -->
+                      <path class="text-[#fe7096]" stroke-dasharray="30 100" stroke-dashoffset="70" stroke-width="4" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                      <span class="text-2xl font-bold text-slate-800">100%</span>
+                      <span class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">UPI Active</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="space-y-2 text-xs font-semibold">
+                  <div class="flex justify-between items-center">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#07cdae]"></span> UPI Gateway</span>
+                    <span class="text-slate-500">40%</span>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#047edf]"></span> Bank Deposits</span>
+                    <span class="text-slate-500">30%</span>
+                  </div>
+                  <div class="flex justify-between items-center">
+                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-[#fe7096]"></span> Zoopay API</span>
+                    <span class="text-slate-500">30%</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Bottom Section: Daily Stats and Quick shortcuts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              <!-- Shortcut controls -->
+              <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">Quick Navigation Shortcuts</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <button @click="activeTab = 'users'" class="p-4 text-left border border-slate-100 hover:border-purple-200 hover:bg-slate-50/50 rounded-xl transition duration-150 group">
+                    <div class="h-10 w-10 rounded-lg purple-gradient flex items-center justify-center text-white mb-3">
+                      <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                    <span class="block text-sm font-bold text-slate-800 group-hover:purple-text">Search User Base</span>
+                    <span class="block text-xs text-slate-400 mt-1">Lookup profiles with UIDs or mobile numbers instantly.</span>
+                  </button>
+
+                  <button @click="activeTab = 'users'" class="p-4 text-left border border-slate-100 hover:border-purple-200 hover:bg-slate-50/50 rounded-xl transition duration-150 group">
+                    <div class="h-10 w-10 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white mb-3">
+                      <i class="fa-solid fa-square-plus"></i>
+                    </div>
+                    <span class="block text-sm font-bold text-slate-800 group-hover:text-emerald-600">Fund Modification</span>
+                    <span class="block text-xs text-slate-400 mt-1">Adjust, deposit, or deduct ledger balances.</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Registration details -->
+              <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-800">Registration Volume</h3>
+                  <p class="text-xs text-slate-400 mb-4">Today's active joining metrics</p>
+                </div>
+                
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="h-12 w-12 bg-[#da8cff]/10 rounded-xl flex items-center justify-center text-xl purple-text">
+                      <i class="fa-solid fa-calendar-day"></i>
+                    </div>
+                    <div>
+                      <h4 class="text-sm font-bold text-slate-800">Joined Today</h4>
+                      <p class="text-[11px] text-slate-400">New user accounts registered today</p>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-3xl font-extrabold purple-text">{{ stats.todayRegistrations }}</span>
+                    <span class="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">Accounts</span>
+                  </div>
+                </div>
+
+                <p class="text-[11px] text-slate-400 leading-normal mt-4">
+                  <i class="fa-solid fa-shield-halved mr-1.5 purple-text"></i> Ledger operations are audited server-side. Real-time connections to MongoDB are established with full automatic retries.
+                </p>
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB 2: USER'S LIST & FIND PAGE            -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'users' && !selectedUser" class="space-y-6">
+            
+            <!-- Search / Filter panel -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center">
+              <div class="w-full sm:flex-1 relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <i class="fa-solid fa-magnifying-glass text-slate-400"></i>
+                </div>
+                <input type="text" v-model="searchQuery" @keyup.enter="fetchUsers"
+                  class="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium" 
+                  placeholder="Find users by UID number or Mobile number...">
+              </div>
+              <div class="flex gap-2 w-full sm:w-auto">
+                <button @click="fetchUsers" class="flex-1 sm:flex-initial px-6 py-3 purple-btn hover:opacity-95 text-white rounded-xl text-sm font-bold transition shadow-md">
+                  Search
+                </button>
+                <button @click="searchQuery = ''; fetchUsers();" class="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition">
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <!-- Users table list -->
+            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div class="p-5 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div>
+                  <h3 class="text-base font-bold text-slate-800">Database User Registry</h3>
+                  <p class="text-xs text-slate-400">Total verified users and investment ledger balances</p>
+                </div>
+                <span class="text-xs text-slate-400 font-medium">Showing top 50 matches</span>
+              </div>
+
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-100">
+                  <thead class="bg-slate-50/70">
+                    <tr>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">UID (ID)</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Mobile Number</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Real Name</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Wallet Balance</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Recharge</th>
+                      <th scope="col" class="px-6 py-4 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">KYC Status</th>
+                      <th scope="col" class="relative px-6 py-4">
+                        <span class="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 bg-white">
+                    <tr v-if="users.length === 0">
+                      <td colspan="7" class="px-6 py-12 text-center text-slate-500">
+                        <div class="flex flex-col items-center justify-center max-w-sm mx-auto">
+                          <i class="fa-solid fa-users-slash text-4xl text-slate-300 mb-3"></i>
+                          <h4 class="text-sm font-bold text-slate-700">No matching users found</h4>
+                          <p class="text-xs text-slate-400 mt-1">Try typing a complete UID number or mobile number to look up their records.</p>
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    <tr v-for="user in users" :key="user._id" class="hover:bg-slate-50/50 transition">
+                      <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
+                        {{ user._id }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-800">
+                        {{ user.phone }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-500">
+                        {{ user.realName || '—' }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-extrabold text-slate-900">
+                        ₹{{ formatCurrency(user.balance) }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-500">
+                        ₹{{ formatCurrency(user.recharge) }}
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold', user.kycStatus === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100']">
+                          {{ user.kycStatus === 1 ? 'Verified' : 'Pending' }}
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button @click="loadTakeActionWorkspace(user)" class="px-4 py-2 bg-[#b66dff] hover:bg-[#a359ec] text-white rounded-xl transition text-xs font-bold shadow-sm">
+                          Take Action
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB 4: ADMIN PAYMENT NODES (NODE SETTINGS) -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'nodes' && !selectedUser" class="space-y-6">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              <!-- Left Column: Add / Edit Form -->
+              <div class="lg:col-span-5">
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-circle-nodes purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">{{ isEditingNode ? 'Modify Payment Node' : 'Register Payment Node' }}</h3>
+                    </div>
+                    <button v-if="isEditingNode" @click="resetNodeForm" class="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg border border-red-100 hover:bg-red-100 transition">
+                      Cancel Edit
+                    </button>
+                  </div>
+
+                  <form @submit.prevent="saveNode" class="space-y-4">
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Payee / Recipient Name</label>
+                      <input type="text" v-model="editNodeForm.name" required placeholder="e.g. Monexo Merchant"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Node Type</label>
+                      <div class="grid grid-cols-2 gap-3">
+                        <button type="button" @click="editNodeForm.type = 'bank'"
+                          :class="['py-3 px-4 rounded-xl border font-semibold text-sm transition flex items-center justify-center gap-2', editNodeForm.type === 'bank' ? 'bg-[#b66dff]/10 border-[#b66dff] text-[#b66dff]' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100']">
+                          <i class="fa-solid fa-building-columns"></i> Bank Account
+                        </button>
+                        <button type="button" @click="editNodeForm.type = 'upi'"
+                          :class="['py-3 px-4 rounded-xl border font-semibold text-sm transition flex items-center justify-center gap-2', editNodeForm.type === 'upi' ? 'bg-[#b66dff]/10 border-[#b66dff] text-[#b66dff]' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100']">
+                          <i class="fa-solid fa-qrcode"></i> UPI ID
+                        </button>
+                      </div>
+                    </div>
+
+                    <div v-if="editNodeForm.type === 'bank'">
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Bank Name</label>
+                      <input type="text" v-model="editNodeForm.bankName" required placeholder="e.g. State Bank of India"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                        {{ editNodeForm.type === 'bank' ? 'Bank Account Number' : 'UPI ID / VPA' }}
+                      </label>
+                      <input type="text" v-model="editNodeForm.accountNumber" required :placeholder="editNodeForm.type === 'bank' ? 'e.g. 918273645019' : 'e.g. monexo@upi'"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div v-if="editNodeForm.type === 'bank'">
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">IFSC Code</label>
+                      <input type="text" v-model="editNodeForm.ifsc" required placeholder="e.g. SBIN0001234"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Target Amount (₹)</label>
+                      <input type="number" v-model.number="editNodeForm.amount" required placeholder="e.g. 1000"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      <span class="text-[10px] text-slate-400 font-medium mt-1 block">When users place orders for this amount, these payment details will be served.</span>
+                    </div>
+
+                    <div class="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
+                      <div>
+                        <span class="block text-xs font-bold text-slate-700">Node Active Status</span>
+                        <span class="block text-[10px] text-slate-400">Toggle whether this account is currently serving buy orders.</span>
+                      </div>
+                      <label class="relative inline-flex items-center cursor-pointer select-none">
+                        <input type="checkbox" v-model="editNodeForm.status" class="sr-only peer">
+                        <div class="w-11 h-6 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#b66dff]"></div>
+                      </label>
+                    </div>
+
+                    <button type="submit" class="w-full py-3.5 purple-btn text-white rounded-xl text-sm font-bold shadow-md transition hover:opacity-95 flex items-center justify-center gap-2">
+                      <i class="fa-solid fa-floppy-disk"></i> {{ isEditingNode ? 'Update Payment Node' : 'Create Payment Node' }}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Right Column: List of existing Nodes -->
+              <div class="lg:col-span-7">
+                <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-full">
+                  <div class="p-5 border-b border-slate-50 flex justify-between items-center">
+                    <div>
+                      <h3 class="text-base font-bold text-slate-800">Serving Payment Nodes Registry</h3>
+                      <p class="text-xs text-slate-400">Database nodes configured to receive deposit amounts from users</p>
+                    </div>
+                    <button @click="fetchNodes" class="p-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-600 transition" title="Refresh list">
+                      <i class="fa-solid fa-rotate-right text-xs"></i>
+                    </button>
+                  </div>
+
+                  <div class="flex-1 overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70">
+                        <tr>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Type / Recipient</th>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Details</th>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Serving Amount</th>
+                          <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="relative px-5 py-3.5">
+                            <span class="sr-only">Actions</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody class="bg-white divide-y divide-slate-100 text-sm">
+                        <tr v-for="node in nodes" :key="node._id" class="hover:bg-slate-50/50 transition">
+                          <!-- Type / Recipient -->
+                          <td class="px-5 py-4">
+                            <div class="flex items-center gap-3">
+                              <div :class="['h-9 w-9 rounded-xl flex items-center justify-center text-sm', node.type === 'bank' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-purple-50 text-purple-600 border border-purple-100']">
+                                <i :class="node.type === 'bank' ? 'fa-solid fa-building-columns' : 'fa-solid fa-qrcode'"></i>
+                              </div>
+                              <div>
+                                <span class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">{{ node.type }}</span>
+                                <span class="block font-bold text-slate-800">{{ node.name }}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <!-- Details -->
+                          <td class="px-5 py-4">
+                            <div class="text-xs">
+                              <div v-if="node.type === 'bank'">
+                                <span class="block font-semibold text-slate-700">Bank: <span class="text-slate-500 font-normal">{{ node.bankName }}</span></span>
+                                <span class="block font-semibold text-slate-700">Acc: <span class="text-slate-800 font-mono">{{ node.accountNumber }}</span></span>
+                                <span class="block font-semibold text-slate-700">IFSC: <span class="text-slate-800 font-mono">{{ node.ifsc }}</span></span>
+                              </div>
+                              <div v-else>
+                                <span class="block font-semibold text-slate-700">UPI ID:</span>
+                                <span class="block text-slate-800 font-mono font-bold select-all bg-purple-50/50 px-1.5 py-0.5 rounded border border-purple-100/30 inline-block">{{ node.accountNumber }}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <!-- Serving Amount -->
+                          <td class="px-5 py-4">
+                            <span class="inline-flex items-center gap-1 bg-slate-50 text-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 font-bold text-xs">
+                              ₹{{ formatCurrency(node.amount) }}
+                            </span>
+                          </td>
+
+                          <!-- Status -->
+                          <td class="px-5 py-4">
+                            <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider', node.status ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-50 text-slate-400 border border-slate-200']">
+                              <span :class="['h-1.5 w-1.5 rounded-full mr-1.5', node.status ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300']"></span>
+                              {{ node.status ? 'Serving' : 'Inactive' }}
+                            </span>
+                          </td>
+
+                          <!-- Actions -->
+                          <td class="px-5 py-4 text-right">
+                            <div class="flex items-center justify-end gap-1.5">
+                              <button @click="editNode(node)" class="p-2 text-slate-400 hover:text-[#b66dff] hover:bg-purple-50 rounded-lg transition" title="Modify Details">
+                                <i class="fa-solid fa-pencil"></i>
+                              </button>
+                              <button @click="deleteNode(node._id)" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Delete Node">
+                                <i class="fa-solid fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        <!-- Empty State -->
+                        <tr v-if="nodes.length === 0">
+                          <td colspan="5" class="px-5 py-12 text-center">
+                            <div class="max-w-[240px] mx-auto text-slate-400 space-y-2">
+                              <i class="fa-solid fa-circle-nodes text-3xl opacity-30"></i>
+                              <p class="text-sm font-bold text-slate-600">No payment nodes defined</p>
+                              <p class="text-xs">Create your first serving UPI/Bank details node in the registration form on the left.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- ========================================== -->
+          <!-- DETAILED "TAKE ACTION" VIEW FOR A USER     -->
+          <!-- ========================================== -->
+          <div v-else-if="selectedUser" class="space-y-8 font-sans">
+            
+            <!-- Quick Summary Panel -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div class="flex items-center gap-4">
+                <div class="h-14 w-14 purple-gradient rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-md">
+                  <i class="fa-solid fa-user-gear"></i>
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h2 class="text-xl font-bold text-slate-800">{{ selectedUser.phone }}</h2>
+                    <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold', selectedUser.kycStatus === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100']">
+                      {{ selectedUser.kycStatus === 1 ? 'KYC Verified' : 'KYC Pending' }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-slate-400 font-mono mt-1">UID: {{ selectedUser._id }}</p>
+                </div>
+              </div>
+              
+              <div class="flex flex-wrap gap-4 text-xs font-bold text-slate-500 bg-slate-50 px-4 py-3 rounded-xl border border-slate-100/50">
+                <span class="flex items-center gap-1.5"><i class="fa-solid fa-wifi text-emerald-500"></i> IP: <span class="text-slate-800 mono-font font-semibold">{{ selectedTelemetry.ip || 'N/A' }}</span></span>
+                <span class="h-3 w-[1px] bg-slate-200"></span>
+                <span class="flex items-center gap-1.5"><i class="fa-solid fa-link text-blue-500"></i> Net: <span class="text-slate-800 font-semibold">{{ selectedTelemetry.net || 'N/A' }}</span></span>
+                <span class="h-3 w-[1px] bg-slate-200"></span>
+                <span class="flex items-center gap-1.5" :title="selectedTelemetry.deviceType"><i class="fa-solid fa-mobile-screen-button text-purple-500"></i> Device: <span class="text-slate-800 font-semibold max-w-[150px] truncate">{{ parseUserAgent(selectedTelemetry.deviceType) }}</span></span>
+              </div>
+            </div>
+
+            <!-- Grid Layout of Action Categories -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              <!-- Left Column: Core Settings (KYC, Inverter/Investor, Partner details) -->
+              <div class="lg:col-span-5 space-y-8">
+                
+                <!-- Category A: Identity, KYC Partner & UPI Details Form -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center gap-2 pb-4 border-b border-slate-50">
+                    <i class="fa-solid fa-passport purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">KYC &amp; Partner Details</h3>
+                  </div>
+
+                  <form @submit.prevent="updateTakeActionProfile" class="space-y-4">
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Real Name (Full Name)</label>
+                      <input type="text" v-model="editUserForm.realName"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Registered Mobile Linked</label>
+                      <input type="text" v-model="editUserForm.phone"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">KYC Partner details</label>
+                      <input type="text" v-model="editUserForm.kycPartner" placeholder="e.g. Shriram Finance Partner, Digilocker"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">UPI KYC Partner Details</label>
+                      <input type="text" v-model="editUserForm.upiKycPartner" placeholder="e.g. PhonePe Merchant Verified, IDFC UPI"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">KYC Status</label>
+                      <select v-model="editUserForm.kycStatus"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                        <option :value="0">Pending Verification</option>
+                        <option :value="1">Verified / Approved</option>
+                      </select>
+                    </div>
+
+                    <button type="submit" :disabled="editProfileLoading"
+                      class="w-full py-3.5 purple-btn text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition duration-150 disabled:opacity-50">
+                      <span v-if="editProfileLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Saving Profile...</span>
+                      <span v-else>Save Integration Details</span>
+                    </button>
+                  </form>
+                </div>
+
+                <!-- Category B: Investor / Inverter details -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center gap-2 pb-4 border-b border-slate-50">
+                    <i class="fa-solid fa-chart-line purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">Inverter / Investor details</h3>
+                  </div>
+
+                  <form @submit.prevent="updateInvestorDetails" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Wallet Balance (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.balance"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Total Recharge (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.recharge"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Commission (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.commission"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+                      
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Today Profit (₹)</label>
+                        <input type="number" step="0.01" v-model="editUserForm.todayProfit"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Invited By (Inviter Code)</label>
+                        <input type="text" v-model="editUserForm.parentUser" placeholder="e.g. 7870873927"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Total Users Invited</label>
+                        <div class="mt-1 px-3.5 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 text-sm font-bold flex items-center gap-2 h-[46px]">
+                          <i class="fa-solid fa-users text-purple-500"></i> {{ selectedUser.invitedCount || 0 }} Users
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Inverter Model / Inverter details</label>
+                      <textarea rows="3" v-model="editUserForm.inverterDetails" placeholder="Type specific system inverter details, nodes, serial numbers, capacity..."
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium"></textarea>
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">VIP Tier level</label>
+                      <input type="number" v-model="editUserForm.vipLevel" min="1" max="10"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                    </div>
+
+                    <button type="submit" :disabled="editInvestorLoading"
+                      class="w-full py-3.5 purple-btn text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition duration-150 disabled:opacity-50">
+                      <span v-if="editInvestorLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Saving Investor info...</span>
+                      <span v-else>Update Investor &amp; Inverter Info</span>
+                    </button>
+                  </form>
+                </div>
+
+              </div>
+
+              <!-- Right Column: Ledger Histories and Add manual entry -->
+              <div class="lg:col-span-7 space-y-8">
+                
+                <!-- Sub-Tabs Navigation for transaction list -->
+                <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <h3 class="text-base font-bold text-slate-800">Financial Audit Ledgers</h3>
+                      <p class="text-xs text-slate-400">Inspecting transaction records mapped to UID</p>
+                    </div>
+
+                    <div class="flex gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                      <button @click="ledgerTab = 'buy'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'buy' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                        Buy ({{ buyTransactions.length }})
+                      </button>
+                      <button @click="ledgerTab = 'sell'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'sell' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                        Sell ({{ sellTransactions.length }})
+                      </button>
+                      <button @click="ledgerTab = 'admin'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'admin' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                        Admin ({{ adminTransactions.length }})
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Table content depending on active sub-tab -->
+                  <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
+                    
+                    <!-- BUY TRANSACTION TAB -->
+                    <table v-if="ledgerTab === 'buy'" class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70 sticky top-0 z-10">
+                        <tr>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">UTR</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
+                        <tr v-if="buyTransactions.length === 0">
+                          <td colspan="5" class="px-6 py-10 text-center text-slate-400">
+                            No Buy (recharge) transactions found.
+                          </td>
+                        </tr>
+                        <tr v-for="tx in buyTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
+                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
+                          <td class="px-5 py-3 font-semibold text-slate-800">{{ tx.utr || '—' }}</td>
+                          <td class="px-5 py-3 font-extrabold text-slate-900">₹{{ formatCurrency(tx.amount) }}</td>
+                          <td class="px-5 py-3">
+                            <span :class="['inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')]">
+                              {{ tx.payer_status === 3 ? 'Success' : (tx.payer_status === 4 ? 'Cancelled' : 'Pending') }}
+                            </span>
+                          </td>
+                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <!-- SELL TRANSACTION TAB -->
+                    <table v-if="ledgerTab === 'sell'" class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70 sticky top-0 z-10">
+                        <tr>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
+                        <tr v-if="sellTransactions.length === 0">
+                          <td colspan="4" class="px-6 py-10 text-center text-slate-400">
+                            No Sell (withdrawal) transactions found.
+                          </td>
+                        </tr>
+                        <tr v-for="tx in sellTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
+                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
+                          <td class="px-5 py-3 font-extrabold text-slate-900">₹{{ formatCurrency(tx.amount) }}</td>
+                          <td class="px-5 py-3">
+                            <span :class="['inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')]">
+                              {{ tx.payer_status === 3 ? 'Success' : (tx.payer_status === 4 ? 'Cancelled' : 'Pending') }}
+                            </span>
+                          </td>
+                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <!-- ADMIN ADJUSTMENT TRANSACTION TAB -->
+                    <table v-if="ledgerTab === 'admin'" class="min-w-full divide-y divide-slate-100">
+                      <thead class="bg-slate-50/70 sticky top-0 z-10">
+                        <tr>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Notes/Reason</th>
+                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
+                        <tr v-if="adminTransactions.length === 0">
+                          <td colspan="5" class="px-6 py-10 text-center text-slate-400">
+                            No Admin transactions found.
+                          </td>
+                        </tr>
+                        <tr v-for="tx in adminTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
+                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
+                          <td class="px-5 py-3 font-extrabold text-slate-900" :class="tx.amount >= 0 ? 'text-emerald-600' : 'text-red-500'">
+                            {{ tx.amount >= 0 ? '+' : '' }}₹{{ formatCurrency(tx.amount) }}
+                          </td>
+                          <td class="px-5 py-3">
+                            <span class="inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px] bg-slate-100 text-slate-700">
+                              Success
+                            </span>
+                          </td>
+                          <td class="px-5 py-3 font-medium text-slate-600">{{ tx.reason_for_rejection || 'Admin Adjustment' }}</td>
+                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                  </div>
+                </div>
+
+                <!-- Dynamic Balance Management (New Feature) -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-scale-balanced purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">Direct Balance Management</h3>
+                    </div>
+                    <span class="text-xs bg-purple-50 text-purple-700 font-extrabold px-3 py-1 rounded-full">
+                      Current: ₹{{ formatCurrency(selectedUser.balance) }}
+                    </span>
+                  </div>
+
+                  <div class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Amount (₹)</label>
+                        <input type="number" step="0.01" v-model="balanceActionAmount" placeholder="e.g. 500"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
+                      </div>
+
+                      <div>
+                        <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Reason / Notes</label>
+                        <input type="text" v-model="balanceActionReason" placeholder="e.g. Referral bonus reward"
+                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3 pt-2">
+                      <button @click="handleBalanceAction('add')" :disabled="balanceActionLoading"
+                        class="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                        <i class="fa-solid fa-plus text-[10px]"></i> Deposit (+)
+                      </button>
+
+                      <button @click="handleBalanceAction('subtract')" :disabled="balanceActionLoading"
+                        class="py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                        <i class="fa-solid fa-minus text-[10px]"></i> Deduct (-)
+                      </button>
+
+                      <button @click="handleBalanceAction('set')" :disabled="balanceActionLoading"
+                        class="py-3 bg-slate-950 hover:bg-slate-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                        <i class="fa-solid fa-equals text-[10px]"></i> Set Balance (=)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Successfully Linked UPI Partners & Status Card (New Feature) -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-building-columns purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">Linked UPI Partners &amp; Selling Status</h3>
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">KYC Binds</span>
+                  </div>
+
+                  <div class="space-y-4">
+                    <div v-if="!selectedUser.collectionTools || selectedUser.collectionTools.length === 0" class="py-6 text-center text-slate-400">
+                      <div class="flex flex-col items-center justify-center max-w-xs mx-auto">
+                        <i class="fa-solid fa-wallet text-2xl text-slate-200 mb-2"></i>
+                        <h4 class="text-xs font-bold text-slate-600">No linked UPI partners found</h4>
+                        <p class="text-[11px] text-slate-400 mt-0.5">The user has not linked any UPI accounts to this wallet yet.</p>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                      <div v-for="tool in selectedUser.collectionTools" :key="tool.id" class="p-4 bg-slate-50 rounded-xl border border-slate-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div class="space-y-1.5">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm font-extrabold text-slate-800 tracking-tight">{{ tool.upi }}</span>
+                            <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider', tool.state === 2 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100']">
+                              {{ tool.state === 2 ? 'Active / Linked' : 'Unlinked / Inactive' }}
+                            </span>
+                          </div>
+                          
+                          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
+                            <span>Phone: <span class="text-slate-700 font-bold">{{ tool.account || 'N/A' }}</span></span>
+                            <span>Name: <span class="text-slate-700 font-bold">{{ tool.pnname || 'N/A' }}</span></span>
+                            <span class="col-span-2 mt-0.5">
+                              Selling State: 
+                              <span :class="['font-bold', tool.inSell === 1 ? 'text-emerald-600' : 'text-slate-400']">
+                                {{ tool.inSell === 1 ? 'SELLING ENABLED' : 'SELLING DISABLED' }}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <!-- Action Toggles -->
+                        <div class="flex flex-row sm:flex-col gap-2 shrink-0">
+                          <button @click="toggleCollectionToolInSell(tool)" 
+                            :class="['px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition shadow-xs text-center border', tool.inSell === 1 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100']">
+                            {{ tool.inSell === 1 ? 'Disable Selling' : 'Enable Selling' }}
+                          </button>
+                          
+                          <button @click="toggleCollectionToolState(tool)" 
+                            :class="['px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition shadow-xs text-center border', tool.state === 2 ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100']">
+                            {{ tool.state === 2 ? 'Unlink UPI' : 'Activate/Link' }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Active Devices & Sessions (New Feature) -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-solid fa-mobile-screen-button purple-text text-lg"></i>
+                      <h3 class="text-base font-bold text-slate-800">Active Sessions &amp; Logged-in Devices</h3>
+                    </div>
+                    <span class="text-xs bg-indigo-50 text-indigo-700 font-extrabold px-3 py-1 rounded-full">
+                      {{ selectedUser.sessions ? selectedUser.sessions.length : 0 }} Active
+                    </span>
+                  </div>
+
+                  <div class="space-y-4">
+                    <div v-if="!selectedUser.sessions || selectedUser.sessions.length === 0" class="py-6 text-center text-slate-400">
+                      <div class="flex flex-col items-center justify-center max-w-xs mx-auto">
+                        <i class="fa-solid fa-shield text-2xl text-slate-200 mb-2"></i>
+                        <h4 class="text-xs font-bold text-slate-600">No active sessions tracked</h4>
+                        <p class="text-[11px] text-slate-400 mt-0.5">This user has no current active sessions registered.</p>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                      <div v-for="sess in selectedUser.sessions" :key="sess.token" class="p-4 bg-slate-50 rounded-xl border border-slate-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div class="space-y-1.5 flex-1">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm font-extrabold text-slate-800 tracking-tight flex items-center gap-1.5">
+                              <i v-if="sess.device && sess.device.toLowerCase().includes('phone')" class="fa-solid fa-mobile-screen text-indigo-500"></i>
+                              <i v-else-if="sess.device && sess.device.toLowerCase().includes('tablet')" class="fa-solid fa-tablet-screen-button text-indigo-500"></i>
+                              <i v-else class="fa-solid fa-laptop text-indigo-500"></i>
+                              {{ sess.device || 'Unknown Device' }}
+                            </span>
+                            <span class="text-xs bg-slate-200/60 text-slate-600 px-2 py-0.5 rounded-lg font-bold">
+                              {{ sess.browser || 'Browser' }}
+                            </span>
+                          </div>
+                          
+                          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
+                            <span>IP Address: <span class="text-slate-700 font-bold font-mono">{{ sess.ip || 'N/A' }}</span></span>
+                            <span>Location: <span class="text-slate-700 font-bold">{{ sess.location || 'N/A' }}</span></span>
+                            <span>Logged In: <span class="text-slate-700 font-bold">{{ formatDate(sess.loginTime) }}</span></span>
+                            <span>Last Active: <span class="text-indigo-600 font-extrabold">{{ formatDate(sess.lastActive) }}</span></span>
+                          </div>
+                        </div>
+
+                        <!-- Terminate Action -->
+                        <div class="shrink-0">
+                          <button @click="terminateUserSession(sess.token)" 
+                            class="w-full sm:w-auto px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs">
+                            <i class="fa-solid fa-arrow-right-from-bracket"></i> Terminate Session
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </main>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Vue.js 3 Production CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+  <!-- Frontend Logic Script -->
+  <script>
+    const { createApp, ref, onMounted, reactive } = Vue;
+
+    createApp({
+      setup() {
+        const isLoggedIn = ref(false);
+        const activeTab = ref('dashboard');
+        const loading = ref(false);
+        const fetching = ref(false);
+        const errorMsg = ref('');
+
+        const loginForm = reactive({
+          phone: '',
+          password: ''
+        });
+
+        const stats = reactive({
+          totalUsers: 0,
+          totalBalance: 0,
+          totalRecharge: 0,
+          kycVerified: 0,
+          todayRegistrations: 0
+        });
+
+        const users = ref([]);
+        const searchQuery = ref('');
+
+        const nodes = ref([]);
+        const isEditingNode = ref(false);
+        const editNodeForm = reactive({
+          _id: '',
+          name: '',
+          type: 'bank',
+          bankName: '',
+          accountNumber: '',
+          ifsc: '',
+          amount: '',
+          status: true
+        });
+
+        // Take Action Workspace Data
+        const selectedUser = ref(null);
+        const selectedTelemetry = ref({});
+        const buyTransactions = ref([]);
+        const sellTransactions = ref([]);
+        const adminTransactions = ref([]);
+        const ledgerTab = ref('buy');
+
+        const isSidebarCollapsed = ref(false);
+        const balanceActionAmount = ref('');
+        const balanceActionReason = ref('');
+        const balanceActionLoading = ref(false);
+        const autoRefreshTimer = ref(null);
+
+        // Edit Profile Form State
+        const editUserForm = reactive({
+          realName: '',
+          phone: '',
+          kycPartner: '',
+          upiKycPartner: '',
+          kycStatus: 0,
+          balance: 0,
+          recharge: 0,
+          commission: 0,
+          todayProfit: 0,
+          inverterDetails: '',
+          vipLevel: 1,
+          parentUser: ''
+        });
+        const editProfileLoading = ref(false);
+        const editInvestorLoading = ref(false);
+
+        // Add Transaction Form State
+        const addTxForm = reactive({
+          type: 'recharge',
+          amount: '',
+          utr: '',
+          status: 3,
+          reason: ''
+        });
+        const addTxLoading = ref(false);
+
+        // Authorization Headers
+        const getAuthHeaders = () => {
+          const token = localStorage.getItem('admin_token');
+          return {
+            'Content-Type': 'application/json',
+            'token': token,
+            'indiatoken': token,
+            'INDIATOKEN': token
+          };
+        };
+
+        const handleLogin = async () => {
+          if (loginForm.phone !== '7870873927' || loginForm.password !== 'Ritik@123') {
+            errorMsg.value = 'Invalid admin credentials.';
+            return;
+          }
+          errorMsg.value = '';
+          loading.value = true;
+          try {
+            const res = await fetch('/xxapi/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                phone: loginForm.phone,
+                password: loginForm.password,
+                smscode: '1234'
+              })
+            });
+            const data = await res.json();
+            if (data && data.code === 0) {
+              const token = `token-${loginForm.phone}`;
+              localStorage.setItem('admin_token', token);
+              isLoggedIn.value = true;
+              activeTab.value = 'dashboard';
+              refreshData();
+              startAutoRefresh();
+            } else {
+              errorMsg.value = data.msg || 'Authentication failed. Please seed users first.';
+            }
+          } catch (e) {
+            errorMsg.value = 'Network connection error during login.';
+          } finally {
+            loading.value = false;
+          }
+        };
+
+        const handleLogout = () => {
+          localStorage.removeItem('admin_token');
+          isLoggedIn.value = false;
+          loginForm.phone = '';
+          loginForm.password = '';
+          stopAutoRefresh();
+        };
+
+        const refreshData = () => {
+          if (selectedUser.value) {
+            fetchUserDetail(selectedUser.value._id);
+          } else if (activeTab.value === 'dashboard') {
+            fetchStats();
+          } else if (activeTab.value === 'nodes') {
+            fetchNodes();
+          } else {
+            fetchUsers();
+          }
+        };
+
+        const fetchStats = async () => {
+          fetching.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/stats', {
+              headers: getAuthHeaders()
+            });
+            if (res.status === 403) {
+              handleLogout();
+              return;
+            }
+            const data = await res.json();
+            if (data.code === 0) {
+              Object.assign(stats, data.data);
+            }
+          } catch (e) {
+            console.error(e);
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        const fetchUsers = async () => {
+          fetching.value = true;
+          try {
+            let url = '/xxapi/admin/users';
+            if (searchQuery.value) {
+              url += `?search=${encodeURIComponent(searchQuery.value)}`;
+            }
+            const res = await fetch(url, {
+              headers: getAuthHeaders()
+            });
+            if (res.status === 403) {
+              handleLogout();
+              return;
+            }
+            const data = await res.json();
+            if (data.code === 0) {
+              users.value = data.data;
+            }
+          } catch (e) {
+            console.error(e);
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        // Workspace Loader
+        const loadTakeActionWorkspace = (user) => {
+          fetchUserDetail(user._id);
+        };
+
+        const fetchUserDetail = async (userId) => {
+          fetching.value = true;
+          try {
+            const res = await fetch(`/xxapi/admin/userDetail?userId=${userId}`, {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              selectedUser.value = data.data.user;
+              selectedTelemetry.value = data.data.telemetry;
+              buyTransactions.value = data.data.buyTransactions;
+              sellTransactions.value = data.data.sellTransactions;
+              adminTransactions.value = data.data.adminTransactions;
+
+              // Populate edit forms
+              editUserForm.realName = selectedUser.value.realName || '';
+              editUserForm.phone = selectedUser.value.phone || '';
+              editUserForm.kycPartner = selectedUser.value.kycPartner || '';
+              editUserForm.upiKycPartner = selectedUser.value.upiKycPartner || '';
+              editUserForm.kycStatus = selectedUser.value.kycStatus || 0;
+              editUserForm.balance = selectedUser.value.balance || 0;
+              editUserForm.recharge = selectedUser.value.recharge || 0;
+              editUserForm.commission = selectedUser.value.commission || 0;
+              editUserForm.todayProfit = selectedUser.value.todayProfit || 0;
+              editUserForm.inverterDetails = selectedUser.value.inverterDetails || '';
+              editUserForm.vipLevel = selectedUser.value.vipLevel || 1;
+              editUserForm.parentUser = selectedUser.value.parentUser || '';
+            } else {
+              alert('Error loading user detailed profile: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Failed to connect to backend detailed profiles.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        // Submit Profile update
+        const updateTakeActionProfile = async () => {
+          editProfileLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/updateUserDetail', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                fields: {
+                  realName: editUserForm.realName,
+                  phone: editUserForm.phone,
+                  kycPartner: editUserForm.kycPartner,
+                  upiKycPartner: editUserForm.upiKycPartner,
+                  kycStatus: editUserForm.kycStatus
+                }
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('KYC & integration details saved successfully!');
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to update integration details.');
+          } finally {
+            editProfileLoading.value = false;
+          }
+        };
+
+        // Submit Investor & Inverter update
+        const updateInvestorDetails = async () => {
+          editInvestorLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/updateUserDetail', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                fields: {
+                  balance: editUserForm.balance,
+                  recharge: editUserForm.recharge,
+                  commission: editUserForm.commission,
+                  todayProfit: editUserForm.todayProfit,
+                  inverterDetails: editUserForm.inverterDetails,
+                  vipLevel: editUserForm.vipLevel,
+                  parentUser: editUserForm.parentUser
+                }
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Investor & inverter parameters updated successfully!');
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to update parameters.');
+          } finally {
+            editInvestorLoading.value = false;
+          }
+        };
+
+        // Add custom log entry
+        const addCustomTransactionRecord = async () => {
+          if (!addTxForm.amount || isNaN(addTxForm.amount) || addTxForm.amount <= 0) {
+            alert('Please enter a valid amount.');
+            return;
+          }
+          addTxLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/addTransaction', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                type: addTxForm.type,
+                amount: addTxForm.amount,
+                utr: addTxForm.utr,
+                status: addTxForm.status,
+                reason: addTxForm.reason
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Transaction written to ledgers successfully!');
+              addTxForm.amount = '';
+              addTxForm.utr = '';
+              addTxForm.reason = '';
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to write custom transaction log.');
+          } finally {
+            addTxLoading.value = false;
+          }
+        };
+
+        const formatCurrency = (val) => {
+          if (val === undefined || val === null) return '0.00';
+          return Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+
+        const parseUserAgent = (ua) => {
+          if (!ua || ua === 'N/A') return 'Unknown Browser';
+          if (ua.includes('iPhone')) return 'iPhone (iOS)';
+          if (ua.includes('iPad')) return 'iPad (iOS)';
+          if (ua.includes('Android')) return 'Android Mobile';
+          if (ua.includes('Macintosh')) return 'Mac OS (Desktop)';
+          if (ua.includes('Windows')) return 'Windows (Desktop)';
+          if (ua.includes('Linux')) return 'Linux (Desktop)';
+          return 'Mobile / Tablet Device';
+        };
+
+        const formatDate = (val) => {
+          if (!val) return '—';
+          // val can be seconds or milliseconds or date object
+          let d = new Date(val);
+          if (typeof val === 'number' && val < 9999999999) {
+            d = new Date(val * 1000);
+          }
+          return d.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        };
+
+        const startAutoRefresh = () => {
+          if (autoRefreshTimer.value) clearInterval(autoRefreshTimer.value);
+          autoRefreshTimer.value = setInterval(() => {
+            if (isLoggedIn.value) {
+              if (selectedUser.value) {
+                fetchUserDetailSoft(selectedUser.value._id);
+              } else if (activeTab.value === 'dashboard') {
+                fetchStats();
+              } else if (activeTab.value === 'nodes') {
+                fetchNodes();
+              } else if (activeTab.value === 'users') {
+                fetchUsers();
+              }
+            }
+          }, 8000);
+        };
+
+        const fetchUserDetailSoft = async (userId) => {
+          try {
+            const res = await fetch(`/xxapi/admin/userDetail?userId=${userId}`, {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              buyTransactions.value = data.data.buyTransactions;
+              sellTransactions.value = data.data.sellTransactions;
+              adminTransactions.value = data.data.adminTransactions;
+              selectedTelemetry.value = data.data.telemetry;
+              if (selectedUser.value) {
+                selectedUser.value.balance = data.data.user.balance;
+                selectedUser.value.recharge = data.data.user.recharge;
+                selectedUser.value.kycStatus = data.data.user.kycStatus;
+                selectedUser.value.collectionTools = data.data.user.collectionTools;
+                selectedUser.value.invitedCount = data.data.user.invitedCount;
+              }
+            }
+          } catch (e) {
+            console.error('Soft refresh error:', e);
+          }
+        };
+
+        const stopAutoRefresh = () => {
+          if (autoRefreshTimer.value) {
+            clearInterval(autoRefreshTimer.value);
+            autoRefreshTimer.value = null;
+          }
+        };
+
+        const handleBalanceAction = async (action) => {
+          const amt = Number(balanceActionAmount.value);
+          if (!amt || isNaN(amt) || amt <= 0) {
+            alert('Please enter a valid amount.');
+            return;
+          }
+          balanceActionLoading.value = true;
+          try {
+            let currentBal = Number(selectedUser.value.balance || 0);
+            let newBal = currentBal;
+            let delta = amt;
+            let actionLabel = 'Admin Adjustment';
+
+            if (action === 'add') {
+              newBal = currentBal + amt;
+              delta = amt;
+              actionLabel = 'Admin Fund Deposit';
+            } else if (action === 'subtract') {
+              newBal = currentBal - amt;
+              delta = -amt;
+              actionLabel = 'Admin Fund Deduction';
+            } else if (action === 'set') {
+              newBal = amt;
+              delta = newBal - currentBal;
+              actionLabel = 'Admin Fund Reset';
+            }
+
+            const reason = balanceActionReason.value.trim() || `${actionLabel} manually by Admin`;
+
+            // 1. Update user detail balance
+            const resDetail = await fetch('/xxapi/admin/updateUserDetail', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                fields: { balance: newBal }
+              })
+            });
+            const dataDetail = await resDetail.json();
+
+            if (dataDetail.code === 0) {
+              // 2. Add transaction record automatically
+              await fetch('/xxapi/admin/addTransaction', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                  userId: selectedUser.value._id,
+                  type: 'admin',
+                  amount: delta,
+                  status: 3,
+                  reason: reason
+                })
+              });
+
+              alert('Balance adjusted successfully!');
+              balanceActionAmount.value = '';
+              balanceActionReason.value = '';
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error updating balance: ' + dataDetail.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Network error managing user balance.');
+          } finally {
+            balanceActionLoading.value = false;
+          }
+        };
+
+        const toggleCollectionToolInSell = async (tool) => {
+          const newInSell = tool.inSell === 1 ? 0 : 1;
+          try {
+            const res = await fetch('/xxapi/admin/updateCollectionTool', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                toolId: tool.id,
+                inSell: newInSell
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert(`Selling status successfully ${newInSell === 1 ? 'Enabled' : 'Disabled'}!`);
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to update selling status.');
+          }
+        };
+
+        const toggleCollectionToolState = async (tool) => {
+          const newState = tool.state === 2 ? 1 : 2;
+          try {
+            const res = await fetch('/xxapi/admin/updateCollectionTool', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                toolId: tool.id,
+                state: newState
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert(`Link status successfully changed to ${newState === 2 ? 'Active' : 'Unlinked'}!`);
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to update link status.');
+          }
+        };
+
+        const terminateUserSession = async (tokenToLogout) => {
+          if (!confirm('Are you sure you want to remotely log out this session/device?')) {
+            return;
+          }
+          try {
+            const res = await fetch('/xxapi/admin/logoutUserSession', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                tokenToLogout: tokenToLogout
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Session terminated successfully!');
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error terminating session: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Failed to terminate session due to a network error.');
+          }
+        };
+
+        const fetchNodes = async () => {
+          fetching.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/nodes', {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              nodes.value = data.data;
+            } else {
+              alert('Failed to load nodes: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Failed to load payment nodes.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        const saveNode = async () => {
+          if (!editNodeForm.name || !editNodeForm.accountNumber || editNodeForm.amount === '') {
+            alert('Please fill all required fields.');
+            return;
+          }
+          fetching.value = true;
+          try {
+            const isEdit = !!editNodeForm._id;
+            const url = isEdit ? `/xxapi/admin/nodes/${editNodeForm._id}` : '/xxapi/admin/nodes';
+            const method = isEdit ? 'PUT' : 'POST';
+            
+            const res = await fetch(url, {
+              method,
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                name: editNodeForm.name,
+                type: editNodeForm.type,
+                bankName: editNodeForm.bankName,
+                accountNumber: editNodeForm.accountNumber,
+                ifsc: editNodeForm.ifsc,
+                amount: Number(editNodeForm.amount),
+                status: editNodeForm.status
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert(isEdit ? 'Payment Node updated successfully!' : 'Payment Node created successfully!');
+              resetNodeForm();
+              fetchNodes();
+            } else {
+              alert('Error saving node: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Network error saving node.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        const editNode = (node) => {
+          isEditingNode.value = true;
+          editNodeForm._id = node._id;
+          editNodeForm.name = node.name;
+          editNodeForm.type = node.type;
+          editNodeForm.bankName = node.bankName;
+          editNodeForm.accountNumber = node.accountNumber;
+          editNodeForm.ifsc = node.ifsc;
+          editNodeForm.amount = node.amount;
+          editNodeForm.status = node.status;
+        };
+
+        const deleteNode = async (nodeId) => {
+          if (!confirm('Are you sure you want to delete this Payment Node?')) {
+            return;
+          }
+          fetching.value = true;
+          try {
+            const res = await fetch(`/xxapi/admin/nodes/${nodeId}`, {
+              method: 'DELETE',
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Payment Node deleted successfully!');
+              fetchNodes();
+            } else {
+              alert('Error deleting node: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+            alert('Network error deleting node.');
+          } finally {
+            fetching.value = false;
+          }
+        };
+
+        const resetNodeForm = () => {
+          isEditingNode.value = false;
+          editNodeForm._id = '';
+          editNodeForm.name = '';
+          editNodeForm.type = 'bank';
+          editNodeForm.bankName = '';
+          editNodeForm.accountNumber = '';
+          editNodeForm.ifsc = '';
+          editNodeForm.amount = '';
+          editNodeForm.status = true;
+        };
+
+        onMounted(() => {
+          const token = localStorage.getItem('admin_token');
+          if (token && token === 'token-7870873927') {
+            isLoggedIn.value = true;
+            refreshData();
+            startAutoRefresh();
+          }
+        });
+
+        return {
+          isLoggedIn,
+          activeTab,
+          loading,
+          fetching,
+          errorMsg,
+          loginForm,
+          stats,
+          users,
+          searchQuery,
+          selectedUser,
+          selectedTelemetry,
+          buyTransactions,
+          sellTransactions,
+          adminTransactions,
+          ledgerTab,
+          editUserForm,
+          editProfileLoading,
+          editInvestorLoading,
+          addTxForm,
+          addTxLoading,
+          isSidebarCollapsed,
+          balanceActionAmount,
+          balanceActionReason,
+          balanceActionLoading,
+          handleLogin,
+          handleLogout,
+          refreshData,
+          fetchUsers,
+          loadTakeActionWorkspace,
+          updateTakeActionProfile,
+          updateInvestorDetails,
+          addCustomTransactionRecord,
+          formatCurrency,
+          parseUserAgent,
+          formatDate,
+          handleBalanceAction,
+          toggleCollectionToolInSell,
+          toggleCollectionToolState,
+          terminateUserSession,
+          nodes,
+          isEditingNode,
+          editNodeForm,
+          fetchNodes,
+          saveNode,
+          editNode,
+          deleteNode,
+          resetNodeForm
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
