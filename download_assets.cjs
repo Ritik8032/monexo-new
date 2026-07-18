@@ -273,6 +273,27 @@ const assets = [
       "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/detailicon.png"
     ],
     paths: ["static/images/detailicon.png", "static/icon/detailicon.png"]
+  },
+  // tether.jpg
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/tether.jpg"
+    ],
+    paths: ["static/images/tether.jpg", "static/icon/tether.jpg"]
+  },
+  // search.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/search.png"
+    ],
+    paths: ["static/images/search.png", "static/icon/search.png"]
+  },
+  // kyc.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/kyc.png"
+    ],
+    paths: ["static/images/kyc.png", "static/icon/kyc.png"]
   }
 ];
 
