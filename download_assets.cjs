@@ -150,19 +150,19 @@ const assets = [
     ],
     paths: ["static/icon/teamlelve.png", "static/images/teamlelve.png"]
   },
-  // Login Phone (Uses password.png as per prompt: "password.png Ise login page pe phone wale png me dalo")
-  {
-    urls: [
-      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/password.png",
-      "https://web.tivrapay.com/static/icon/password.png"
-    ],
-    paths: ["static/icon/phone.png", "static/images/phone.png"]
-  },
-  // Login Password (Uses phone.png as per prompt: "and ise password wale me https://.../phone.png")
+  // Login Phone (Corrected to phone.png)
   {
     urls: [
       "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/phone.png",
       "https://web.tivrapay.com/static/icon/phone.png"
+    ],
+    paths: ["static/icon/phone.png", "static/images/phone.png"]
+  },
+  // Login Password (Corrected to password.png)
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/password.png",
+      "https://web.tivrapay.com/static/icon/password.png"
     ],
     paths: ["static/icon/password.png", "static/images/password.png"]
   },
