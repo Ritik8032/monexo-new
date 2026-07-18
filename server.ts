@@ -1620,7 +1620,14 @@ app.post('/xxapi/wallet/sendVerifySms/:id/:other', async (req, res) => {
 });
 
 app.get('/xxapi/bank/history', async (req, res) => {
-  return res.json({ code: 0, msg: "success", data: [] });
+  return res.json({
+    code: 0,
+    msg: "success",
+    data: {
+      total: 0,
+      list: []
+    }
+  });
 });
 
 app.get('/xxapi/TgBindUserservice', async (req, res) => {
@@ -2687,11 +2694,31 @@ app.get('/xxapi/chargeToken/history', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const txs = await Transaction.find({ userId: user._id, type: 'recharge' }).sort({ ctime: -1 });
-  return res.json({ code: 0, msg: 'success', data: txs });
+  
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const start = (page - 1) * limit;
+  const list = txs.slice(start, start + limit);
+
+  return res.json({
+    code: 0,
+    msg: 'success',
+    data: {
+      total: txs.length,
+      list: list
+    }
+  });
 });
 
 app.get('/xxapi/transferToken/history', async (req, res) => {
-  return res.json({ code: 0, msg: 'success', data: [] });
+  return res.json({
+    code: 0,
+    msg: 'success',
+    data: {
+      total: 0,
+      list: []
+    }
+  });
 });
 
 // 11. SELL AND WITHDRAWAL ENDPOINTS
@@ -2699,7 +2726,20 @@ app.get('/xxapi/sell/history', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const txs = await Transaction.find({ userId: user._id, type: 'sell' }).sort({ ctime: -1 });
-  return res.json({ code: 0, msg: 'success', data: txs });
+  
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const start = (page - 1) * limit;
+  const list = txs.slice(start, start + limit);
+
+  return res.json({
+    code: 0,
+    msg: 'success',
+    data: {
+      total: txs.length,
+      list: list
+    }
+  });
 });
 
 app.post('/xxapi/sell/question', async (req, res) => {
