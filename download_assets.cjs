@@ -231,6 +231,20 @@ const assets = [
       "https://refer.tezflow.top/static/icon/copy.png"
     ],
     paths: ["static/icon/teamCopy.png", "static/images/teamCopy.png"]
+  },
+  // Login Logo (file_00000000c3b871f8ac814a58eb9b5db3.png)
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/file_00000000c3b871f8ac814a58eb9b5db3.png"
+    ],
+    paths: ["static/images/Login_Logo.png", "static/icon/Login_Logo.png"]
+  },
+  // Token Background (tokenbg.jpg)
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/tokenbg.jpg"
+    ],
+    paths: ["static/images/tokenbg.jpg", "static/icon/tokenbg.jpg"]
   }
 ];
 
