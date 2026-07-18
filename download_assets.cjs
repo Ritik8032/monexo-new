@@ -245,6 +245,34 @@ const assets = [
       "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/tokenbg.jpg"
     ],
     paths: ["static/images/tokenbg.jpg", "static/icon/tokenbg.jpg"]
+  },
+  // point_notline.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/point_notline.png"
+    ],
+    paths: ["static/images/point_notline.png", "static/icon/point_notline.png"]
+  },
+  // point_success.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/point_success.png"
+    ],
+    paths: ["static/images/point_success.png", "static/icon/point_success.png"]
+  },
+  // operateicon.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/operateicon.png"
+    ],
+    paths: ["static/images/operateicon.png", "static/icon/operateicon.png"]
+  },
+  // detailicon.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/detailicon.png"
+    ],
+    paths: ["static/images/detailicon.png", "static/icon/detailicon.png"]
   }
 ];
 
