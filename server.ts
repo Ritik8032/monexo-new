@@ -1328,7 +1328,7 @@ app.get('/xxapi/config', async (req, res) => {
       rsKeyMode: -1,
       usdtExchangerate: "80",
       currency: "INR",
-      registerHost: "https://zxcvwe.wiki/#/rs/",
+      registerHost: req.protocol + "://" + req.get('host') + "/#/rs/",
       tgChannelLink: "xxxx",
       rewardRules: {
         freeze_comp_reward: { name: "freeze_comp_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 0, rule: "{}" },
@@ -2726,7 +2726,7 @@ app.get('/xxapi/teaminfo', async (req, res) => {
   const inviteCode = user.ownInviteCode;
 
   // Format of registration link as explicitly requested by the user: https://zxcvwe.wiki/#/rs/[inviteCode]
-  const rsUrl = "https://zxcvwe.wiki/#/rs/";
+  const rsUrl = req.protocol + "://" + req.get('host') + "/#/rs/";
 
   return res.json({
     code: 0,
