@@ -1108,6 +1108,12 @@ app.get('/xxapi/userinfo', async (req, res) => {
       await user.save();
     }
 
+    const sellTxs = await Transaction.find({ userId: user._id, type: 'sell' });
+    const inTransation = sellTxs.filter(tx => tx.payer_status === 1 || tx.payer_status === 2).length;
+    const todaySuccess = sellTxs.filter(tx => tx.payer_status === 3).length;
+    const todayDeal = sellTxs.length;
+    const todayTimes = sellTxs.length;
+
     return res.json({
       code: 0,
       msg: 'success',
@@ -1135,7 +1141,13 @@ app.get('/xxapi/userinfo', async (req, res) => {
         pageSize: user.pageSize || 10,
         totalTransferValue: user.totalTransferValue || 0,
         itoken: user.balance ?? 10000,
-        frozenItoken: 0
+        frozenItoken: 0,
+        receiveToday: {
+          inTransation,
+          todayDeal,
+          todaySuccess,
+          todayTimes
+        }
       }
     });
   } catch (err) {
