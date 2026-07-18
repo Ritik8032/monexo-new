@@ -70,6 +70,16 @@ app.use((req, res, next) => {
 
 // ONLY use multer if the request is actually multipart/form-data.
 // Since we don't use it anywhere, we can safely bypass it otherwise.
+app.use((req, res, next) => {
+  try {
+    const logLine = `[${new Date().toISOString()}] ${req.method} ${req.url} - Body: ${JSON.stringify(req.body)} - Headers: ${JSON.stringify(req.headers)}\n`;
+    fs.appendFileSync(path.join(process.cwd(), 'incoming_requests.log'), logLine);
+  } catch (e) {
+    // Ignore logging failures
+  }
+  next();
+});
+
 const upload = multer();
 app.use((req, res, next) => {
   if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
@@ -1314,6 +1324,8 @@ app.get('/xxapi/config', async (req, res) => {
     code: 0,
     msg: "success",
     data: {
+      okTurnstileSitekey: "0",
+      rsKeyMode: -1,
       usdtExchangerate: "80",
       currency: "INR",
       registerHost: "https://zxcvwe.wiki/#/rs/",
@@ -1355,6 +1367,12 @@ app.post('/xxapi/client_error', (req, res) => {
   console.log('Line:', req.body.lineno, 'Col:', req.body.colno);
   console.log('Stack:', req.body.stack);
   console.log('-----------------------------');
+  try {
+    const errorLog = `[${new Date().toISOString()}] Message: ${req.body.message} | Filename: ${req.body.filename} | Line: ${req.body.lineno}:${req.body.colno} | Stack: ${req.body.stack}\n`;
+    fs.appendFileSync(path.join(process.cwd(), 'client_errors.log'), errorLog);
+  } catch (e) {
+    // ignore
+  }
   return res.json({ code: 0, msg: 'logged' });
 });
 
