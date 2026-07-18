@@ -183,6 +183,8 @@ const userSchema = new mongoose.Schema({
   upiKycPartner: { type: String, default: '' },
   inverterDetails: { type: String, default: '' },
   sessions: { type: Array, default: [] },
+  providerId: { type: String, sparse: true, index: true },
+  ownInviteCode: { type: String, sparse: true, index: true },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -232,6 +234,46 @@ const paymentNodeSchema = new mongoose.Schema({
 });
 
 const PaymentNode = mongoose.models.PaymentNode || mongoose.model('PaymentNode', paymentNodeSchema);
+
+// UNIQUE PROVIDER ID AND ALPHANUMERIC INVITE CODE HELPERS
+function generateProviderId() {
+  let id = '';
+  for (let i = 0; i < 10; i++) {
+    id += Math.floor(Math.random() * 10);
+  }
+  return id;
+}
+
+function generateAlphanumericInviteCode() {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < 10; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+async function getUniqueProviderId() {
+  let attempts = 0;
+  while (attempts < 10) {
+    const id = generateProviderId();
+    const existing = await User.findOne({ providerId: id });
+    if (!existing) return id;
+    attempts++;
+  }
+  return generateProviderId();
+}
+
+async function getUniqueOwnInviteCode() {
+  let attempts = 0;
+  while (attempts < 10) {
+    const code = generateAlphanumericInviteCode();
+    const existing = await User.findOne({ ownInviteCode: code });
+    if (!existing) return code;
+    attempts++;
+  }
+  return generateAlphanumericInviteCode();
+}
 
 // ZOOPAY API INTEGRATION HELPERS
 function generateRandomPhone() {
@@ -724,6 +766,9 @@ app.post('/xxapi/register', async (req, res) => {
       lastActive: new Date()
     };
 
+    const finalProviderId = await getUniqueProviderId();
+    const finalOwnInviteCode = await getUniqueOwnInviteCode();
+
     user = new User({
       phone,
       mobileNo: phone, // Store in both fields for cross-system script compatibility
@@ -735,7 +780,9 @@ app.post('/xxapi/register', async (req, res) => {
       balance: 10000,
       commission: 120,
       collectionTools: getDefaultCollectionTools(),
-      sessions: [initialSession]
+      sessions: [initialSession],
+      providerId: finalProviderId,
+      ownInviteCode: finalOwnInviteCode
     });
     await user.save();
 
@@ -1038,15 +1085,28 @@ app.get('/xxapi/userinfo', async (req, res) => {
       });
     }
 
+    let needsSave = false;
+    if (!user.providerId) {
+      user.providerId = await getUniqueProviderId();
+      needsSave = true;
+    }
+    if (!user.ownInviteCode) {
+      user.ownInviteCode = await getUniqueOwnInviteCode();
+      needsSave = true;
+    }
+    if (needsSave) {
+      await user.save();
+    }
+
     return res.json({
       code: 0,
       msg: 'success',
       data: {
         uid: user._id,
-        id: user._id,
-        username: user.phone || user.mobileNo || '',
+        id: user.providerId,
+        username: user.providerId,
         phone: user.phone || user.mobileNo || '',
-        teamWorkId: user.phone || user.mobileNo || '',
+        teamWorkId: user.providerId,
         balance: user.balance ?? 10000,
         commission: user.commission ?? 120,
         withdrawable: user.balance ?? 10000,
@@ -1256,7 +1316,7 @@ app.get('/xxapi/config', async (req, res) => {
     data: {
       usdtExchangerate: "80",
       currency: "INR",
-      registerHost: "https://refer.vantage.top/#/rs/",
+      registerHost: "https://zxcvwe.wiki/#/rs/",
       tgChannelLink: "xxxx",
       rewardRules: {
         freeze_comp_reward: { name: "freeze_comp_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 0, rule: "{}" },
@@ -2630,15 +2690,25 @@ app.get('/xxapi/teaminfo', async (req, res) => {
   if (!user) {
     return res.json({ code: 403, msg: 'Unauthorized' });
   }
-  const teamWorkId = user.phone;
-  
-  // Dynamically generate a unique 6-digit numeric invite code derived from user's phone number to make it real and fully functional
-  const inviteCode = user.phone ? user.phone.slice(-6) : '123456';
 
-  // Construct dynamic real invitation URL based on the active hosting domain (Netlify/Vercel/Local)
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.get('host');
-  const rsUrl = `${protocol}://${host}/#/register?code=`;
+  let needsSave = false;
+  if (!user.providerId) {
+    user.providerId = await getUniqueProviderId();
+    needsSave = true;
+  }
+  if (!user.ownInviteCode) {
+    user.ownInviteCode = await getUniqueOwnInviteCode();
+    needsSave = true;
+  }
+  if (needsSave) {
+    await user.save();
+  }
+
+  const teamWorkId = user.providerId;
+  const inviteCode = user.ownInviteCode;
+
+  // Format of registration link as explicitly requested by the user: https://zxcvwe.wiki/#/rs/[inviteCode]
+  const rsUrl = "https://zxcvwe.wiki/#/rs/";
 
   return res.json({
     code: 0,

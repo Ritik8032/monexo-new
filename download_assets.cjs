@@ -294,6 +294,20 @@ const assets = [
       "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/kyc.png"
     ],
     paths: ["static/images/kyc.png", "static/icon/kyc.png"]
+  },
+  // teamQR.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/teamQR.png"
+    ],
+    paths: ["static/images/teamQR.png", "static/icon/teamQR.png"]
+  },
+  // noassets.png
+  {
+    urls: [
+      "https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/noassets.png"
+    ],
+    paths: ["static/images/noassets.png", "static/icon/noassets.png"]
   }
 ];
 
