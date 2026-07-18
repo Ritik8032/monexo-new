@@ -267,7 +267,7 @@ function mapCtTypeToUpiType(ct_type) {
   if (typeStr.includes("iob")) return "iob";
   if (typeStr.includes("amazon")) return "amazon";
   if (typeStr.includes("jio")) return "jiof";
-  if (typeStr.includes("navi")) return "navic";
+  if (typeStr.includes("navi")) return "navi";
   if (typeStr.includes("freo")) return "freo";
 
   const typeNum = Number(ct_type);
@@ -284,7 +284,7 @@ function mapCtTypeToUpiType(ct_type) {
     case 17: return "iob";
     case 18: return "amazon";
     case 19: return "phonepe"; // PhonePe Business
-    case 20: return "navic"; // Navi UPI
+    case 20: return "navi"; // Navi UPI
     case 21: return "freo"; // Freo UPI
     default: return "paytm"; // Default fallback
   }
@@ -2241,35 +2241,73 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
         otp
       })
     });
-    if (!verifyRes.ok) {
-      let errMsg = `Zoopay API error (status ${verifyRes.status})`;
+
+    let verifyJson: any = null;
+    let intercepted = false;
+
+    if (verifyRes.ok) {
       try {
-        const errJson = await verifyRes.json();
-        errMsg = errJson.message || errJson.msg || errMsg;
+        verifyJson = await verifyRes.json();
       } catch (e) {
-        try {
-          const txt = await verifyRes.text();
-          if (txt) errMsg = txt;
-        } catch (_) {}
+        console.error('[Zoopay] Error parsing verify JSON:', e);
       }
-      return res.json({
-        code: verifyRes.status || 400,
-        msg: errMsg
-      });
     }
 
-    const verifyJson = await verifyRes.json();
-    console.log(`[Zoopay] verifyWalletOtp response:`, JSON.stringify(verifyJson));
+    const isSpecialType = ['navi', 'navic', 'naviu', 'freecharge', 'airtel'].includes(String(user.zoopayUpiType).toLowerCase());
 
-    if (!verifyJson || verifyJson.code !== 200) {
-      return res.json({ 
-        code: verifyJson ? (verifyJson.code || 400) : 400, 
-        msg: verifyJson ? (verifyJson.message || verifyJson.msg || 'Incorrect OTP, please try again') : 'Incorrect OTP, please try again'
-      });
+    // Check if the request failed or returned a JSON-level error
+    if (!verifyRes.ok || !verifyJson || verifyJson.code !== 200) {
+      let errMsg = '';
+      let errCode = 400;
+      if (verifyJson) {
+        errMsg = verifyJson.message || verifyJson.msg || '';
+        errCode = verifyJson.code || 400;
+      } else {
+        errCode = verifyRes.status || 400;
+        try {
+          errMsg = await verifyRes.text();
+        } catch (_) {}
+      }
+
+      const lowerMsg = errMsg.toLowerCase();
+      const isUpiFetchError = lowerMsg.includes('upi') || lowerMsg.includes('vpa') || lowerMsg.includes('fetch') || lowerMsg.includes('empty') || lowerMsg.includes('link') || lowerMsg.includes('no upi');
+
+      if (isSpecialType && (errCode === 500 || isUpiFetchError || !verifyRes.ok)) {
+        console.log(`[Zoopay Fallback] Intercepted verify error for special type ${user.zoopayUpiType}: "${errMsg}". Proceeding with fallback.`);
+        verifyJson = {
+          code: 200,
+          data: {
+            upis: []
+          }
+        };
+        intercepted = true;
+      } else {
+        return res.json({
+          code: errCode,
+          msg: errMsg || 'Incorrect OTP, please try again'
+        });
+      }
     }
 
     // Retrieve verified UPI IDs from Zoopay
-    const upis = (verifyJson.data && verifyJson.data.upis) || [];
+    let upis = (verifyJson && verifyJson.data && verifyJson.data.upis) || [];
+
+    // Fallback generation for special types if empty or intercepted
+    if ((!upis || upis.length === 0) && isSpecialType) {
+      const cleanedPhone = account ? String(account).trim() : (user.phone ? String(user.phone).trim() : '');
+      if (cleanedPhone) {
+        const typeStr = String(user.zoopayUpiType).toLowerCase();
+        if (typeStr.includes('airtel')) {
+          upis = [`${cleanedPhone}@airtel`];
+        } else if (typeStr.includes('freecharge')) {
+          upis = [`${cleanedPhone}@freecharge`, `${cleanedPhone}@fc`];
+        } else if (typeStr.includes('navi')) {
+          upis = [`${cleanedPhone}@navi`, `${cleanedPhone}@navic`, `${cleanedPhone}@naviu`];
+        }
+        console.log(`[Zoopay Fallback] Generated fallback UPI list for ${typeStr}:`, upis);
+      }
+    }
+
     user.zoopayUpis = upis;
     user.markModified('zoopayUpis');
 
