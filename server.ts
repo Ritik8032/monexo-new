@@ -1626,12 +1626,45 @@ app.post('/xxapi/wallet/sendVerifySms/:id/:other', async (req, res) => {
 });
 
 app.get('/xxapi/bank/history', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  // Bank history is bank/UPI sell transactions (withdrawals)
+  const txs = await Transaction.find({ userId: user._id, type: 'sell' }).sort({ ctime: -1 });
+
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const start = (page - 1) * limit;
+  const list = txs.slice(start, start + limit);
+
+  const mappedList = list.map(tx => {
+    let orderState = 2; // Default to pending
+    if (tx.payer_status === 1) orderState = 1; // sell_status_dispatched/paying
+    else if (tx.payer_status === 2) orderState = 2; // sell_status_pending/In Review
+    else if (tx.payer_status === 3) orderState = 3; // sell_status_success
+    else if (tx.payer_status === 4) orderState = 4; // sell_status_offline/cancelled
+    else if (tx.payer_status === 5) orderState = 5; // sell_status_timeout
+
+    const obj = tx.toObject ? tx.toObject() : { ...tx };
+    return {
+      ...obj,
+      id: tx._id.toString(),
+      orderState: orderState,
+      uptDate: tx.ctime * 1000,
+      crtDate: tx.ctime * 1000,
+      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
+      secLimit: tx.countdown || 1800,
+      acctNo: tx.payee_bank_account || "",
+      payAccount: tx.payee_bank_account || ""
+    };
+  });
+
   return res.json({
     code: 0,
     msg: "success",
     data: {
-      total: 0,
-      list: []
+      total: txs.length,
+      list: mappedList
     }
   });
 });
@@ -1655,12 +1688,47 @@ app.get('/xxapi/buyitoken/waitconfirm', async (req, res) => {
 });
 
 app.get('/xxapi/buyitoken/history', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  // Buy token history corresponds to transactions of type 'recharge'
+  const txs = await Transaction.find({ userId: user._id, type: 'recharge' }).sort({ ctime: -1 });
+
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
+  const start = (page - 1) * limit;
+  const list = txs.slice(start, start + limit);
+
+  const mappedList = list.map(tx => {
+    let orderState = 1; // Default to paying
+    if (tx.payer_status === 1) orderState = 1; // paying
+    else if (tx.payer_status === 2) orderState = 2; // pending
+    else if (tx.payer_status === 3) orderState = 3; // success
+    else if (tx.payer_status === 4) orderState = 4; // cancel
+    else if (tx.payer_status === 5) orderState = 5; // fail
+
+    const obj = tx.toObject ? tx.toObject() : { ...tx };
+    return {
+      ...obj,
+      id: tx._id.toString(),
+      orderState: orderState,
+      currency: 3, // INR constant is 3
+      payType: tx.payment_method === 1 ? 9 : 2, // 9 for Paytm, 2 for Mobikwik
+      crtDate: tx.ctime * 1000,
+      uptDate: tx.ctime * 1000,
+      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
+      secLimit: tx.countdown || 1800,
+      acctNo: tx.payee_bank_account || "",
+      payAccount: tx.payee_bank_account || ""
+    };
+  });
+
   return res.json({
     code: 0,
     msg: 'success',
     data: {
-      total: 0,
-      list: []
+      total: txs.length,
+      list: mappedList
     }
   });
 });
@@ -2532,14 +2600,16 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
   let state = tool ? (tool.state !== undefined ? tool.state : 7) : 7;
   let upis = tool && tool.backup_upi && tool.backup_upi.length > 0 ? tool.backup_upi : [];
 
+  const toolUpiType = tool ? mapCtTypeToUpiType(tool.type) : mapCtTypeToUpiType(typeNum);
+
   if (upis.length === 0 && user.zoopayUpis && user.zoopayUpis.length > 0) {
-    if (tool && tool.state !== 7) {
+    if (tool && tool.state !== 7 && user.zoopayUpiType === toolUpiType) {
       upis = user.zoopayUpis;
     }
   }
 
   // Auto-healing / auto-recovery: Only auto-recover if NOT in state 7 (waiting OTP) to avoid premature bypass
-  if (user.zoopayUpis && user.zoopayUpis.length > 0 && tool && tool.state !== 7) {
+  if (user.zoopayUpis && user.zoopayUpis.length > 0 && tool && tool.state !== 7 && user.zoopayUpiType === toolUpiType) {
     if (tool.state === 7 || !tool.backup_upi || tool.backup_upi.length === 0 || !tool.upi || tool.upi === 'Pending verification') {
       tool.state = 2;
       tool.backup_upi = user.zoopayUpis;
@@ -2584,9 +2654,11 @@ app.post('/xxapi/monitorflow/upi/list', async (req, res) => {
     }
   }
 
+  const toolUpiType = tool ? mapCtTypeToUpiType(tool.type) : mapCtTypeToUpiType(typeNum);
+
   const upis = tool && tool.backup_upi && tool.backup_upi.length > 0
     ? tool.backup_upi
-    : (tool && tool.state !== 7 && user.zoopayUpis && user.zoopayUpis.length > 0 ? user.zoopayUpis : []);
+    : (tool && tool.state !== 7 && user.zoopayUpis && user.zoopayUpis.length > 0 && user.zoopayUpiType === toolUpiType ? user.zoopayUpis : []);
 
   console.log(`[Zoopay UPI List] User: ${user.phone}, Account: ${account}, CtID: ${ct_id}, Tool found: ${!!tool}, UPI Count: ${upis.length}`);
 
@@ -2738,12 +2810,37 @@ app.get('/xxapi/sell/history', async (req, res) => {
   const start = (page - 1) * limit;
   const list = txs.slice(start, start + limit);
 
+  const mappedList = list.map(tx => {
+    // Map payer_status to frontend sell status:
+    // sell_status_undispatched = 0, sell_status_dispatched = 1, sell_status_pending = 2,
+    // sell_status_success = 3, sell_status_offline = 4, sell_status_timeout = 5
+    let orderState = 2; // Default to pending
+    if (tx.payer_status === 1) orderState = 1; // dispatched/paying
+    else if (tx.payer_status === 2) orderState = 2; // pending/In Review
+    else if (tx.payer_status === 3) orderState = 3; // success
+    else if (tx.payer_status === 4) orderState = 4; // offline/cancelled
+    else if (tx.payer_status === 5) orderState = 5; // timeout
+
+    const obj = tx.toObject ? tx.toObject() : { ...tx };
+    return {
+      ...obj,
+      id: tx._id.toString(),
+      orderState: orderState,
+      uptDate: tx.ctime * 1000,
+      crtDate: tx.ctime * 1000,
+      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
+      secLimit: tx.countdown || 1800,
+      acctNo: tx.payee_bank_account || "",
+      payAccount: tx.payee_bank_account || ""
+    };
+  });
+
   return res.json({
     code: 0,
     msg: 'success',
     data: {
       total: txs.length,
-      list: list
+      list: mappedList
     }
   });
 });
