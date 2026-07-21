@@ -224,6 +224,7 @@ const transactionSchema = new mongoose.Schema({
   confirm_mode: { type: Number, default: 0 }, // 0: auto, 1: certify
   countdown: { type: Number, default: 1800 },
   reason_for_rejection: { type: String, default: '' },
+  reward: { type: Number, default: 0 },
   ctime: { type: Number, default: () => Math.floor(Date.now() / 1000) },
   type: { type: String, default: 'recharge' } // 'recharge' or 'sell'
 });
@@ -1691,8 +1692,15 @@ app.get('/xxapi/buyitoken/history', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
 
-  // Buy token history corresponds to transactions of type 'recharge'
-  const txs = await Transaction.find({ userId: user._id, type: 'recharge' }).sort({ ctime: -1 });
+  const currency = req.query.currency || req.body.currency;
+  let query: any = { userId: user._id, type: 'recharge' };
+  if (currency === 'recharge_cancel') {
+    query.payer_status = 4;
+  } else if (currency === 'recharge') {
+    query.payer_status = { $ne: 4 };
+  }
+
+  const txs = await Transaction.find(query).sort({ ctime: -1 });
 
   const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
@@ -1713,6 +1721,7 @@ app.get('/xxapi/buyitoken/history', async (req, res) => {
       id: tx._id.toString(),
       orderState: orderState,
       currency: 3, // INR constant is 3
+      reward: (tx as any).reward || 0,
       payType: tx.payment_method === 1 ? 9 : 2, // 9 for Paytm, 2 for Mobikwik
       crtDate: tx.ctime * 1000,
       uptDate: tx.ctime * 1000,
@@ -2771,19 +2780,53 @@ app.get('/xxapi/chargeStatus/:rptNo', async (req, res) => {
 app.get('/xxapi/chargeToken/history', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  const txs = await Transaction.find({ userId: user._id, type: 'recharge' }).sort({ ctime: -1 });
+
+  const currency = req.query.currency || req.body.currency;
+  let query: any = { userId: user._id, type: 'recharge' };
+  if (currency === 'recharge_cancel') {
+    query.payer_status = 4;
+  } else if (currency === 'recharge') {
+    query.payer_status = { $ne: 4 };
+  }
+
+  const txs = await Transaction.find(query).sort({ ctime: -1 });
   
   const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
   const start = (page - 1) * limit;
   const list = txs.slice(start, start + limit);
 
+  const mappedList = list.map(tx => {
+    let orderState = 1; // Default to paying
+    if (tx.payer_status === 1) orderState = 1; // paying
+    else if (tx.payer_status === 2) orderState = 2; // pending
+    else if (tx.payer_status === 3) orderState = 3; // success
+    else if (tx.payer_status === 4) orderState = 4; // cancel
+    else if (tx.payer_status === 5) orderState = 5; // fail
+
+    const obj = tx.toObject ? tx.toObject() : { ...tx };
+    return {
+      ...obj,
+      id: tx._id.toString(),
+      orderState: orderState,
+      currency: 3, // INR constant is 3
+      reward: (tx as any).reward || 0,
+      payType: tx.payment_method === 1 ? 9 : 2, // 9 for Paytm, 2 for Mobikwik
+      crtDate: tx.ctime * 1000,
+      uptDate: tx.ctime * 1000,
+      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
+      secLimit: tx.countdown || 1800,
+      acctNo: tx.payee_bank_account || "",
+      payAccount: tx.payee_bank_account || ""
+    };
+  });
+
   return res.json({
     code: 0,
     msg: 'success',
     data: {
       total: txs.length,
-      list: list
+      list: mappedList
     }
   });
 });
