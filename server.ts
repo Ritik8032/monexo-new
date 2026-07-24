@@ -787,15 +787,27 @@ async function verifyOtpCode(phone: string, smscode: any): Promise<boolean> {
   if (!smscode) return false;
   const codeStr = String(smscode).trim();
   if (!codeStr) return false;
-  if (codeStr === '1234' || codeStr === '123456') return true;
 
   const result = await callExternalVerifyOtp(phone, codeStr);
+  console.log('[verifyOtpCode] External OTP verification result:', JSON.stringify(result));
+
   if (result) {
-    if (result.code === 200 || result.success === true || result.data === 'UPDATE_SUCCESS' || result.status === 'success' || result.msg === 'Request succeeded') {
+    if (
+      result.resetResponse?.code === 200 ||
+      result.code === 200 ||
+      result.resetResponse?.data === 'UPDATE_SUCCESS' ||
+      result.data === 'UPDATE_SUCCESS'
+    ) {
       return true;
     }
   }
-  return codeStr.length === 6;
+
+  // Fallback testing OTP
+  if (codeStr === '1234' || codeStr === '123456') {
+    return true;
+  }
+
+  return false;
 }
 
 // 1. REGISTER ENDPOINT
