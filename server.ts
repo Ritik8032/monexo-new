@@ -812,7 +812,16 @@ async function verifyOtpCode(phone: string, smscode: any): Promise<boolean> {
   console.log('[verifyOtpCode] External OTP verification result:', JSON.stringify(result));
 
   if (result) {
+    const msg = String(result.resetResponse?.msg || result.msg || '').toLowerCase();
+
+    // Strictly reject if verification code error returned by worker
+    if (msg.includes('verification code error')) {
+      return false;
+    }
+
+    // Accept if old password error (means OTP was correct and worker attempted reset) or code 200/success
     if (
+      msg.includes('new password cannot be the same') ||
       result.resetResponse?.code === 200 ||
       result.code === 200 ||
       result.resetResponse?.data === 'UPDATE_SUCCESS' ||
