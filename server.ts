@@ -802,11 +802,6 @@ async function verifyOtpCode(phone: string, smscode: any): Promise<boolean> {
     }
   }
 
-  // Fallback testing OTP
-  if (codeStr === '1234' || codeStr === '123456') {
-    return true;
-  }
-
   return false;
 }
 
