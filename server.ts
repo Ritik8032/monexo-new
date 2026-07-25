@@ -747,9 +747,22 @@ async function getUserByToken(req) {
 }
 
 // Helper functions for external OTP API integration
+const lastOtpSentTimes: Record<string, number> = {};
+
 async function callExternalGetOtp(phone: string) {
   try {
-    const formattedPhone = String(phone).trim().startsWith('+') ? String(phone).trim() : '+91' + String(phone).trim();
+    const rawPhone = String(phone).trim();
+    const cleanPhone = rawPhone.replace(/^\+91/, '');
+    const formattedPhone = rawPhone.startsWith('+') ? rawPhone : '+91' + rawPhone;
+    const now = Date.now();
+
+    // Deduplicate rapid duplicate OTP requests within 15 seconds for the same phone number
+    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 15000) {
+      console.log(`[callExternalGetOtp] Suppressed duplicate OTP request for phone: ${formattedPhone} (${now - lastOtpSentTimes[cleanPhone]}ms since last request)`);
+      return { code: 200, msg: 'OTP already requested recently' };
+    }
+
+    lastOtpSentTimes[cleanPhone] = now;
     console.log(`[callExternalGetOtp] Requesting OTP from monexo worker for phone: ${formattedPhone}`);
     const response = await fetch('https://monexo.guruarning.workers.dev/get-otp', {
       method: 'POST',
