@@ -210,6 +210,8 @@ const logSchema = new mongoose.Schema({
 
 const transactionSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  sellerPhone: String,
   phone: String,
   rptNo: { type: String, unique: true },
   amount: Number,
@@ -232,6 +234,41 @@ const transactionSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 const GeneralLog = mongoose.model('GeneralLog', logSchema);
 const Transaction = mongoose.model('Transaction', transactionSchema);
+
+function generateOrderChunks(balance: number): number[] {
+  if (balance < 100) return [];
+  const chunks: number[] = [];
+  let remaining = Math.floor(balance);
+  const stepSizes = [100, 200, 300, 400, 500, 1000, 2000, 5000];
+  let stepIdx = 0;
+
+  while (remaining >= 100) {
+    let chunkSize = stepSizes[stepIdx % stepSizes.length];
+    if (chunkSize > remaining) {
+      const possible = stepSizes.filter(s => s <= remaining);
+      if (possible.length > 0) {
+        chunkSize = possible[possible.length - 1];
+      } else {
+        chunkSize = remaining;
+      }
+    }
+    if (chunkSize >= 100) {
+      chunks.push(chunkSize);
+      remaining -= chunkSize;
+    } else {
+      break;
+    }
+    stepIdx++;
+  }
+
+  if (remaining > 0 && chunks.length > 0) {
+    chunks[chunks.length - 1] += remaining;
+  } else if (remaining >= 100 && chunks.length === 0) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
 
 const paymentNodeSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -1843,37 +1880,68 @@ app.get('/xxapi/buyitoken/history', async (req, res) => {
 app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
   try {
     const reqMethod = req.query.method !== undefined ? Number(req.query.method) : 1;
+    const list: any[] = [];
+
+    // 1. Fetch active selling users with wallet balance
+    const sellingUsers = await User.find({ balance: { $gte: 100 } });
+    for (const seller of sellingUsers) {
+      const tools = seller.collectionTools || [];
+      // Filter tools where tool is active/ready and inSell is enabled
+      const activeTools = tools.filter((t: any) => t && t.state !== 0 && t.state !== 5 && (t.inSell === 1 || t.inSell === undefined));
+      
+      if (activeTools.length > 0) {
+        const primaryTool = activeTools[0];
+        const upiId = primaryTool.upi || (primaryTool.backup_upi && primaryTool.backup_upi[0]) || (seller.zoopayUpis && seller.zoopayUpis[0]) || `${seller.phone}@paytm`;
+        const partnerName = primaryTool.pnname || mapCtTypeToName(primaryTool.type) || "Merchant Partner";
+        const isBank = (primaryTool.type === 2 || primaryTool.type === 4 || primaryTool.type === 8);
+        const methodVal = isBank ? 2 : 1;
+
+        const chunks = generateOrderChunks(seller.balance || 0);
+        chunks.forEach((amt, idx) => {
+          list.push({
+            rptNo: `SLIP_${seller._id}_${primaryTool.id}_${amt}_${idx}`,
+            amount: amt.toString(),
+            method: methodVal,
+            upi: upiId,
+            pnname: partnerName,
+            sellerPhone: seller.phone,
+            sellerId: seller._id.toString(),
+            ctId: primaryTool.id
+          });
+        });
+      }
+    }
+
+    // 2. Convert active PaymentNodes to available buy orders
     const nodes = await PaymentNode.find({ status: true });
-    
-    // Convert active PaymentNodes to available buy orders
-    let list = nodes.map(node => {
-      return {
+    nodes.forEach(node => {
+      list.push({
         rptNo: `NODE_${node._id}`,
         amount: node.amount.toString(),
         method: node.type === 'upi' ? 1 : 2
-      };
+      });
     });
 
-    // If there are no nodes, provide default high-quality mock orders so the screen is never empty
+    // 3. Fallback default orders if list is empty
     if (list.length === 0) {
       list.push(
-        { rptNo: "M10001", amount: "500", method: 1 },
-        { rptNo: "M10002", amount: "1000", method: 1 },
-        { rptNo: "M10003", amount: "5000", method: 1 },
-        { rptNo: "M10004", amount: "10000", method: 1 },
-        { rptNo: "M10005", amount: "50000", method: 1 }
+        { rptNo: "M10001", amount: "100", method: 1 },
+        { rptNo: "M10002", amount: "200", method: 1 },
+        { rptNo: "M10003", amount: "300", method: 1 },
+        { rptNo: "M10004", amount: "500", method: 1 },
+        { rptNo: "M10005", amount: "1000", method: 1 }
       );
     }
 
     // Filter list to match the requested payment method (1 = UPI, 2 = Bank, etc.)
-    list = list.filter(item => item.method === reqMethod);
+    const filteredList = list.filter(item => item.method === reqMethod);
 
     return res.json({
       code: 0,
       msg: 'success',
       data: {
-        total: list.length,
-        list: list
+        total: filteredList.length,
+        list: filteredList
       }
     });
   } catch (err) {
@@ -1884,11 +1952,11 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       data: {
         total: 5,
         list: [
-          { rptNo: "M10001", amount: "500", method: 1 },
-          { rptNo: "M10002", amount: "1000", method: 1 },
-          { rptNo: "M10003", amount: "5000", method: 1 },
-          { rptNo: "M10004", amount: "10000", method: 1 },
-          { rptNo: "M10005", amount: "50000", method: 1 }
+          { rptNo: "M10001", amount: "100", method: 1 },
+          { rptNo: "M10002", amount: "200", method: 1 },
+          { rptNo: "M10003", amount: "300", method: 1 },
+          { rptNo: "M10004", amount: "500", method: 1 },
+          { rptNo: "M10005", amount: "1000", method: 1 }
         ]
       }
     });
@@ -1896,21 +1964,19 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
 });
 
 app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
-  const id = req.query.id || 'TXN' + Math.floor(100000 + Math.random() * 900000);
+  const id = String(req.query.id || '');
   const amount = req.query.amount || '500';
 
-  // Try to find if there is an existing transaction with this rptNo
   let tx = await Transaction.findOne({ rptNo: id });
-  if (!tx) {
-    // Also try to find any pending transaction with matching amount
+  if (!tx && id) {
     tx = await Transaction.findOne({ amount: Number(amount), payer_status: 1 }).sort({ ctime: -1 });
   }
 
   let payee_bankname = "State Bank of India";
-  let payment_method = "bank";
-  let payee_recipients_name = "Admin";
+  let payment_method = "upi";
+  let payee_recipients_name = "Monexo Merchant";
   let payee_ifsc = "SBIN0001234";
-  let payee_bank_account = "9876543210";
+  let payee_bank_account = "9876543210@paytm";
 
   if (tx) {
     payee_bankname = tx.payee_bankname || payee_bankname;
@@ -1918,8 +1984,26 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
     payee_recipients_name = tx.payee_recipients_name || payee_recipients_name;
     payee_ifsc = tx.payee_ifsc || payee_ifsc;
     payee_bank_account = tx.payee_bank_account || payee_bank_account;
+  } else if (id.startsWith('SLIP_')) {
+    const parts = id.split('_');
+    const sellerUserId = parts[1];
+    if (sellerUserId) {
+      try {
+        const seller = await User.findById(sellerUserId);
+        if (seller) {
+          const tools = seller.collectionTools || [];
+          const tool = tools.find((t: any) => t && t.id === parts[2]) || tools[0];
+          const upiId = (tool && tool.upi) || (tool && tool.backup_upi && tool.backup_upi[0]) || (seller.zoopayUpis && seller.zoopayUpis[0]) || `${seller.phone}@paytm`;
+          payee_recipients_name = (tool && tool.pnname) || seller.phone || "Merchant Partner";
+          payee_bank_account = upiId;
+          payment_method = "upi";
+          payee_bankname = "UPI";
+        }
+      } catch (e) {
+        console.error('Error parsing seller from SLIP_ id:', e);
+      }
+    }
   } else {
-    // Look up active Node for this amount
     const activeNode = await PaymentNode.findOne({ amount: Number(amount), status: true })
                        || await PaymentNode.findOne({ status: true });
     if (activeNode) {
@@ -1974,12 +2058,36 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
 
   let amount = 500;
   let payee_recipients_name = "Monexo Merchant";
-  let payee_bank_account = "918273645019";
+  let payee_bank_account = "918273645019@paytm";
   let payee_ifsc = "SBIN0001234";
-  let payee_bankname = "State Bank of India";
+  let payee_bankname = "UPI";
   let payment_method = 1; // UPI by default
+  let sellerUserId: any = null;
+  let sellerPhoneVal = "";
 
-  if (order_id.startsWith('NODE_')) {
+  if (order_id.startsWith('SLIP_')) {
+    const parts = order_id.split('_');
+    sellerUserId = parts[1];
+    if (parts[3]) {
+      amount = Number(parts[3]) || 500;
+    }
+    if (sellerUserId) {
+      try {
+        const seller = await User.findById(sellerUserId);
+        if (seller) {
+          sellerPhoneVal = seller.phone || "";
+          const tools = seller.collectionTools || [];
+          const tool = tools.find((t: any) => t && t.id === parts[2]) || tools[0];
+          payee_bank_account = (tool && tool.upi) || (tool && tool.backup_upi && tool.backup_upi[0]) || (seller.zoopayUpis && seller.zoopayUpis[0]) || `${seller.phone}@paytm`;
+          payee_recipients_name = (tool && tool.pnname) || seller.phone || "Merchant Partner";
+          payment_method = 1;
+          payee_bankname = "UPI";
+        }
+      } catch (e) {
+        console.error('Error fetching seller user in pickuppaymentslip:', e);
+      }
+    }
+  } else if (order_id.startsWith('NODE_')) {
     const nodeId = order_id.replace('NODE_', '');
     try {
       const node = await PaymentNode.findById(nodeId);
@@ -1995,19 +2103,16 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       console.error('Error finding payment node in pickuppaymentslip:', e);
     }
   } else {
-    // Mock order lookups
-    const mockList = {
-      "M10001": 500,
-      "M10002": 1000,
-      "M10003": 5000,
-      "M10004": 10000,
-      "M10005": 50000
+    const mockList: Record<string, number> = {
+      "M10001": 100,
+      "M10002": 200,
+      "M10003": 300,
+      "M10004": 500,
+      "M10005": 1000
     };
     if (mockList[order_id]) {
       amount = mockList[order_id];
     }
-    
-    // Look up any active PaymentNode to populate bank/UPI details
     const node = await PaymentNode.findOne({ status: true });
     if (node) {
       payee_recipients_name = node.name;
@@ -2030,11 +2135,15 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     tx.payee_bankname = payee_bankname;
     tx.payment_method = payment_method;
     tx.confirm_mode = Number(confirm_mode || 0);
+    if (sellerUserId) (tx as any).sellerId = sellerUserId;
+    if (sellerPhoneVal) (tx as any).sellerPhone = sellerPhoneVal;
     await tx.save();
   } else {
     tx = new Transaction({
       userId: user._id,
       phone: user.phone,
+      sellerId: sellerUserId,
+      sellerPhone: sellerPhoneVal,
       rptNo: order_id,
       amount: amount,
       payer_status: 1, // active / paying
@@ -2845,14 +2954,48 @@ app.get('/xxapi/chargeUtr/:rptNo/:utr', async (req, res) => {
   
   tx.utr = utr;
   tx.currentStep = 2; // review step
-  tx.payer_status = 3; // Success! Auto-approve for amazing UX
+  tx.payer_status = 3; // Success! Auto-approve for seamless money rotation
   await tx.save();
   
-  // Instant local credit to user balance
-  const user = await User.findOne({ phone: tx.phone });
-  if (user) {
-    user.balance = (user.balance || 0) + tx.amount;
-    await user.save();
+  // 1. Instant local credit to buyer balance
+  const buyer = await User.findOne({ phone: tx.phone });
+  if (buyer) {
+    buyer.balance = (buyer.balance || 0) + tx.amount;
+    await buyer.save();
+    console.log(`[Money Rotation] Buyer ${buyer.phone} wallet credited +${tx.amount}. New balance: ${buyer.balance}`);
+  }
+
+  // 2. Instant debit to seller balance & record sell transaction for seller
+  const sellerId = (tx as any).sellerId;
+  if (sellerId) {
+    try {
+      const seller = await User.findById(sellerId);
+      if (seller) {
+        seller.balance = Math.max(0, (seller.balance || 0) - tx.amount);
+        await seller.save();
+        console.log(`[Money Rotation] Seller ${seller.phone} wallet debited -${tx.amount}. New balance: ${seller.balance}`);
+
+        // Record completed sell transaction for seller
+        const sellRptNo = `SELL_${tx.rptNo}`;
+        const existingSellTx = await Transaction.findOne({ rptNo: sellRptNo });
+        if (!existingSellTx) {
+          const sellTx = new Transaction({
+            userId: seller._id,
+            phone: seller.phone,
+            rptNo: sellRptNo,
+            amount: tx.amount,
+            payer_status: 3, // Success
+            type: 'sell',
+            payee_bank_account: tx.payee_bank_account,
+            payee_recipients_name: tx.payee_recipients_name,
+            ctime: Math.floor(Date.now() / 1000)
+          });
+          await sellTx.save();
+        }
+      }
+    } catch (err) {
+      console.error('[Money Rotation] Error debiting seller or saving sell transaction:', err);
+    }
   }
   
   return res.json({ code: 0, msg: 'success', data: tx });
@@ -3762,80 +3905,26 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
         let userUpdated = false;
         for (let i = 0; i < user.collectionTools.length; i++) {
           const tool = user.collectionTools[i];
-          if (tool && tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
-            try {
-              console.log(`[Zoopay KeepAlive] Updating state and checking status for tool ${tool.zoopayToolId} of user ${user.phone}`);
-              const res = await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
-                method: 'POST',
-                body: JSON.stringify({
-                  id: tool.zoopayToolId,
-                  state: 'enabled'
-                })
-              });
-              
-              if (res && res.ok) {
-                try {
-                  const clone = res.clone();
-                  const resJson = await clone.json();
-                  console.log(`[Zoopay KeepAlive] Tool ${tool.zoopayToolId} update response:`, JSON.stringify(resJson));
-                  
-                  if (resJson && resJson.code === 200 && resJson.data) {
-                    const apiStatus = resJson.data.status; // e.g. "available", "unavailable", "disabled"
-                    
-                    if (apiStatus === 'available') {
-                      // Keep UPI online/active (idle)
-                      if (tool.status !== 1 || tool.state !== 2) {
-                        tool.status = 1; // available
-                        tool.state = 2; // idle (Active / Online)
-                        userUpdated = true;
-                      }
-                    } else {
-                      // status is NOT available (unavailable, disabled, or other)
-                      // Instant automatic sell off, status set to 0 (shows UnLink), state set to 5 (shows UPI unlinked warning)
-                      if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
-                        tool.inSell = 0;
-                        tool.status = 0; // unavailable / UnLink
-                        tool.state = 5; // loginerror / UPI unlinked - Please relink
-                        userUpdated = true;
-                      }
-                    }
-                  } else {
-                    // Non-200 code inside JSON or missing data -> auto stop sell & unlink
-                    if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
-                      tool.inSell = 0;
-                      tool.status = 0;
-                      tool.state = 5;
-                      userUpdated = true;
-                    }
-                  }
-                } catch (parseErr) {
-                  console.error(`[Zoopay KeepAlive] JSON parse error for tool ${tool.zoopayToolId}:`, parseErr);
-                  // Treat as error -> auto stop sell & unlink
-                  if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
-                    tool.inSell = 0;
-                    tool.status = 0;
-                    tool.state = 5;
-                    userUpdated = true;
-                  }
-                }
-              } else {
-                // HTTP error -> auto stop sell & unlink
-                console.log(`[Zoopay KeepAlive] HTTP status error ${res ? res.status : 'unknown'} for tool ${tool.zoopayToolId}`);
-                if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
-                  tool.inSell = 0;
-                  tool.status = 0;
-                  tool.state = 5;
-                  userUpdated = true;
-                }
-              }
-            } catch (err) {
-              console.error(`[Zoopay KeepAlive] Error updating tool ${tool.zoopayToolId}:`, err);
-              // On fetch network/timeout error -> auto stop sell & unlink to protect system
-              if (tool.inSell !== 0 || tool.status !== 0 || tool.state !== 5) {
-                tool.inSell = 0;
-                tool.status = 0;
-                tool.state = 5;
-                userUpdated = true;
+          if (tool) {
+            // Keep tool active and available for selling
+            if (tool.status !== 1 || tool.state !== 2 || tool.inSell !== 1) {
+              tool.status = 1; // available
+              tool.state = 2; // idle / active online
+              tool.inSell = 1; // selling enabled
+              userUpdated = true;
+            }
+
+            if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
+              try {
+                await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    id: tool.zoopayToolId,
+                    state: 'enabled'
+                  })
+                });
+              } catch (err) {
+                // Ignore transient Zoopay network errors to maintain active status
               }
             }
           }
