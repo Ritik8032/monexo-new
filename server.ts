@@ -227,6 +227,8 @@ const transactionSchema = new mongoose.Schema({
   countdown: { type: Number, default: 1800 },
   reason_for_rejection: { type: String, default: '' },
   reward: { type: Number, default: 0 },
+  currency: { type: Number, default: 3 }, // 3: INR, 1: USDT
+  isUsdt: { type: Boolean, default: false },
   ctime: { type: Number, default: () => Math.floor(Date.now() / 1000) },
   type: { type: String, default: 'recharge' } // 'recharge' or 'sell'
 });
@@ -234,6 +236,32 @@ const transactionSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 const GeneralLog = mongoose.model('GeneralLog', logSchema);
 const Transaction = mongoose.model('Transaction', transactionSchema);
+
+function generate15DigitRptNo(): string {
+  let result = '';
+  for (let i = 0; i < 15; i++) {
+    if (i === 0) {
+      result += Math.floor(1 + Math.random() * 9);
+    } else {
+      result += Math.floor(Math.random() * 10);
+    }
+  }
+  return result;
+}
+
+interface OrderSlipItem {
+  rptNo: string;
+  sellerId?: string;
+  sellerPhone?: string;
+  ctId?: string;
+  amount: number;
+  method: number; // 1 = UPI, 2 = Bank
+  upi: string;
+  pnname: string;
+  ctime: number;
+}
+
+const orderSlipMap = new Map<string, OrderSlipItem>();
 
 function generateOrderChunks(balance: number): number[] {
   if (balance < 100) return [];
@@ -1824,57 +1852,11 @@ app.get('/xxapi/buyitoken/waitconfirm', async (req, res) => {
 });
 
 app.get('/xxapi/buyitoken/history', async (req, res) => {
-  const user = await getUserByToken(req);
-  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+  return getRechargeHistory(req, res);
+});
 
-  const currency = req.query.currency || req.body.currency;
-  let query: any = { userId: user._id, type: 'recharge' };
-  if (currency === 'recharge_cancel') {
-    query.payer_status = 4;
-  } else if (currency === 'recharge') {
-    query.payer_status = { $ne: 4 };
-  }
-
-  const txs = await Transaction.find(query).sort({ ctime: -1 });
-
-  const page = Number(req.query.page) || 1;
-  const limit = Number(req.query.limit) || 10;
-  const start = (page - 1) * limit;
-  const list = txs.slice(start, start + limit);
-
-  const mappedList = list.map(tx => {
-    let orderState = 1; // Default to paying
-    if (tx.payer_status === 1) orderState = 1; // paying
-    else if (tx.payer_status === 2) orderState = 2; // pending
-    else if (tx.payer_status === 3) orderState = 3; // success
-    else if (tx.payer_status === 4) orderState = 4; // cancel
-    else if (tx.payer_status === 5) orderState = 5; // fail
-
-    const obj = tx.toObject ? tx.toObject() : { ...tx };
-    return {
-      ...obj,
-      id: tx._id.toString(),
-      orderState: orderState,
-      currency: 3, // INR constant is 3
-      reward: (tx as any).reward || 0,
-      payType: tx.payment_method === 1 ? 9 : 2, // 9 for Paytm, 2 for Mobikwik
-      crtDate: tx.ctime * 1000,
-      uptDate: tx.ctime * 1000,
-      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
-      secLimit: tx.countdown || 1800,
-      acctNo: tx.payee_bank_account || "",
-      payAccount: tx.payee_bank_account || ""
-    };
-  });
-
-  return res.json({
-    code: 0,
-    msg: 'success',
-    data: {
-      total: txs.length,
-      list: mappedList
-    }
-  });
+app.post('/xxapi/buyitoken/history', async (req, res) => {
+  return getRechargeHistory(req, res);
 });
 
 app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
@@ -1897,9 +1879,23 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
         const methodVal = isBank ? 2 : 1;
 
         const chunks = generateOrderChunks(seller.balance || 0);
-        chunks.forEach((amt, idx) => {
+        chunks.forEach((amt) => {
+          const rptNo = generate15DigitRptNo();
+          const slipItem: OrderSlipItem = {
+            rptNo,
+            sellerId: seller._id.toString(),
+            sellerPhone: seller.phone,
+            ctId: primaryTool.id,
+            amount: amt,
+            method: methodVal,
+            upi: upiId,
+            pnname: partnerName,
+            ctime: Math.floor(Date.now() / 1000)
+          };
+          orderSlipMap.set(rptNo, slipItem);
+
           list.push({
-            rptNo: `SLIP_${seller._id}_${primaryTool.id}_${amt}_${idx}`,
+            rptNo,
             amount: amt.toString(),
             method: methodVal,
             upi: upiId,
@@ -1915,22 +1911,45 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
     // 2. Convert active PaymentNodes to available buy orders
     const nodes = await PaymentNode.find({ status: true });
     nodes.forEach(node => {
+      const rptNo = generate15DigitRptNo();
+      const methodVal = node.type === 'upi' ? 1 : 2;
+      const slipItem: OrderSlipItem = {
+        rptNo,
+        amount: node.amount,
+        method: methodVal,
+        upi: node.accountNumber,
+        pnname: node.name,
+        ctime: Math.floor(Date.now() / 1000)
+      };
+      orderSlipMap.set(rptNo, slipItem);
+
       list.push({
-        rptNo: `NODE_${node._id}`,
+        rptNo,
         amount: node.amount.toString(),
-        method: node.type === 'upi' ? 1 : 2
+        method: methodVal
       });
     });
 
     // 3. Fallback default orders if list is empty
     if (list.length === 0) {
-      list.push(
-        { rptNo: "M10001", amount: "100", method: 1 },
-        { rptNo: "M10002", amount: "200", method: 1 },
-        { rptNo: "M10003", amount: "300", method: 1 },
-        { rptNo: "M10004", amount: "500", method: 1 },
-        { rptNo: "M10005", amount: "1000", method: 1 }
-      );
+      [100, 200, 300, 500, 1000].forEach(amt => {
+        const rptNo = generate15DigitRptNo();
+        const slipItem: OrderSlipItem = {
+          rptNo,
+          amount: amt,
+          method: 1,
+          upi: "monexo@paytm",
+          pnname: "Monexo Merchant",
+          ctime: Math.floor(Date.now() / 1000)
+        };
+        orderSlipMap.set(rptNo, slipItem);
+
+        list.push({
+          rptNo,
+          amount: amt.toString(),
+          method: 1
+        });
+      });
     }
 
     // Filter list to match the requested payment method (1 = UPI, 2 = Bank, etc.)
@@ -1951,13 +1970,10 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       msg: 'success',
       data: {
         total: 5,
-        list: [
-          { rptNo: "M10001", amount: "100", method: 1 },
-          { rptNo: "M10002", amount: "200", method: 1 },
-          { rptNo: "M10003", amount: "300", method: 1 },
-          { rptNo: "M10004", amount: "500", method: 1 },
-          { rptNo: "M10005", amount: "1000", method: 1 }
-        ]
+        list: [100, 200, 300, 500, 1000].map(amt => {
+          const rptNo = generate15DigitRptNo();
+          return { rptNo, amount: amt.toString(), method: 1 };
+        })
       }
     });
   }
@@ -1965,53 +1981,57 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
 
 app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
   const id = String(req.query.id || '');
-  const amount = req.query.amount || '500';
+  const reqAmt = req.query.amount ? Number(req.query.amount) : 0;
 
   let tx = await Transaction.findOne({ rptNo: id });
-  if (!tx && id) {
-    tx = await Transaction.findOne({ amount: Number(amount), payer_status: 1 }).sort({ ctime: -1 });
+  const slipData = orderSlipMap.get(id);
+
+  let amount = 200;
+  if (tx) {
+    amount = tx.amount;
+  } else if (slipData) {
+    amount = slipData.amount;
+  } else if (reqAmt > 0) {
+    amount = reqAmt;
   }
 
-  let payee_bankname = "State Bank of India";
   let payment_method = "upi";
   let payee_recipients_name = "Monexo Merchant";
-  let payee_ifsc = "SBIN0001234";
-  let payee_bank_account = "9876543210@paytm";
+  let payee_ifsc = "";
+  let payee_bank_account = "monexo@paytm";
+  let payee_bankname = "";
 
   if (tx) {
-    payee_bankname = tx.payee_bankname || payee_bankname;
     payment_method = tx.payment_method === 1 ? "upi" : "bank";
-    payee_recipients_name = tx.payee_recipients_name || payee_recipients_name;
-    payee_ifsc = tx.payee_ifsc || payee_ifsc;
-    payee_bank_account = tx.payee_bank_account || payee_bank_account;
-  } else if (id.startsWith('SLIP_')) {
-    const parts = id.split('_');
-    const sellerUserId = parts[1];
-    if (sellerUserId) {
-      try {
-        const seller = await User.findById(sellerUserId);
-        if (seller) {
-          const tools = seller.collectionTools || [];
-          const tool = tools.find((t: any) => t && t.id === parts[2]) || tools[0];
-          const upiId = (tool && tool.upi) || (tool && tool.backup_upi && tool.backup_upi[0]) || (seller.zoopayUpis && seller.zoopayUpis[0]) || `${seller.phone}@paytm`;
-          payee_recipients_name = (tool && tool.pnname) || seller.phone || "Merchant Partner";
-          payee_bank_account = upiId;
-          payment_method = "upi";
-          payee_bankname = "UPI";
-        }
-      } catch (e) {
-        console.error('Error parsing seller from SLIP_ id:', e);
-      }
+    payee_recipients_name = tx.payee_recipients_name || "Monexo Merchant";
+    payee_bank_account = tx.payee_bank_account || "monexo@paytm";
+    if (payment_method === "upi") {
+      payee_ifsc = "";
+      payee_bankname = "";
+    } else {
+      payee_ifsc = tx.payee_ifsc || "SBIN0001234";
+      payee_bankname = tx.payee_bankname || "State Bank of India";
+    }
+  } else if (slipData) {
+    payment_method = slipData.method === 1 ? "upi" : "bank";
+    payee_recipients_name = slipData.pnname || "Monexo Merchant";
+    payee_bank_account = slipData.upi || "monexo@paytm";
+    if (payment_method === "upi") {
+      payee_ifsc = "";
+      payee_bankname = "";
+    } else {
+      payee_ifsc = "SBIN0001234";
+      payee_bankname = "State Bank of India";
     }
   } else {
-    const activeNode = await PaymentNode.findOne({ amount: Number(amount), status: true })
+    const activeNode = await PaymentNode.findOne({ amount: amount, status: true })
                        || await PaymentNode.findOne({ status: true });
     if (activeNode) {
       payee_recipients_name = activeNode.name;
       payee_bank_account = activeNode.accountNumber;
       if (activeNode.type === 'upi') {
         payment_method = "upi";
-        payee_bankname = "UPI";
+        payee_bankname = "";
         payee_ifsc = "";
       } else {
         payment_method = "bank";
@@ -2027,19 +2047,19 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
     data: {
       id: id,
       orderid: id,
-      amount: amount,
-      payee_bankname: payee_bankname,
+      amount: String(amount),
+      payee_bankname: payment_method === "upi" ? "" : payee_bankname,
       payment_method: payment_method,
       payee_recipients_name: payee_recipients_name,
-      payee_ifsc: payee_ifsc,
+      payee_ifsc: payment_method === "upi" ? "" : payee_ifsc,
       payee_bank_account: payee_bank_account,
       reason_for_rejection: tx ? (tx.reason_for_rejection || "") : "",
       payer_status: tx ? tx.payer_status : 1,
       confirm_mode: tx ? (tx.confirm_mode || 0) : 0,
-      ctType: 1,
-      ct_type: 1,
+      ctType: payment_method === "upi" ? 1 : 2,
+      ct_type: payment_method === "upi" ? 1 : 2,
       countdown: tx ? (tx.countdown || 600) : 600,
-      ctime: tx ? (tx.ctime * 1000) : (req.query.ctime || Date.now()),
+      ctime: tx ? (tx.ctime * 1000) : (slipData ? slipData.ctime * 1000 : Date.now()),
       walletDomain: "https://example.com"
     }
   });
@@ -2055,75 +2075,25 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
   }
 
   const ctime = Math.floor(Date.now() / 1000);
+  const slipData = orderSlipMap.get(order_id);
 
-  let amount = 500;
-  let payee_recipients_name = "Monexo Merchant";
-  let payee_bank_account = "918273645019@paytm";
-  let payee_ifsc = "SBIN0001234";
-  let payee_bankname = "UPI";
-  let payment_method = 1; // UPI by default
-  let sellerUserId: any = null;
-  let sellerPhoneVal = "";
+  let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 200);
+  let payee_recipients_name = slipData ? slipData.pnname : "Monexo Merchant";
+  let payee_bank_account = slipData ? slipData.upi : "monexo@paytm";
+  let payee_ifsc = "";
+  let payee_bankname = "";
+  let payment_method = slipData ? slipData.method : 1; // 1: upi, 2: bank
+  let sellerUserId: any = slipData ? slipData.sellerId : null;
+  let sellerPhoneVal = slipData ? slipData.sellerPhone : "";
 
-  if (order_id.startsWith('SLIP_')) {
-    const parts = order_id.split('_');
-    sellerUserId = parts[1];
-    if (parts[3]) {
-      amount = Number(parts[3]) || 500;
-    }
-    if (sellerUserId) {
-      try {
-        const seller = await User.findById(sellerUserId);
-        if (seller) {
-          sellerPhoneVal = seller.phone || "";
-          const tools = seller.collectionTools || [];
-          const tool = tools.find((t: any) => t && t.id === parts[2]) || tools[0];
-          payee_bank_account = (tool && tool.upi) || (tool && tool.backup_upi && tool.backup_upi[0]) || (seller.zoopayUpis && seller.zoopayUpis[0]) || `${seller.phone}@paytm`;
-          payee_recipients_name = (tool && tool.pnname) || seller.phone || "Merchant Partner";
-          payment_method = 1;
-          payee_bankname = "UPI";
-        }
-      } catch (e) {
-        console.error('Error fetching seller user in pickuppaymentslip:', e);
-      }
-    }
-  } else if (order_id.startsWith('NODE_')) {
-    const nodeId = order_id.replace('NODE_', '');
-    try {
-      const node = await PaymentNode.findById(nodeId);
-      if (node) {
-        amount = node.amount;
-        payee_recipients_name = node.name;
-        payee_bank_account = node.accountNumber;
-        payee_ifsc = node.ifsc;
-        payee_bankname = node.bankName;
-        payment_method = node.type === 'upi' ? 1 : 0;
-      }
-    } catch (e) {
-      console.error('Error finding payment node in pickuppaymentslip:', e);
-    }
+  if (payment_method === 1) {
+    payee_ifsc = "";
+    payee_bankname = "";
   } else {
-    const mockList: Record<string, number> = {
-      "M10001": 100,
-      "M10002": 200,
-      "M10003": 300,
-      "M10004": 500,
-      "M10005": 1000
-    };
-    if (mockList[order_id]) {
-      amount = mockList[order_id];
-    }
-    const node = await PaymentNode.findOne({ status: true });
-    if (node) {
-      payee_recipients_name = node.name;
-      payee_bank_account = node.accountNumber;
-      payee_ifsc = node.ifsc;
-      payee_bankname = node.bankName;
-      payment_method = node.type === 'upi' ? 1 : 0;
-    }
+    payee_ifsc = "SBIN0001234";
+    payee_bankname = "State Bank of India";
   }
 
-  // Create or update transaction in DB
   let tx = await Transaction.findOne({ rptNo: order_id });
   if (tx) {
     tx.payer_status = 1; // active / paying
@@ -2153,13 +2123,14 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       payee_bankname: payee_bankname,
       payment_method: payment_method,
       confirm_mode: Number(confirm_mode || 0),
+      currency: 3,
       ctime: ctime,
       type: 'recharge'
     });
     await tx.save();
   }
 
-  const resolvedCtId = ct_id || '1';
+  const resolvedCtId = ct_id || (slipData ? slipData.ctId : '1') || '1';
   const redirectUrl = `/buyinrdetail/${order_id}/${resolvedCtId}/0/${ctime}/1`;
 
   return res.json({
@@ -3001,37 +2972,46 @@ app.get('/xxapi/chargeUtr/:rptNo/:utr', async (req, res) => {
   return res.json({ code: 0, msg: 'success', data: tx });
 });
 
-app.get('/xxapi/chargeCancel/:rptNo', async (req, res) => {
-  const { rptNo } = req.params;
-  const tx = await Transaction.findOne({ rptNo });
-  if (!tx) return res.json({ code: 404, msg: 'Transaction not found' });
-  
-  tx.payer_status = 4; // Cancelled
-  await tx.save();
+async function cancelTransactionHandler(req: any, res: any) {
+  const rptNo = req.params.rptNo || req.body?.rptNo || req.body?.order_id || req.body?.orderId || req.query?.rptNo || req.query?.order_id;
+  if (rptNo) {
+    const tx = await Transaction.findOne({ rptNo: String(rptNo) });
+    if (tx) {
+      tx.payer_status = 4; // Cancelled
+      await tx.save();
+    }
+  }
   return res.json({ code: 0, msg: 'success' });
-});
+}
 
-app.get('/xxapi/chargeStatus/:rptNo', async (req, res) => {
-  const { rptNo } = req.params;
-  const tx = await Transaction.findOne({ rptNo });
-  if (!tx) return res.json({ code: 404, msg: 'Transaction not found' });
-  return res.json({ code: 0, msg: 'success', data: tx.payer_status });
-});
-
-app.get('/xxapi/chargeToken/history', async (req, res) => {
+async function getRechargeHistory(req: any, res: any) {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
 
-  const currency = req.query.currency || req.body.currency;
+  const currencyVal = String(req.query.currency || req.body?.currency || '').toLowerCase();
+  const statusVal = String(req.query.status || req.query.state || req.query.orderState || '');
+
+  // Is USDT requested?
+  const isUsdtRequest = currencyVal === '1' || currencyVal === 'usdt';
+
   let query: any = { userId: user._id, type: 'recharge' };
-  if (currency === 'recharge_cancel') {
-    query.payer_status = 4;
-  } else if (currency === 'recharge') {
-    query.payer_status = { $ne: 4 };
+
+  if (isUsdtRequest) {
+    query.isUsdt = true;
+    query.currency = 1;
+  } else {
+    // INR recharge transactions
+    query.isUsdt = { $ne: true };
+  }
+
+  if (currencyVal === 'recharge_cancel' || statusVal === '4' || statusVal === '5') {
+    query.payer_status = { $in: [4, 5] };
+  } else if (currencyVal === 'recharge' || statusVal === '1' || statusVal === '2' || statusVal === '3') {
+    query.payer_status = { $nin: [4, 5] };
   }
 
   const txs = await Transaction.find(query).sort({ ctime: -1 });
-  
+
   const page = Number(req.query.page) || 1;
   const limit = Number(req.query.limit) || 10;
   const start = (page - 1) * limit;
@@ -3043,16 +3023,18 @@ app.get('/xxapi/chargeToken/history', async (req, res) => {
     else if (tx.payer_status === 2) orderState = 2; // pending
     else if (tx.payer_status === 3) orderState = 3; // success
     else if (tx.payer_status === 4) orderState = 4; // cancel
-    else if (tx.payer_status === 5) orderState = 5; // fail
+    else if (tx.payer_status === 5) orderState = 5; // fail/timeout
 
     const obj = tx.toObject ? tx.toObject() : { ...tx };
     return {
       ...obj,
       id: tx._id.toString(),
       orderState: orderState,
-      currency: 3, // INR constant is 3
+      payer_status: tx.payer_status,
+      status: tx.payer_status,
+      currency: tx.currency || (isUsdtRequest ? 1 : 3),
       reward: (tx as any).reward || 0,
-      payType: tx.payment_method === 1 ? 9 : 2, // 9 for Paytm, 2 for Mobikwik
+      payType: tx.payment_method === 1 ? 9 : 2,
       crtDate: tx.ctime * 1000,
       uptDate: tx.ctime * 1000,
       fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
@@ -3070,6 +3052,27 @@ app.get('/xxapi/chargeToken/history', async (req, res) => {
       list: mappedList
     }
   });
+}
+
+app.get('/xxapi/chargeCancel/:rptNo', cancelTransactionHandler);
+app.post('/xxapi/chargeCancel/:rptNo', cancelTransactionHandler);
+app.post('/xxapi/chargeCancel', cancelTransactionHandler);
+app.get('/xxapi/buyitoken/cancel/:rptNo', cancelTransactionHandler);
+app.post('/xxapi/buyitoken/cancel', cancelTransactionHandler);
+
+app.get('/xxapi/chargeStatus/:rptNo', async (req, res) => {
+  const { rptNo } = req.params;
+  const tx = await Transaction.findOne({ rptNo });
+  if (!tx) return res.json({ code: 404, msg: 'Transaction not found' });
+  return res.json({ code: 0, msg: 'success', data: tx.payer_status });
+});
+
+app.get('/xxapi/chargeToken/history', async (req, res) => {
+  return getRechargeHistory(req, res);
+});
+
+app.post('/xxapi/chargeToken/history', async (req, res) => {
+  return getRechargeHistory(req, res);
 });
 
 app.get('/xxapi/transferToken/history', async (req, res) => {
