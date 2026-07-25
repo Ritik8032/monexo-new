@@ -749,15 +749,22 @@ async function getUserByToken(req) {
 // Helper functions for external OTP API integration
 const lastOtpSentTimes: Record<string, number> = {};
 
+function getCleanPhone(phone: string): { cleanPhone: string; formattedPhone: string } {
+  const raw = String(phone || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  const cleanPhone = digits.length >= 10 ? digits.slice(-10) : digits;
+  const formattedPhone = '+91' + cleanPhone;
+  return { cleanPhone, formattedPhone };
+}
+
 async function callExternalGetOtp(phone: string) {
   try {
-    const rawPhone = String(phone).trim();
-    const cleanPhone = rawPhone.replace(/^\+91/, '');
-    const formattedPhone = rawPhone.startsWith('+') ? rawPhone : '+91' + rawPhone;
-    const now = Date.now();
+    const { cleanPhone, formattedPhone } = getCleanPhone(phone);
+    if (!cleanPhone) return null;
 
-    // Deduplicate rapid duplicate OTP requests within 15 seconds for the same phone number
-    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 15000) {
+    const now = Date.now();
+    // 30 seconds cooldown per phone number to prevent duplicate OTP requests
+    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 30000) {
       console.log(`[callExternalGetOtp] Suppressed duplicate OTP request for phone: ${formattedPhone} (${now - lastOtpSentTimes[cleanPhone]}ms since last request)`);
       return { code: 200, msg: 'OTP already requested recently' };
     }
@@ -780,7 +787,7 @@ async function callExternalGetOtp(phone: string) {
 
 async function callExternalVerifyOtp(phone: string, otp: string) {
   try {
-    const formattedPhone = String(phone).trim().startsWith('+') ? String(phone).trim() : '+91' + String(phone).trim();
+    const { formattedPhone } = getCleanPhone(phone);
     console.log(`[callExternalVerifyOtp] Verifying OTP with monexo worker for phone: ${formattedPhone}, otp: ${otp}`);
     const response = await fetch('https://monexo.guruarning.workers.dev/verify-reset', {
       method: 'POST',
@@ -809,7 +816,9 @@ async function verifyOtpCode(phone: string, smscode: any): Promise<boolean> {
       result.resetResponse?.code === 200 ||
       result.code === 200 ||
       result.resetResponse?.data === 'UPDATE_SUCCESS' ||
-      result.data === 'UPDATE_SUCCESS'
+      result.data === 'UPDATE_SUCCESS' ||
+      result.status === 'success' ||
+      result.success === true
     ) {
       return true;
     }
@@ -899,8 +908,8 @@ app.post('/xxapi/checkSmsNew', async (req, res) => {
     return res.json({ code: 400, msg: 'Password cannot be empty' });
   }
 
-  await callExternalGetOtp(phone);
-  console.log(`[checkSmsNew] OTP triggered via monexo worker for phone: ${phone}`);
+  // Frontend will invoke sendsms next, so we return success without calling getOtp here
+  console.log(`[checkSmsNew] Validated request for phone: ${phone}`);
   return res.json({
     code: 0,
     msg: 'success',
