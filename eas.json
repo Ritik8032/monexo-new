@@ -10,11 +10,13 @@
     },
     "preview": {
       "distribution": "internal",
+      "frozenLockfile": false,
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
+      "frozenLockfile": false,
       "android": {
         "buildType": "apk"
       }
