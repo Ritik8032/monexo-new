@@ -4076,45 +4076,86 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// Serve static assets from the current directory
+// Serve static assets from explicit directory paths
+app.use('/static', express.static(path.join(process.cwd(), 'static')));
+app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
+app.use(express.static(process.cwd()));
 app.use(express.static(currentDirname));
+
+// Smart static image resolver with case-insensitivity & cross-folder fallback
+app.use((req, res, next) => {
+  const urlPath = req.path;
+  const isImage = /\.(png|jpg|jpeg|gif|svg|ico)$/i.test(urlPath);
+  if (!isImage) return next();
+
+  const filename = path.basename(urlPath);
+  const lowerFilename = filename.toLowerCase();
+
+  const candidateDirs = [
+    path.join(process.cwd(), 'static', 'icon'),
+    path.join(process.cwd(), 'static', 'images'),
+    path.join(process.cwd(), 'static'),
+    path.join(process.cwd(), 'assets'),
+    path.join(process.cwd(), 'public')
+  ];
+
+  // 1. Check candidate directories directly or case-insensitively
+  for (const dir of candidateDirs) {
+    if (!fs.existsSync(dir)) continue;
+    const directPath = path.join(dir, filename);
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+      return res.sendFile(directPath);
+    }
+    
+    try {
+      const files = fs.readdirSync(dir);
+      const matchedFile = files.find(f => f.toLowerCase() === lowerFilename);
+      if (matchedFile) {
+        return res.sendFile(path.join(dir, matchedFile));
+      }
+    } catch (e) {}
+  }
+
+  // 2. Alias / fallback mappings for known variants
+  const aliases: Record<string, string[]> = {
+    'whatsapp.png': ['whatsApp.png', 'telegram.png', 'service.png'],
+    'whatsApp.png': ['whatsapp.png', 'telegram.png', 'service.png'],
+    'siilogo.png': ['sii-logo.png', 'Login_Logo.png'],
+    'sii-logo.png': ['siilogo.png', 'Login_Logo.png'],
+    'copy.png': ['teamCopy.png'],
+    'teamCopy.png': ['copy.png'],
+    'profit.png': ['gift.png'],
+    'upi.png': ['batch.png'],
+    'modify_password.png': ['password.png'],
+    'inr.png': ['tether.jpg', 'tokenbg.jpg'],
+    'inrr.png': ['tether.jpg', 'tokenbg.jpg'],
+    'usdt-trc20.png': ['tether.jpg'],
+    'usdt-bep20.png': ['tether.jpg'],
+    'trx.png': ['tether.jpg'],
+    'bnb.png': ['tether.jpg'],
+    'trc.png': ['tether.jpg']
+  };
+
+  const possibleAliases = aliases[lowerFilename] || aliases[filename] || [];
+  for (const alias of possibleAliases) {
+    for (const dir of candidateDirs) {
+      if (!fs.existsSync(dir)) continue;
+      const aliasPath = path.join(dir, alias);
+      if (fs.existsSync(aliasPath) && fs.statSync(aliasPath).isFile()) {
+        return res.sendFile(aliasPath);
+      }
+    }
+  }
+
+  next();
+});
 
 // For SPA routing fallback to index.html
 app.get('*', (req, res) => {
   const urlPath = req.path.toLowerCase();
   
-  // If it's an image request or a static file request that wasn't handled, do not serve index.html
-  const isImage = /\.(png|jpg|jpeg|gif|svg|ico)$/i.test(urlPath);
+  // If it's a static asset request that wasn't handled, return 404
   const isStaticAsset = urlPath.includes('/static/') || urlPath.includes('/assets/') || /\.(css|js|woff|woff2|ttf|json)$/i.test(urlPath);
-  
-  if (isImage) {
-    const filename = path.basename(req.path);
-    const ext = path.extname(filename).toLowerCase() || '.png';
-    const nameWithoutExt = path.basename(filename, ext) || 'IMG';
-    const cleanName = nameWithoutExt.toUpperCase();
-    
-    let sum = 0;
-    for (let i = 0; i < cleanName.length; i++) {
-      sum += cleanName.charCodeAt(i);
-    }
-    const colors = ['#198cff', '#00b900', '#f0b90b', '#ff4d4f', '#722ed1', '#eb2f96', '#13c2c2', '#fa8c16'];
-    const bg = colors[sum % colors.length];
-    
-    let label = cleanName;
-    if (label.length > 4) {
-      label = label.substring(0, 3);
-    }
-    
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-        <rect width="100" height="100" rx="20" fill="${bg}"/>
-        <text x="50" y="55" font-family="-apple-system, sans-serif" font-size="28" font-weight="bold" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">${label}</text>
-      </svg>
-    `.trim();
-    
-    res.setHeader('Content-Type', 'image/svg+xml');
-    return res.send(svg);
-  }
   
   if (isStaticAsset) {
     return res.status(404).send('Not Found');
