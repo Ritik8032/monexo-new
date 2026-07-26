@@ -235,9 +235,30 @@ const transactionSchema = new mongoose.Schema({
   type: { type: String, default: 'recharge' } // 'recharge' or 'sell'
 });
 
+const notificationSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  phone: { type: String, index: true },
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  type: { type: String, default: 'info' }, // 'info', 'alert', 'system', 'promo'
+  isRead: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const smsLogSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  phone: { type: String, index: true },
+  sender: { type: String, default: 'SMS-ALERT' },
+  message: { type: String, required: true },
+  type: { type: String, default: 'incoming' }, // 'incoming', 'otp', 'system'
+  receivedAt: { type: Date, default: Date.now }
+});
+
 const User = mongoose.model('User', userSchema);
 const GeneralLog = mongoose.model('GeneralLog', logSchema);
 const Transaction = mongoose.model('Transaction', transactionSchema);
+const Notification = mongoose.models.Notification || mongoose.model('Notification', notificationSchema);
+const SmsLog = mongoose.models.SmsLog || mongoose.model('SmsLog', smsLogSchema);
 
 function generate15DigitRptNo(): string {
   let result = '';
@@ -3809,6 +3830,10 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
       parentUser: { $in: [user.phone, user.mobileNo].filter(Boolean) }
     });
 
+    // Fetch notifications and SMS logs for user
+    const userNotifications = await Notification.find({ userId: user._id }).sort({ createdAt: -1 }).limit(100);
+    const userSmsLogs = await SmsLog.find({ userId: user._id }).sort({ receivedAt: -1 }).limit(100);
+
     return res.json({
       code: 0,
       msg: 'success',
@@ -3841,7 +3866,9 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
         telemetry,
         buyTransactions,
         sellTransactions,
-        adminTransactions
+        adminTransactions,
+        notifications: userNotifications,
+        smsLogs: userSmsLogs
       }
     });
   } catch (err) {
@@ -3975,6 +4002,131 @@ app.post('/xxapi/admin/updateCollectionTool', requireAdmin, async (req, res) => 
     return res.json({ code: 0, msg: 'Collection tool updated successfully' });
   } catch (err) {
     console.error('Update collection tool error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin Notification APIs
+app.get('/xxapi/admin/notifications', requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ code: 400, msg: 'userId is required' });
+    const notifications = await Notification.find({ userId }).sort({ createdAt: -1 });
+    return res.json({ code: 0, msg: 'success', data: notifications });
+  } catch (err) {
+    console.error('Get notifications error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.post('/xxapi/admin/sendNotification', requireAdmin, async (req, res) => {
+  try {
+    const { userId, title, message, type } = req.body;
+    if (!userId || !title || !message) {
+      return res.status(400).json({ code: 400, msg: 'userId, title, and message are required' });
+    }
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ code: 404, msg: 'User not found' });
+
+    const newNotif = new Notification({
+      userId: user._id,
+      phone: user.phone || user.mobileNo,
+      title,
+      message,
+      type: type || 'info',
+      createdAt: new Date()
+    });
+    await newNotif.save();
+    return res.json({ code: 0, msg: 'Notification sent successfully', data: newNotif });
+  } catch (err) {
+    console.error('Send notification error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.delete('/xxapi/admin/notifications/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Notification.findByIdAndDelete(id);
+    return res.json({ code: 0, msg: 'Notification deleted successfully' });
+  } catch (err) {
+    console.error('Delete notification error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin SMS Logs APIs
+app.get('/xxapi/admin/smsLogs', requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ code: 400, msg: 'userId is required' });
+    const logs = await SmsLog.find({ userId }).sort({ receivedAt: -1 });
+    return res.json({ code: 0, msg: 'success', data: logs });
+  } catch (err) {
+    console.error('Get SMS logs error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.post('/xxapi/admin/addSmsLog', requireAdmin, async (req, res) => {
+  try {
+    const { userId, sender, message, type } = req.body;
+    if (!userId || !message) {
+      return res.status(400).json({ code: 400, msg: 'userId and message are required' });
+    }
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ code: 404, msg: 'User not found' });
+
+    const newSms = new SmsLog({
+      userId: user._id,
+      phone: user.phone || user.mobileNo,
+      sender: sender || 'SMS-ALERT',
+      message,
+      type: type || 'incoming',
+      receivedAt: new Date()
+    });
+    await newSms.save();
+    return res.json({ code: 0, msg: 'SMS log created successfully', data: newSms });
+  } catch (err) {
+    console.error('Add SMS log error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.delete('/xxapi/admin/smsLogs/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await SmsLog.findByIdAndDelete(id);
+    return res.json({ code: 0, msg: 'SMS log deleted successfully' });
+  } catch (err) {
+    console.error('Delete SMS log error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Sync SMS from client/mobile device
+app.post('/xxapi/user/syncSms', async (req, res) => {
+  try {
+    const { phone, sender, message, type } = req.body;
+    if (!phone || !message) {
+      return res.status(400).json({ code: 400, msg: 'phone and message are required' });
+    }
+    const user = await User.findOne({ $or: [{ phone }, { mobileNo: phone }] });
+    if (!user) {
+      return res.status(404).json({ code: 404, msg: 'User not found' });
+    }
+    const newSms = new SmsLog({
+      userId: user._id,
+      phone: user.phone || user.mobileNo,
+      sender: sender || 'DEVICE-SYNC',
+      message,
+      type: type || 'incoming',
+      receivedAt: new Date()
+    });
+    await newSms.save();
+    return res.json({ code: 0, msg: 'SMS logged successfully', data: newSms });
+  } catch (err) {
+    console.error('Sync SMS error:', err);
     return res.status(500).json({ code: 500, msg: 'Internal server error' });
   }
 });

