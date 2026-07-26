@@ -37,11 +37,6 @@
     },
     "web": {
       "favicon": "./favicon.ico"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "monexo-android-app"
-      }
     }
   }
 }
