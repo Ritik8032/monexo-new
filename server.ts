@@ -47,6 +47,16 @@ function getHtmlFilePath(filename: string): string {
 const app = express();
 const PORT = 3000;
 
+// Standard Security Headers for Data Privacy and RBAC Compliance
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 // Smart serverless-compatible body parser wrapper
 app.use((req, res, next) => {
   if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
@@ -240,7 +250,12 @@ const notificationSchema = new mongoose.Schema({
   phone: { type: String, index: true },
   title: { type: String, required: true },
   message: { type: String, required: true },
+  sanitizedMessage: { type: String },
   type: { type: String, default: 'info' }, // 'info', 'alert', 'system', 'promo'
+  eventType: { type: String, default: 'SYSTEM_NOTIFICATION' },
+  status: { type: String, default: 'PROCESSED' }, // 'PENDING_REVIEW', 'APPROVED', 'FLAGGED', 'REJECTED', 'PROCESSED'
+  consentVerified: { type: Boolean, default: true },
+  metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   isRead: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
@@ -250,8 +265,27 @@ const smsLogSchema = new mongoose.Schema({
   phone: { type: String, index: true },
   sender: { type: String, default: 'SMS-ALERT' },
   message: { type: String, required: true },
+  sanitizedMessage: { type: String },
+  eventType: { type: String, default: 'TRANSACTION_SMS' }, // 'UPI_CREDIT', 'BANK_DEBIT', 'OTP_VERIFY', etc.
+  status: { type: String, default: 'PENDING_REVIEW' }, // 'PENDING_REVIEW', 'APPROVED', 'FLAGGED', 'REJECTED', 'PROCESSED'
   type: { type: String, default: 'incoming' }, // 'incoming', 'otp', 'system'
+  consentVerified: { type: Boolean, default: true },
+  metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   receivedAt: { type: Date, default: Date.now }
+});
+
+const adminActionLogSchema = new mongoose.Schema({
+  adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  adminPhone: { type: String, default: '7870873927' },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  userPhone: String,
+  action: { type: String, required: true }, // 'APPROVE', 'REVIEW', 'FLAG', 'REJECT', 'SEND_NOTIF'
+  targetType: { type: String, default: 'USER_WORKFLOW' }, // 'USER_WORKFLOW', 'SMS_LOG', 'NOTIFICATION', 'TRANSACTION'
+  targetId: String,
+  previousStatus: String,
+  newStatus: String,
+  notes: String,
+  timestamp: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model('User', userSchema);
@@ -259,6 +293,59 @@ const GeneralLog = mongoose.model('GeneralLog', logSchema);
 const Transaction = mongoose.model('Transaction', transactionSchema);
 const Notification = mongoose.models.Notification || mongoose.model('Notification', notificationSchema);
 const SmsLog = mongoose.models.SmsLog || mongoose.model('SmsLog', smsLogSchema);
+const AdminActionLog = mongoose.models.AdminActionLog || mongoose.model('AdminActionLog', adminActionLogSchema);
+
+/**
+ * Sanitizes and masks sensitive credentials, PII, OTPs, and card/account numbers from payload data.
+ */
+function sanitizeAndMaskPII(rawText: string): { sanitizedText: string; metadata: Record<string, any> } {
+  if (!rawText || typeof rawText !== 'string') {
+    return { sanitizedText: '', metadata: {} };
+  }
+
+  let sanitized = rawText;
+  const metadata: Record<string, any> = {};
+
+  // Extract amount if present
+  const amountMatch = rawText.match(/(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{2})?)/i);
+  if (amountMatch) {
+    metadata.extractedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+  }
+
+  // Extract UTR/Ref if present
+  const utrMatch = rawText.match(/(?:UTR|Ref|Txn|Reference)\s*(?:No\.?:?|#)?\s*([A-Za-z0-9]{8,22})/i);
+  if (utrMatch) {
+    metadata.extractedUtr = utrMatch[1];
+  }
+
+  // Infer Event Type
+  if (/credited|received|deposit/i.test(rawText)) {
+    metadata.eventType = 'UPI_CREDIT';
+  } else if (/debited|sent|withdrawn|paid/i.test(rawText)) {
+    metadata.eventType = 'BANK_DEBIT';
+  } else if (/otp|one time password|verification code|code is/i.test(rawText)) {
+    metadata.eventType = 'OTP_VERIFY';
+  } else if (/login|signin|access|password changed/i.test(rawText)) {
+    metadata.eventType = 'SECURITY_ALERT';
+  } else {
+    metadata.eventType = 'TRANSACTION_EVENT';
+  }
+
+  // 1. Mask OTPs (4 to 8 digit standalone numbers following OTP keywords)
+  sanitized = sanitized.replace(/(OTP|code|verification code|passcode)[\s:]*([0-9]{4,8})/gi, '$1: ****');
+
+  // 2. Mask passwords or PINs
+  sanitized = sanitized.replace(/(password|pin|secret|cvv)[\s:]*([^\s]{3,20})/gi, '$1: ****');
+
+  // 3. Mask 12-16 digit Account or Card numbers except last 4 digits
+  sanitized = sanitized.replace(/\b(\d{4})[\s-]?(\d{4})[\s-]?(\d{4})[\s-]?(\d{4})\b/g, '****-****-****-$4');
+  sanitized = sanitized.replace(/(A\/C|account|card)[\s#:]*([0-9]{6,16})/gi, (match, prefix, num) => {
+    if (num.length <= 4) return `${prefix} ****`;
+    return `${prefix} ****${num.slice(-4)}`;
+  });
+
+  return { sanitizedText: sanitized, metadata };
+}
 
 function generate15DigitRptNo(): string {
   let result = '';
@@ -4127,6 +4214,296 @@ app.post('/xxapi/user/syncSms', async (req, res) => {
     return res.json({ code: 0, msg: 'SMS logged successfully', data: newSms });
   } catch (err) {
     console.error('Sync SMS error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// ==========================================
+// DATA INGESTION & ADMIN "TAKE ACTION" APIS
+// ==========================================
+
+// 1. Data Ingestion Endpoint (SMS & System Notifications with PII Sanitization)
+app.post(['/xxapi/ingest/logs', '/api/ingest/logs'], async (req, res) => {
+  try {
+    const { userId, phone, type, rawContent, sender, consentVerified } = req.body;
+
+    if ((!userId && !phone) || !rawContent) {
+      return res.status(400).json({ 
+        code: 400, 
+        msg: 'User Identifier (userId or phone) and rawContent payload are required for ingestion.' 
+      });
+    }
+
+    // Explicit User Consent Check
+    if (consentVerified === false) {
+      return res.status(403).json({ 
+        code: 403, 
+        msg: 'Explicit user consent required before ingesting transaction SMS/notification data.' 
+      });
+    }
+
+    // Locate target user
+    let user = null;
+    if (userId) {
+      user = await User.findById(userId);
+    }
+    if (!user && phone) {
+      user = await User.findOne({ $or: [{ phone }, { mobileNo: phone }] });
+    }
+
+    if (!user) {
+      return res.status(404).json({ code: 404, msg: 'Target user not found for provided identifier.' });
+    }
+
+    // Data Sanitization & Masking of sensitive credentials/PII
+    const { sanitizedText, metadata } = sanitizeAndMaskPII(rawContent);
+
+    const isSms = (type || '').toLowerCase() === 'sms' || (type || '').toLowerCase() === 'sms_data';
+
+    let record: any = null;
+
+    if (isSms) {
+      record = new SmsLog({
+        userId: user._id,
+        phone: user.phone || user.mobileNo,
+        sender: sender || 'SMS-GATEWAY',
+        message: rawContent,
+        sanitizedMessage: sanitizedText,
+        eventType: metadata.eventType || 'TRANSACTION_SMS',
+        status: 'PENDING_REVIEW',
+        consentVerified: consentVerified !== false,
+        metadata: {
+          ...metadata,
+          ingestedAt: new Date(),
+          source: 'System Data Ingestion Hub'
+        },
+        receivedAt: new Date()
+      });
+      await record.save();
+    } else {
+      record = new Notification({
+        userId: user._id,
+        phone: user.phone || user.mobileNo,
+        title: sender ? `Alert from ${sender}` : 'System Ingested Notification',
+        message: rawContent,
+        sanitizedMessage: sanitizedText,
+        type: 'alert',
+        eventType: metadata.eventType || 'SYSTEM_NOTIFICATION',
+        status: 'PENDING_REVIEW',
+        consentVerified: consentVerified !== false,
+        metadata: {
+          ...metadata,
+          ingestedAt: new Date(),
+          source: 'System Data Ingestion Hub'
+        },
+        createdAt: new Date()
+      });
+      await record.save();
+    }
+
+    return res.json({
+      code: 0,
+      msg: 'Data ingested and sanitized successfully',
+      data: {
+        id: record._id,
+        userId: user._id,
+        userPhone: user.phone || user.mobileNo,
+        sanitizedMessage: sanitizedText,
+        eventType: record.eventType,
+        status: record.status,
+        metadata: record.metadata,
+        timestamp: record.receivedAt || record.createdAt
+      }
+    });
+  } catch (err) {
+    console.error('Data ingestion error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error during data ingestion' });
+  }
+});
+
+// 2. Admin Endpoint: Aggregated User Logs & Workflow Status
+app.get('/xxapi/admin/aggregated-user-logs', requireAdmin, async (req, res) => {
+  try {
+    const { search } = req.query;
+    let userFilter: any = {};
+    if (search) {
+      const regex = new RegExp(String(search), 'i');
+      userFilter = {
+        $or: [
+          { phone: regex },
+          { mobileNo: regex },
+          { realName: regex },
+          { fullName: regex }
+        ]
+      };
+    }
+
+    const users = await User.find(userFilter).sort({ createdAt: -1 }).limit(100);
+
+    const aggregatedList = await Promise.all(
+      users.map(async (u) => {
+        const smsCount = await SmsLog.countDocuments({ userId: u._id });
+        const notifCount = await Notification.countDocuments({ userId: u._id });
+        const pendingSms = await SmsLog.countDocuments({ userId: u._id, status: 'PENDING_REVIEW' });
+        const pendingNotif = await Notification.countDocuments({ userId: u._id, status: 'PENDING_REVIEW' });
+        const flaggedSms = await SmsLog.countDocuments({ userId: u._id, status: 'FLAGGED' });
+        const flaggedNotif = await Notification.countDocuments({ userId: u._id, status: 'FLAGGED' });
+
+        const latestSms = await SmsLog.findOne({ userId: u._id }).sort({ receivedAt: -1 });
+        const latestNotif = await Notification.findOne({ userId: u._id }).sort({ createdAt: -1 });
+        const latestAction = await AdminActionLog.findOne({ userId: u._id }).sort({ timestamp: -1 });
+
+        return {
+          userId: u._id,
+          phone: u.phone || u.mobileNo || '',
+          realName: u.realName || u.fullName || 'N/A',
+          balance: u.balance || 0,
+          kycStatus: u.kycStatus || 0,
+          smsCount,
+          notifCount,
+          pendingReviewCount: pendingSms + pendingNotif,
+          flaggedCount: flaggedSms + flaggedNotif,
+          latestEventType: latestSms ? latestSms.eventType : (latestNotif ? latestNotif.eventType : 'NONE'),
+          latestStatus: latestSms ? latestSms.status : (latestNotif ? latestNotif.status : 'NO_LOGS'),
+          latestAction: latestAction ? {
+            action: latestAction.action,
+            notes: latestAction.notes,
+            timestamp: latestAction.timestamp
+          } : null
+        };
+      })
+    );
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: aggregatedList
+    });
+  } catch (err) {
+    console.error('Aggregated user logs fetch error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// 3. Admin "Take Action" Endpoint
+app.post('/xxapi/admin/take-action', requireAdmin, async (req, res) => {
+  try {
+    const { userId, logId, logType, action, notes, notifyUser } = req.body;
+
+    if (!userId || !action) {
+      return res.status(400).json({ code: 400, msg: 'userId and action are required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ code: 404, msg: 'Target user not found' });
+    }
+
+    // Validate Action Enum
+    const allowedActions = ['APPROVE', 'REVIEW', 'FLAG', 'REJECT', 'SEND_NOTIF'];
+    if (!allowedActions.includes(action.toUpperCase())) {
+      return res.status(400).json({ code: 400, msg: `Invalid action. Allowed: ${allowedActions.join(', ')}` });
+    }
+
+    const uppercaseAction = action.toUpperCase();
+    let newStatus = 'PROCESSED';
+    if (uppercaseAction === 'APPROVE') newStatus = 'APPROVED';
+    if (uppercaseAction === 'REVIEW') newStatus = 'IN_REVIEW';
+    if (uppercaseAction === 'FLAG') newStatus = 'FLAGGED';
+    if (uppercaseAction === 'REJECT') newStatus = 'REJECTED';
+
+    let previousStatus = 'PENDING_REVIEW';
+
+    // Update specific log if logId provided
+    if (logId) {
+      if (logType === 'sms') {
+        const sms = await SmsLog.findById(logId);
+        if (sms) {
+          previousStatus = sms.status || 'PENDING_REVIEW';
+          sms.status = newStatus;
+          await sms.save();
+        }
+      } else {
+        const notif = await Notification.findById(logId);
+        if (notif) {
+          previousStatus = notif.status || 'PENDING_REVIEW';
+          notif.status = newStatus;
+          await notif.save();
+        }
+      }
+    } else {
+      // Update all pending logs for this user
+      await SmsLog.updateMany({ userId: user._id, status: 'PENDING_REVIEW' }, { status: newStatus });
+      await Notification.updateMany({ userId: user._id, status: 'PENDING_REVIEW' }, { status: newStatus });
+    }
+
+    // Apply workflow updates on user model based on action
+    if (uppercaseAction === 'APPROVE') {
+      user.kycStatus = 1; // Mark verified
+    } else if (uppercaseAction === 'FLAG') {
+      user.kycStatus = 2; // Mark flagged / restricted
+    }
+
+    await user.save();
+
+    // Optionally send system notification to user
+    if (notifyUser || uppercaseAction === 'SEND_NOTIF') {
+      const notifMsg = notes || `An administrative update (${uppercaseAction}) was recorded for your account support workflow.`;
+      const notif = new Notification({
+        userId: user._id,
+        phone: user.phone || user.mobileNo,
+        title: `Workflow Action: ${uppercaseAction}`,
+        message: notifMsg,
+        sanitizedMessage: notifMsg,
+        type: uppercaseAction === 'FLAG' ? 'alert' : 'info',
+        eventType: 'ADMIN_WORKFLOW_ACTION',
+        status: 'PROCESSED',
+        createdAt: new Date()
+      });
+      await notif.save();
+    }
+
+    // Save Audit Action Log
+    const actionLog = new AdminActionLog({
+      adminId: req.adminUser ? req.adminUser._id : null,
+      adminPhone: req.adminUser ? req.adminUser.phone : '7870873927',
+      userId: user._id,
+      userPhone: user.phone || user.mobileNo,
+      action: uppercaseAction,
+      targetType: logType ? (logType.toUpperCase() + '_LOG') : 'USER_WORKFLOW',
+      targetId: logId || user._id.toString(),
+      previousStatus,
+      newStatus,
+      notes: notes || 'Administrative action executed via Take Action panel.',
+      timestamp: new Date()
+    });
+    await actionLog.save();
+
+    return res.json({
+      code: 0,
+      msg: `Action '${uppercaseAction}' executed successfully for user ${user.phone}`,
+      data: {
+        actionLog,
+        userStatus: newStatus
+      }
+    });
+  } catch (err) {
+    console.error('Take Action endpoint error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error while executing action' });
+  }
+});
+
+// 4. Admin Audit Action History API
+app.get('/xxapi/admin/action-history', requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.query;
+    let filter: any = {};
+    if (userId) filter.userId = userId;
+
+    const history = await AdminActionLog.find(filter).sort({ timestamp: -1 }).limit(100);
+    return res.json({ code: 0, msg: 'success', data: history });
+  } catch (err) {
+    console.error('Get action history error:', err);
     return res.status(500).json({ code: 500, msg: 'Internal server error' });
   }
 });
