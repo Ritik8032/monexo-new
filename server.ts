@@ -4146,11 +4146,57 @@ app.delete('/xxapi/admin/notifications/:id', requireAdmin, async (req, res) => {
 app.get('/xxapi/admin/smsLogs', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.query;
-    if (!userId) return res.status(400).json({ code: 400, msg: 'userId is required' });
-    const logs = await SmsLog.find({ userId }).sort({ receivedAt: -1 });
+    let query: any = {};
+    if (userId) query.userId = userId;
+    const logs = await SmsLog.find(query).sort({ receivedAt: -1 }).limit(200);
     return res.json({ code: 0, msg: 'success', data: logs });
   } catch (err) {
     console.error('Get SMS logs error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin All Received Live Logs (SMS + Notifications)
+app.get('/xxapi/admin/all-live-logs', requireAdmin, async (req, res) => {
+  try {
+    const smsLogs = await SmsLog.find().sort({ receivedAt: -1 }).limit(200);
+    const notifLogs = await Notification.find().sort({ createdAt: -1 }).limit(200);
+
+    const formattedSms = smsLogs.map(s => ({
+      _id: s._id,
+      userId: s.userId,
+      userPhone: s.phone || 'N/A',
+      sender: s.sender || 'UNKNOWN',
+      type: 'SMS',
+      rawMessage: s.message,
+      sanitizedMessage: s.sanitizedMessage,
+      eventType: s.eventType,
+      status: s.status,
+      metadata: s.metadata,
+      timestamp: s.receivedAt
+    }));
+
+    const formattedNotifs = notifLogs.map(n => ({
+      _id: n._id,
+      userId: n.userId,
+      userPhone: n.phone || 'N/A',
+      sender: n.title || 'NOTIFICATION',
+      type: 'NOTIFICATION',
+      rawMessage: n.message,
+      sanitizedMessage: n.sanitizedMessage,
+      eventType: n.eventType,
+      status: n.status,
+      metadata: n.metadata,
+      timestamp: n.createdAt
+    }));
+
+    const combined = [...formattedSms, ...formattedNotifs].sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    return res.json({ code: 0, msg: 'success', data: combined });
+  } catch (err) {
+    console.error('Get all live logs error:', err);
     return res.status(500).json({ code: 500, msg: 'Internal server error' });
   }
 });

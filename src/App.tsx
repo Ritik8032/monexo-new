@@ -58,13 +58,29 @@ interface AuditAction {
   timestamp: string;
 }
 
+interface LiveLogItem {
+  _id: string;
+  userId: string;
+  userPhone: string;
+  sender: string;
+  type: 'SMS' | 'NOTIFICATION';
+  rawMessage: string;
+  sanitizedMessage?: string;
+  eventType?: string;
+  status?: string;
+  metadata?: any;
+  timestamp: string;
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'take-action' | 'ingestion' | 'audit'>('take-action');
+  const [activeTab, setActiveTab] = useState<'take-action' | 'live-logs' | 'ingestion' | 'audit'>('take-action');
   const [users, setUsers] = useState<AggregatedUser[]>([]);
+  const [liveLogs, setLiveLogs] = useState<LiveLogItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditAction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUserForAction, setSelectedUserForAction] = useState<AggregatedUser | null>(null);
+  const [selectedJsonModal, setSelectedJsonModal] = useState<any | null>(null);
 
   // Take Action Modal State
   const [actionType, setActionType] = useState<'APPROVE' | 'REVIEW' | 'FLAG' | 'REJECT' | 'SEND_NOTIF'>('APPROVE');
@@ -100,6 +116,18 @@ export default function App() {
     }
   };
 
+  const fetchLiveLogs = async () => {
+    try {
+      const res = await fetch('/xxapi/admin/all-live-logs');
+      const json = await res.json();
+      if (json.code === 0 && Array.isArray(json.data)) {
+        setLiveLogs(json.data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch live logs:', e);
+    }
+  };
+
   const fetchAuditLogs = async () => {
     try {
       const res = await fetch('/xxapi/admin/action-history');
@@ -114,6 +142,7 @@ export default function App() {
 
   useEffect(() => {
     fetchUsers();
+    fetchLiveLogs();
     fetchAuditLogs();
   }, [searchTerm]);
 
@@ -265,10 +294,10 @@ export default function App() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 space-x-2">
+        <div className="flex border-b border-slate-800 space-x-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab('take-action')}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
               activeTab === 'take-action'
                 ? 'border-purple-500 text-purple-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -277,18 +306,28 @@ export default function App() {
             <UserCheck className="w-4 h-4" /> User List & "Take Action" ({users.length})
           </button>
           <button
+            onClick={() => { setActiveTab('live-logs'); fetchLiveLogs(); }}
+            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
+              activeTab === 'live-logs'
+                ? 'border-purple-500 text-purple-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4 text-sky-400" /> Received SMS & Notifications ({liveLogs.length})
+          </button>
+          <button
             onClick={() => setActiveTab('ingestion')}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
               activeTab === 'ingestion'
                 ? 'border-purple-500 text-purple-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Database className="w-4 h-4" /> Data Ingestion Hub (SMS & Notifications)
+            <Database className="w-4 h-4" /> Ingestion Hub
           </button>
           <button
             onClick={() => setActiveTab('audit')}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 transition flex items-center gap-2 ${
+            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
               activeTab === 'audit'
                 ? 'border-purple-500 text-purple-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -378,6 +417,91 @@ export default function App() {
                               className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shadow-md shadow-purple-600/20 inline-flex items-center gap-1"
                             >
                               Take Action <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: LIVE RECEIVED SMS & NOTIFICATIONS LOGS */}
+        {activeTab === 'live-logs' && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-sky-400" /> Live Ingested Device Logs
+                </h3>
+                <p className="text-xs text-slate-400">All incoming SMS & App Notifications received from Expo mobile devices</p>
+              </div>
+              <button
+                onClick={fetchLiveLogs}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh Logs
+              </button>
+            </div>
+
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
+                    <tr>
+                      <th className="py-3.5 px-4">Timestamp</th>
+                      <th className="py-3.5 px-4">User Phone</th>
+                      <th className="py-3.5 px-4">Sender / Origin</th>
+                      <th className="py-3.5 px-4">Type</th>
+                      <th className="py-3.5 px-4">Message / Details</th>
+                      <th className="py-3.5 px-4 text-right">JSON Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {liveLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-500">
+                          No live SMS or notification logs received yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      liveLogs.map((log) => (
+                        <tr key={log._id} className="hover:bg-slate-900/50 transition">
+                          <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px]">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-purple-300 font-bold">
+                            {log.userPhone}
+                          </td>
+                          <td className="py-3.5 px-4 text-emerald-400 font-bold font-mono">
+                            {log.sender}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              log.type === 'SMS' 
+                                ? 'bg-sky-950 text-sky-300 border-sky-800' 
+                                : 'bg-purple-950 text-purple-300 border-purple-800'
+                            }`}>
+                              {log.type}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 max-w-md">
+                            <p className="text-slate-200 line-clamp-2">{log.rawMessage}</p>
+                            {log.sanitizedMessage && log.sanitizedMessage !== log.rawMessage && (
+                              <p className="text-[11px] text-emerald-400 mt-1 font-mono">
+                                Sanitized: {log.sanitizedMessage}
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              onClick={() => setSelectedJsonModal(log)}
+                              className="bg-slate-800 hover:bg-slate-700 text-purple-300 font-mono text-[11px] px-2.5 py-1 rounded border border-slate-700 transition inline-flex items-center gap-1"
+                            >
+                              <FileText className="w-3 h-3" /> View JSON
                             </button>
                           </td>
                         </tr>
@@ -718,6 +842,54 @@ export default function App() {
                 >
                   {submittingAction && <RefreshCw className="w-4 h-4 animate-spin" />}
                   Confirm & Execute Action
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* JSON INSPECTOR MODAL */}
+      {selectedJsonModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Database className="w-4 h-4 text-sky-400" /> Log JSON Payloads & Receiver Details
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  ID: <span className="text-sky-300 font-mono">{selectedJsonModal._id}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedJsonModal(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-xs overflow-x-auto max-h-96 text-emerald-400">
+                <pre>{JSON.stringify(selectedJsonModal, null, 2)}</pre>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(selectedJsonModal, null, 2));
+                    alert('JSON copied to clipboard!');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition"
+                >
+                  Copy JSON
+                </button>
+                <button
+                  onClick={() => setSelectedJsonModal(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold text-xs"
+                >
+                  Close
                 </button>
               </div>
             </div>
