@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Monexo",
+    "slug": "monexo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./static/images/Login_Logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./static/images/Login_Logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E293B"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.monexo.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./static/images/Login_Logo.png",
+        "backgroundColor": "#1E293B"
+      },
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.SEND_SMS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.WAKE_LOCK"
+      ]
+    },
+    "web": {
+      "favicon": "./favicon.ico"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/xxapi/:path*",
+      "destination": "/api"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api|xxapi|static|assets|favicon.ico|robots.txt|rsCfg.json|admin.html).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
