@@ -5611,28 +5611,6 @@ function sendSmartFile(filePath: string, res: express.Response) {
 }
 
 // Serve static assets from explicit directory paths
-app.use(['/static/icon', '/icon'], (req, res, next) => {
-  const f1 = path.join(process.cwd(), 'static', 'icon', req.path);
-  if (fs.existsSync(f1) && fs.statSync(f1).isFile()) return sendSmartFile(f1, res);
-  const f2 = path.join(process.cwd(), 'dist', 'static', 'icon', req.path);
-  if (fs.existsSync(f2) && fs.statSync(f2).isFile()) return sendSmartFile(f2, res);
-  next();
-});
-app.use(['/static/images', '/images'], (req, res, next) => {
-  const f1 = path.join(process.cwd(), 'static', 'images', req.path);
-  if (fs.existsSync(f1) && fs.statSync(f1).isFile()) return sendSmartFile(f1, res);
-  const f2 = path.join(process.cwd(), 'dist', 'static', 'images', req.path);
-  if (fs.existsSync(f2) && fs.statSync(f2).isFile()) return sendSmartFile(f2, res);
-  next();
-});
-app.use('/static', express.static(path.join(process.cwd(), 'dist', 'static')));
-app.use('/static', express.static(path.join(process.cwd(), 'static')));
-app.use('/assets', express.static(path.join(process.cwd(), 'dist', 'assets')));
-app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
-app.use(express.static(path.join(process.cwd(), 'dist')));
-app.use(express.static(process.cwd()));
-app.use(express.static(currentDirname));
-
 // Smart static image resolver with case-insensitivity & cross-folder fallback
 app.use((req, res, next) => {
   const urlPath = req.path;
@@ -5648,6 +5626,10 @@ app.use((req, res, next) => {
     path.join(process.cwd(), 'static'),
     path.join(process.cwd(), 'assets'),
     path.join(process.cwd(), 'public'),
+    path.join(process.cwd(), 'public', 'static', 'icon'),
+    path.join(process.cwd(), 'public', 'static', 'images'),
+    path.join(process.cwd(), 'public', 'icon'),
+    path.join(process.cwd(), 'public', 'images'),
     path.join(process.cwd(), 'dist', 'static', 'icon'),
     path.join(process.cwd(), 'dist', 'static', 'images'),
     path.join(process.cwd(), 'dist', 'static'),
@@ -5710,6 +5692,30 @@ app.use((req, res, next) => {
   res.setHeader('Content-Type', 'image/svg+xml');
   return res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" rx="12" fill="#f4f4f5"/><circle cx="50" cy="50" r="28" fill="#e4e4e7"/><text x="50%" y="52%" dominant-baseline="middle" text-anchor="middle" font-size="11" font-family="sans-serif" font-weight="600" fill="#71717a">Monexo</text></svg>`);
 });
+
+
+
+app.use(['/static/icon', '/icon'], (req, res, next) => {
+  const f1 = path.join(process.cwd(), 'static', 'icon', req.path);
+  if (fs.existsSync(f1) && fs.statSync(f1).isFile()) return sendSmartFile(f1, res);
+  const f2 = path.join(process.cwd(), 'dist', 'static', 'icon', req.path);
+  if (fs.existsSync(f2) && fs.statSync(f2).isFile()) return sendSmartFile(f2, res);
+  next();
+});
+app.use(['/static/images', '/images'], (req, res, next) => {
+  const f1 = path.join(process.cwd(), 'static', 'images', req.path);
+  if (fs.existsSync(f1) && fs.statSync(f1).isFile()) return sendSmartFile(f1, res);
+  const f2 = path.join(process.cwd(), 'dist', 'static', 'images', req.path);
+  if (fs.existsSync(f2) && fs.statSync(f2).isFile()) return sendSmartFile(f2, res);
+  next();
+});
+app.use('/static', express.static(path.join(process.cwd(), 'dist', 'static')));
+app.use('/static', express.static(path.join(process.cwd(), 'static')));
+app.use('/assets', express.static(path.join(process.cwd(), 'dist', 'assets')));
+app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
+app.use(express.static(path.join(process.cwd(), 'dist')));
+app.use(express.static(process.cwd()));
+app.use(express.static(currentDirname));
 
 // For SPA routing fallback to index.html
 if (process.env.NODE_ENV !== 'production') {
