@@ -2066,9 +2066,9 @@ app.get('/xxapi/config', async (req, res) => {
         usdt_buy_dividend: { name: "usdt_buy_dividend", fixed: 0, ratio: 0, minCondi: 100, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.001, \"3\": 0.0}" }
       },
       bannerSrcs: [
-        "https://picsum.photos/seed/1/800/400",
-        "https://picsum.photos/seed/2/800/400",
-        "https://picsum.photos/seed/3/800/400"
+        "/static/images/tokenbg.jpg",
+        "/static/images/Login_Logo.png",
+        "/static/images/logo.png"
       ],
       newsList: [
         { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="/static/images/5172295577775.png" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
