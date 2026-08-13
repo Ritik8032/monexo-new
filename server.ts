@@ -2071,7 +2071,7 @@ app.get('/xxapi/config', async (req, res) => {
         "https://picsum.photos/seed/3/800/400"
       ],
       newsList: [
-        { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="https://ik.imagekit.io/Monexo/5172295577775.png" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
+        { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="/static/images/5172295577775.png" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
       ],
       pinFlag: false,
       ctTypes: [1, 2, 4, 8, 13, 14, 16, 17, 18],
@@ -5611,14 +5611,14 @@ function sendSmartFile(filePath: string, res: express.Response) {
 }
 
 // Serve static assets from explicit directory paths
-app.use('/static/icon', (req, res, next) => {
+app.use(['/static/icon', '/icon'], (req, res, next) => {
   const f1 = path.join(process.cwd(), 'static', 'icon', req.path);
   if (fs.existsSync(f1) && fs.statSync(f1).isFile()) return sendSmartFile(f1, res);
   const f2 = path.join(process.cwd(), 'dist', 'static', 'icon', req.path);
   if (fs.existsSync(f2) && fs.statSync(f2).isFile()) return sendSmartFile(f2, res);
   next();
 });
-app.use('/static/images', (req, res, next) => {
+app.use(['/static/images', '/images'], (req, res, next) => {
   const f1 = path.join(process.cwd(), 'static', 'images', req.path);
   if (fs.existsSync(f1) && fs.statSync(f1).isFile()) return sendSmartFile(f1, res);
   const f2 = path.join(process.cwd(), 'dist', 'static', 'images', req.path);
