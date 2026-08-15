@@ -47,6 +47,15 @@ function getHtmlFilePath(filename: string): string {
 const app = express();
 const PORT = 3000;
 
+// Fix URL rewrites for Vercel / serverless deployments
+app.use((req, res, next) => {
+  const forwardedUri = req.headers['x-forwarded-uri'] || req.headers['x-envoy-original-path'];
+  if (forwardedUri && typeof forwardedUri === 'string' && forwardedUri.startsWith('/') && !req.url.startsWith('/xxapi') && !req.url.startsWith('/api')) {
+    req.url = forwardedUri;
+  }
+  next();
+});
+
 // Standard Security Headers for Data Privacy and RBAC Compliance
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -181,8 +190,16 @@ async function connectToDatabase() {
 
 // Middleware to guarantee MongoDB connection in Serverless / Netlify environments
 app.use(async (req, res, next) => {
+  const reqPath = req.path || req.url || '';
+  
+  // Exclude non-DB endpoints from requiring MongoDB connection
+  const nonDbEndpoints = ['/xxapi/checkSmsNew', '/xxapi/getsendtken', '/xxapi/client_error', '/api/health'];
+  if (nonDbEndpoints.some(ep => reqPath.startsWith(ep))) {
+    return next();
+  }
+
   // Only monitor connection for API endpoints
-  const isApiRequest = req.url && (req.url.startsWith('/xxapi') || req.url.startsWith('/api') || req.path.startsWith('/xxapi') || req.path.startsWith('/api'));
+  const isApiRequest = reqPath.startsWith('/xxapi') || reqPath.startsWith('/api');
   
   if (!isApiRequest) {
     return next();
@@ -191,12 +208,10 @@ app.use(async (req, res, next) => {
   try {
     await connectToDatabase();
     next();
-  } catch (err) {
-    console.error('[Mongoose State Monitor] Error ensuring connection:', err.message || err);
-    return res.status(500).json({
-      code: 500,
-      msg: `Database connection failed: ${err.message || 'Timeout'}. Please ensure MONGODB_URI is correct and IP 0.0.0.0/0 (allow all IPs) is whitelisted in MongoDB Atlas Network Access.`
-    });
+  } catch (err: any) {
+    console.error('[Mongoose State Monitor] Error ensuring connection:', err?.message || err);
+    // Proceed so route handler can gracefully format response instead of failing invocation
+    next();
   }
 });
 
@@ -329,9 +344,9 @@ const adminActionLogSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
-const User = mongoose.model('User', userSchema);
-const GeneralLog = mongoose.model('GeneralLog', logSchema);
-const Transaction = mongoose.model('Transaction', transactionSchema);
+const User = mongoose.models.User || mongoose.model('User', userSchema);
+const GeneralLog = mongoose.models.GeneralLog || mongoose.model('GeneralLog', logSchema);
+const Transaction = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
 const Notification = mongoose.models.Notification || mongoose.model('Notification', notificationSchema);
 const SmsLog = mongoose.models.SmsLog || mongoose.model('SmsLog', smsLogSchema);
 const AdminActionLog = mongoose.models.AdminActionLog || mongoose.model('AdminActionLog', adminActionLogSchema);
@@ -2379,10 +2394,6 @@ app.get('/xxapi/minSellIToken/:id/:amount', async (req, res) => {
 
 app.get('/xxapi/minMaxUpiSell/:id/:amount/:something', async (req, res) => {
   return res.json({ code: 0, msg: "success", data: {} });
-});
-
-app.post('/xxapi/checkSmsNew', async (req, res) => {
-  return res.json({ code: 0, msg: "success" });
 });
 
 app.get('/xxapi/buyUsdt/list', async (req, res) => {
@@ -5735,6 +5746,11 @@ if (process.env.NODE_ENV !== 'production') {
     console.error('[Vite Import Error]', err?.message || err);
   });
 }
+
+// API 404 Fallback - ensures unmatched API requests return JSON rather than falling through to HTML SPA fallback
+app.all(['/xxapi/*', '/api/*'], (req, res) => {
+  return res.status(404).json({ code: 404, msg: 'API endpoint not found' });
+});
 
 app.get('*', (req, res) => {
   const urlPath = req.path.toLowerCase();
