@@ -5808,7 +5808,7 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
 // ==========================================
 // MONEXO 24/7 TELEGRAM AI SUPPORT BOT
 // ==========================================
-const TELEGRAM_BOT_TOKEN = '7918230576:AAF9ulKYLUjxOvspY1NnUVuQuMqp1gvChqs';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '7918230576:AAF9ulKYLUjxOvspY1NnUVuQuMqp1gvChqs';
 const CLOUDFLARE_ACCOUNT_ID = '580c97b41fee8f2f0753492c5707ba73';
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN || ['cfat_5xOVWzU8', 'V69NGtQwg1JY', 'vhuLlb5jm72q9', 'hk69ogj5f3b7d66'].join('');
 
@@ -6862,6 +6862,9 @@ User Query: "${text}"`;
 }
 
 async function startTelegramBotLoop() {
+  if (process.env.VERCEL || process.env.NETLIFY || process.env.LAMBDA || process.env.DISABLE_TELEGRAM_BOT === 'true') {
+    return;
+  }
   if ((global as any).__tgBotStarted) {
     console.log('[Telegram Bot] Bot polling loop already active.');
     return;
@@ -6870,6 +6873,7 @@ async function startTelegramBotLoop() {
   console.log('[Telegram Bot] Starting 24/7 Monexo AI Support Bot polling loop...');
 
   let offset = 0;
+  let consecutiveErrors = 0;
   const processedUpdateIds = new Set<number>();
 
   while (true) {
@@ -6879,6 +6883,7 @@ async function startTelegramBotLoop() {
       const data = await res.json();
 
       if (data && data.ok && Array.isArray(data.result)) {
+        consecutiveErrors = 0;
         for (const update of data.result) {
           offset = update.update_id + 1;
           if (processedUpdateIds.has(update.update_id)) continue;
@@ -6901,14 +6906,27 @@ async function startTelegramBotLoop() {
             handleTgMessage(update.message).catch(e => console.error('[Tg Handler Error]', e));
           }
         }
+      } else {
+        consecutiveErrors++;
+        const backoffMs = Math.min(30000, 3000 * Math.pow(1.5, Math.min(consecutiveErrors, 6)));
+        if (consecutiveErrors <= 3 || consecutiveErrors % 10 === 0) {
+          console.warn(`[Telegram Bot] GetUpdates response not ok (code ${data?.error_code || 'unknown'}). Retrying in ${Math.round(backoffMs / 1000)}s...`);
+        }
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
       }
     } catch (err) {
-      console.error('[Telegram Bot Polling Error]', err?.message || err);
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      consecutiveErrors++;
+      const backoffMs = Math.min(60000, 5000 * Math.pow(1.5, Math.min(consecutiveErrors, 6)));
+      if (consecutiveErrors <= 3 || consecutiveErrors % 10 === 0) {
+        console.warn(`[Telegram Bot Polling Error] ${err?.message || err}. Retrying in ${Math.round(backoffMs / 1000)}s...`);
+      }
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
     }
   }
 }
 
-startTelegramBotLoop().catch(err => console.error('[Telegram Bot Fatal Startup Error]', err));
+if (!process.env.VERCEL && !process.env.NETLIFY && !process.env.LAMBDA && process.env.DISABLE_TELEGRAM_BOT !== 'true') {
+  startTelegramBotLoop().catch(err => console.error('[Telegram Bot Fatal Startup Error]', err));
+}
 
 export default app;
