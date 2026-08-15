@@ -1485,7 +1485,7 @@ app.post('/xxapi/register', async (req, res) => {
 // SMS and Registration flow helpers
 app.post('/xxapi/checkSmsNew', async (req, res) => {
   console.log('[checkSmsNew] Called', req.body);
-  const { phone, password } = req.body;
+  const { phone, password } = req.body || {};
   if (!phone || String(phone).trim() === '') {
     return res.json({ code: 400, msg: 'Phone number is required' });
   }
@@ -1548,7 +1548,7 @@ app.post('/xxapi/resetpassword', async (req, res) => {
 
 app.post('/xxapi/getsendtken', async (req, res) => {
   console.log('[getsendtken] Called', req.body);
-  const phone = req.body.phone || 'default';
+  const phone = req.body?.phone || 'default';
   return res.json({
     code: 0,
     msg: 'success',
@@ -2089,14 +2089,17 @@ app.get('/xxapi/config', async (req, res) => {
 
 app.post('/xxapi/client_error', (req, res) => {
   console.log('--- CLIENT ERROR RECEIVED ---');
-  console.log('Message:', req.body.message);
-  console.log('Filename:', req.body.filename);
-  console.log('Line:', req.body.lineno, 'Col:', req.body.colno);
-  console.log('Stack:', req.body.stack);
+  const body = req.body || {};
+  console.log('Message:', body.message);
+  console.log('Filename:', body.filename);
+  console.log('Line:', body.lineno, 'Col:', body.colno);
+  console.log('Stack:', body.stack);
   console.log('-----------------------------');
   try {
-    const errorLog = `[${new Date().toISOString()}] Message: ${req.body.message} | Filename: ${req.body.filename} | Line: ${req.body.lineno}:${req.body.colno} | Stack: ${req.body.stack}\n`;
-    fs.appendFileSync(path.join(process.cwd(), 'client_errors.log'), errorLog);
+    const errorLog = `[${new Date().toISOString()}] Message: ${body.message} | Filename: ${body.filename} | Line: ${body.lineno}:${body.colno} | Stack: ${body.stack}\n`;
+    if (!process.env.VERCEL && !process.env.NETLIFY && !process.env.LAMBDA) {
+      fs.appendFileSync(path.join(process.cwd(), 'client_errors.log'), errorLog);
+    }
   } catch (e) {
     // ignore
   }

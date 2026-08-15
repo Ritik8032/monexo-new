@@ -4,16 +4,28 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/xxapi/:path*",
-      "destination": "/api"
+      "source": "/xxapi/(.*)",
+      "destination": "/api/index.ts"
     },
     {
-      "source": "/api/:path*",
-      "destination": "/api"
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api|xxapi|static|assets|favicon.ico|robots.txt|rsCfg.json|admin.html).*)",
-      "destination": "/index.html"
+      "source": "/uploads/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/admin",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/vivipayhub",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/((?!static|assets|public|favicon.ico|robots.txt|rsCfg.json).*)",
+      "destination": "/api/index.ts"
     }
   ]
 }
