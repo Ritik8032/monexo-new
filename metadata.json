@@ -1,6 +1,6 @@
 {
-  "name": "Monexo",
-  "description": "Monexo payment integration and administration application",
+  "name": "Monexo Platform",
+  "description": "Monexo Platform application updated with latest functional pages, assets, deployment configurations, and 6-digit OTP verification.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

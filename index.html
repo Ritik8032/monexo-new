@@ -354,13 +354,14 @@
         const path = window.location.pathname.toLowerCase();
         const search = window.location.search.toLowerCase();
         const isSupportRoute = path.startsWith('/support') || search.includes('token=') || search.includes('session=');
+        const isAdminRoute = path.startsWith('/admin');
 
-        if (isSupportRoute) {
+        if (isSupportRoute || isAdminRoute) {
           const style = document.createElement('style');
           style.innerHTML = '#app { display: none !important; visibility: hidden !important; opacity: 0 !important; }';
           document.head.appendChild(style);
         } else {
-          // Load legacy app script bundle only when NOT on public support chat
+          // Load main Monexo app script bundle
           const script = document.createElement('script');
           script.type = 'module';
           script.crossOrigin = '';

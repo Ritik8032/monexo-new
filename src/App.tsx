@@ -103,6 +103,11 @@ export default function App() {
   };
 
   const { isSupportRoute, token: supportToken } = getSupportDetails();
+  const isAdminRoute = window.location.pathname.toLowerCase().startsWith('/admin');
+
+  if (!isAdminRoute && !isSupportRoute) {
+    return null;
+  }
 
   if (isSupportRoute) {
     if (supportToken) {
