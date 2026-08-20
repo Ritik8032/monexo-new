@@ -589,26 +589,29 @@ function generateMd5Password(phone) {
 function mapCtTypeToUpiType(ct_type) {
   if (!ct_type) return "phonepe";
   const typeStr = String(ct_type).trim().toLowerCase();
+  if (typeStr.includes("amazon")) return "amazon";
   if (typeStr.includes("freecharge")) return "freecharge";
   if (typeStr.includes("mobikwik")) return "mobikwik";
+  if (typeStr.includes("phonepe") && typeStr.includes("business")) return "phonepebusiness";
   if (typeStr.includes("phonepe")) return "phonepe";
+  if (typeStr.includes("paytm") && typeStr.includes("business")) return "paytmbusiness";
   if (typeStr.includes("paytm")) return "paytm";
   if (typeStr.includes("navi")) return "navi";
   if (typeStr.includes("supermoney")) return "supermoney";
-  if (typeStr.includes("bharatpe")) return "bharatpe";
+  if (typeStr.includes("bharatpe")) return "bharatpebusiness";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
     case 1: return "phonepe";
-    case 2: return "freecharge";
+    case 2: return "mobikwik";
     case 3: return "freecharge";
-    case 4: return "mobikwik";
     case 8: case 9: return "paytm";
     case 13: case 20: case 21: return "navi";
-    case 14: case 19: return "phonepe"; // PhonePe Business
-    case 16: return "paytm"; // Paytm Business
-    case 17: return "supermoney"; // SuperMoney
-    case 18: return "bharatpe"; // BharatPe Business
+    case 14: case 19: return "phonepebusiness";
+    case 16: return "paytmbusiness";
+    case 17: return "supermoney";
+    case 18: return "bharatpebusiness";
+    case 33: return "amazon";
     default: return "phonepe";
   }
 }
@@ -616,52 +619,60 @@ function mapCtTypeToUpiType(ct_type) {
 function mapCtTypeToName(ct_type) {
   if (!ct_type) return "PhonePe";
   const typeStr = String(ct_type).trim().toLowerCase();
+  if (typeStr.includes("amazon")) return "Amazon Pay";
   if (typeStr.includes("freecharge")) return "Freecharge";
   if (typeStr.includes("mobikwik")) return "MobiKwik";
-  if (typeStr.includes("phonepe")) return typeStr.includes("business") ? "PhonePe Business" : "PhonePe";
-  if (typeStr.includes("paytm")) return typeStr.includes("business") ? "Paytm Business" : "Paytm";
-  if (typeStr.includes("navi")) return "Navi UPI";
+  if (typeStr.includes("phonepe") && typeStr.includes("business")) return "PhonePeBusiness";
+  if (typeStr.includes("phonepe")) return "PhonePe";
+  if (typeStr.includes("paytm") && typeStr.includes("business")) return "PaytmBusiness";
+  if (typeStr.includes("paytm")) return "Paytm";
+  if (typeStr.includes("navi")) return "Navi";
   if (typeStr.includes("supermoney")) return "SuperMoney";
-  if (typeStr.includes("bharatpe")) return "BharatPe Business";
+  if (typeStr.includes("bharatpe")) return "BharatPeBusiness";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
     case 1: return "PhonePe";
-    case 2: return "Freecharge";
+    case 2: return "MobiKwik";
     case 3: return "Freecharge";
-    case 4: return "MobiKwik";
     case 8: case 9: return "Paytm";
-    case 13: case 20: case 21: return "Navi UPI";
-    case 14: case 19: return "PhonePe Business";
-    case 16: return "Paytm Business";
+    case 13: case 20: case 21: return "Navi";
+    case 14: case 19: return "PhonePeBusiness";
+    case 16: return "PaytmBusiness";
     case 17: return "SuperMoney";
-    case 18: return "BharatPe Business";
+    case 18: return "BharatPeBusiness";
+    case 33: return "Amazon Pay";
     default: return "PhonePe";
   }
 }
 
 function mapCtTypeToPlatform(ct_type) {
-  if (!ct_type) return 3; // default PhonePe
+  if (!ct_type) return 1;
   const typeStr = String(ct_type).trim().toLowerCase();
-  if (typeStr.includes("freecharge")) return 1;
+  if (typeStr.includes("amazon")) return 33;
+  if (typeStr.includes("freecharge")) return 3;
   if (typeStr.includes("mobikwik")) return 2;
-  if (typeStr.includes("phonepe")) return 3;
-  if (typeStr.includes("paytm")) return 4;
-  if (typeStr.includes("navi")) return 8;
+  if (typeStr.includes("phonepe") && typeStr.includes("business")) return 14;
+  if (typeStr.includes("phonepe")) return 1;
+  if (typeStr.includes("paytm") && typeStr.includes("business")) return 16;
+  if (typeStr.includes("paytm")) return 9;
+  if (typeStr.includes("navi")) return 13;
   if (typeStr.includes("supermoney")) return 17;
   if (typeStr.includes("bharatpe")) return 18;
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
-    case 1: return 3; // PhonePe
-    case 2: case 3: return 1; // Freecharge
-    case 4: return 2; // MobiKwik
-    case 8: case 9: case 16: return 4; // Paytm / Paytm Business
-    case 13: case 20: case 21: return 8; // Navi
-    case 14: case 19: return 3; // PhonePe Business
+    case 1: return 1; // PhonePe
+    case 2: return 2; // MobiKwik
+    case 3: return 3; // Freecharge
+    case 8: case 9: return 9; // Paytm
+    case 13: case 20: case 21: return 13; // Navi
+    case 14: case 19: return 14; // PhonePeBusiness
+    case 16: return 16; // PaytmBusiness
     case 17: return 17; // SuperMoney
-    case 18: return 18; // BharatPe Business
-    default: return 3;
+    case 18: return 18; // BharatPeBusiness
+    case 33: return 33; // Amazon Pay
+    default: return 1;
   }
 }
 
@@ -2089,8 +2100,8 @@ app.get('/xxapi/config', async (req, res) => {
         { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="/static/images/5172295577775.png" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
       ],
       pinFlag: false,
-      ctTypes: [1, 2, 4, 8, 13, 14, 16, 17, 18],
-      ctTypesPayType: { "1": 2, "2": 2, "4": 2, "8": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2 },
+      ctTypes: [1, 2, 3, 9, 13, 14, 16, 17, 18, 33],
+      ctTypesPayType: { "1": 2, "2": 2, "3": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "33": 2 },
       ifFinishNewbieActivity: 0,
       rptPaymentMode: 1,
       webLicenseId: "19711455",
@@ -3424,56 +3435,22 @@ app.get('/xxapi/availablect', async (req, res) => {
   }));
 
   if (tools.length === 0) {
-    tools = [
-      {
-        id: 'tool-phonepe-default',
-        upi: user.phone ? `${user.phone}@ybl` : 'phonepe@upi',
-        text: 'PhonePe',
-        ctType: 1,
-        ct_type: 1,
-        status: 1,
-        state: 2,
-        confirm_mode: 0,
-        package_name: 'com.phonepe.app',
-        download_url: 'https://play.google.com/store/apps/details?id=com.phonepe.app'
-      },
-      {
-        id: 'tool-freecharge-default',
-        upi: user.phone ? `${user.phone}@freecharge` : 'freecharge@upi',
-        text: 'Freecharge',
-        ctType: 2,
-        ct_type: 2,
-        status: 1,
-        state: 2,
-        confirm_mode: 0,
-        package_name: 'com.freecharge.android',
-        download_url: 'https://play.google.com/store/apps/details?id=com.freecharge.android'
-      },
-      {
-        id: 'tool-mobikwik-default',
-        upi: user.phone ? `${user.phone}@ikwik` : 'mobikwik@upi',
-        text: 'MobiKwik',
-        ctType: 4,
-        ct_type: 4,
-        status: 1,
-        state: 2,
-        confirm_mode: 0,
-        package_name: 'com.mobikwik',
-        download_url: 'https://play.google.com/store/apps/details?id=com.mobikwik'
-      },
-      {
-        id: 'tool-paytm-default',
-        upi: user.phone ? `${user.phone}@paytm` : 'paytm@upi',
-        text: 'Paytm',
-        ctType: 8,
-        ct_type: 8,
-        status: 1,
-        state: 2,
-        confirm_mode: 0,
-        package_name: 'net.one97.paytm',
-        download_url: 'https://play.google.com/store/apps/details?id=net.one97.paytm'
-      }
+    const p = (pkg: string) => `https://play.google.com/store/apps/details?id=${pkg}`;
+    const defaultDefs = [
+      { id: 'tool-phonepe-default', upi: `${user.phone || 'user'}@ybl`, text: 'PhonePe', t: 1, pkg: 'com.phonepe.app' },
+      { id: 'tool-mobikwik-default', upi: `${user.phone || 'user'}@ikwik`, text: 'MobiKwik', t: 2, pkg: 'com.mobikwik' },
+      { id: 'tool-freecharge-default', upi: `${user.phone || 'user'}@freecharge`, text: 'Freecharge', t: 3, pkg: 'com.freecharge.android' },
+      { id: 'tool-paytm-default', upi: `${user.phone || 'user'}@paytm`, text: 'Paytm', t: 9, pkg: 'net.one97.paytm' },
+      { id: 'tool-navi-default', upi: `${user.phone || 'user'}@navi`, text: 'Navi', t: 13, pkg: 'com.navi.android' },
+      { id: 'tool-phonepebusiness-default', upi: `${user.phone || 'user'}@ybl`, text: 'PhonePeBusiness', t: 14, pkg: 'com.phonepe.app.business' },
+      { id: 'tool-paytmbusiness-default', upi: `${user.phone || 'user'}@paytm`, text: 'PaytmBusiness', t: 16, pkg: 'com.paytm.business' },
+      { id: 'tool-supermoney-default', upi: `${user.phone || 'user'}@supermoney`, text: 'SuperMoney', t: 17, pkg: 'com.supermoney.app' },
+      { id: 'tool-bharatpebusiness-default', upi: `${user.phone || 'user'}@bharatpe`, text: 'BharatPeBusiness', t: 18, pkg: 'com.bharatpe.app' },
+      { id: 'tool-amazonpay-default', upi: `${user.phone || 'user'}@apl`, text: 'Amazon Pay', t: 33, pkg: 'in.amazon.mShop.android.shopping' }
     ];
+    tools = defaultDefs.map(d => ({
+      id: d.id, upi: d.upi, text: d.text, ctType: d.t, ct_type: d.t, status: 1, state: 2, confirm_mode: 0, package_name: d.pkg, download_url: p(d.pkg)
+    }));
   }
 
   return res.json({ code: 0, msg: 'success', data: tools });
@@ -6080,13 +6057,17 @@ async function getFullUserContextForAi(userId: string) {
         const toolUpi = tool.upi || (tool.backup_upi && tool.backup_upi[0]) || tool.account || tool.accountNumber;
         let brandName = tool.payType || tool.bankName;
         const tNum = Number(tool.type || tool.ctType || tool.payType);
-        if (tNum === 1) brandName = 'Paytm';
-        else if (tNum === 2) brandName = 'PhonePe';
-        else if (tNum === 3) brandName = 'Google Pay';
-        else if (tNum === 4) brandName = 'Navi UPI';
-        else if (tNum === 5) brandName = 'Freecharge';
-        else if (tNum === 6) brandName = 'Airtel UPI';
-        else if (tNum === 16) brandName = 'Bank Account';
+        if (tNum === 1) brandName = 'PhonePe';
+        else if (tNum === 2) brandName = 'MobiKwik';
+        else if (tNum === 3) brandName = 'Freecharge';
+        else if (tNum === 9 || tNum === 8) brandName = 'Paytm';
+        else if (tNum === 13 || tNum === 20 || tNum === 21) brandName = 'Navi';
+        else if (tNum === 14 || tNum === 19) brandName = 'PhonePeBusiness';
+        else if (tNum === 16) brandName = 'PaytmBusiness';
+        else if (tNum === 17) brandName = 'SuperMoney';
+        else if (tNum === 18) brandName = 'BharatPeBusiness';
+        else if (tNum === 33) brandName = 'Amazon Pay';
+        else brandName = mapCtTypeToName(tool.type || tool.ctType);
 
         addUpi(toolUpi, tool.accountName || tool.name || tool.realName, brandName, tool.inSell === 1 ? 'Active (Ready for Selling)' : 'Active');
         
