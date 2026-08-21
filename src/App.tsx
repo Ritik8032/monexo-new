@@ -723,6 +723,58 @@ export default function App() {
                   <li>Amounts & UTR reference metadata automatically extracted</li>
                 </ul>
               </div>
+
+              {/* Payment App ID Mappings Reference */}
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-[11px] text-slate-300 space-y-2">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                  <p className="font-bold text-amber-400 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" /> Verified Payment App ID Mappings:
+                  </p>
+                  <span className="text-[10px] bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20 font-mono">10 Active Channels</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">1 =</span>
+                    <span className="text-slate-200">PhonePe</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">2 =</span>
+                    <span className="text-slate-200">MobiKwik</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">3 =</span>
+                    <span className="text-slate-200">Freecharge</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">9 =</span>
+                    <span className="text-slate-200">Paytm</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">13 =</span>
+                    <span className="text-slate-200">Navi</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">14 =</span>
+                    <span className="text-slate-200">PhonePeBusiness</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">16 =</span>
+                    <span className="text-slate-200">PaytmBusiness</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">17 =</span>
+                    <span className="text-slate-200">SuperMoney</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">18 =</span>
+                    <span className="text-slate-200">BharatPeBusiness</span>
+                  </div>
+                  <div className="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex justify-between">
+                    <span className="text-purple-400 font-bold">33 =</span>
+                    <span className="text-slate-200">Amazon Pay</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
