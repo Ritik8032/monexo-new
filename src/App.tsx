@@ -27,7 +27,8 @@ import {
   ShieldCheck,
   UserX,
   Activity,
-  Headphones
+  Headphones,
+  Menu
 } from 'lucide-react';
 
 interface AggregatedUser {
@@ -139,6 +140,7 @@ export default function App() {
   }
 
   const [activeTab, setActiveTab] = useState<'take-action' | 'live-logs' | 'ingestion' | 'audit' | 'guide-support'>('guide-support');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [users, setUsers] = useState<AggregatedUser[]>([]);
   const [liveLogs, setLiveLogs] = useState<LiveLogItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditAction[]>([]);
@@ -304,11 +306,18 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-purple-500 selection:text-white">
+    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-purple-500 selection:text-white flex flex-col">
       {/* Top Security & Brand Navbar */}
       <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+              title="Toggle Sidebar Navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
               <Shield className="w-5 h-5 text-white" />
             </div>
@@ -335,82 +344,130 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Banner */}
-        <div className="bg-gradient-to-r from-purple-900/40 via-indigo-900/30 to-slate-900 border border-purple-800/40 rounded-2xl p-6 relative overflow-hidden shadow-xl">
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-purple-400 flex items-center gap-1 mb-1">
-                <Sparkles className="w-3.5 h-3.5" /> Authorized Internal Dashboard
-              </span>
-              <h2 className="text-xl font-bold text-white">Administrative User Workflow & Data Ingestion</h2>
-              <p className="text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                Securely ingest explicit user-consented SMS & system notifications, perform automated PII sanitization, and execute administrative "Take Action" workflows for auditing and support tracking.
-              </p>
+      {/* Main Workspace Layout with Sidebar */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col md:flex-row gap-6 flex-1 w-full">
+        {/* Sidebar Navigation */}
+        {isSidebarOpen && (
+          <aside className="w-full md:w-64 bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col space-y-6 shrink-0 h-fit sticky top-20">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Sidebar Navigation</span>
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="text-slate-500 hover:text-slate-300 p-1 rounded"
+                title="Hide Sidebar"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={() => { fetchUsers(); fetchAuditLogs(); }}
-              className="self-start md:self-auto bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh Telemetry
-            </button>
-          </div>
-        </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 space-x-2 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('guide-support')}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
-              activeTab === 'guide-support'
-                ? 'border-cyan-500 text-cyan-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Headphones className="w-4 h-4 text-cyan-400" /> Guide & Live Support Sessions
-          </button>
-          <button
-            onClick={() => setActiveTab('take-action')}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
-              activeTab === 'take-action'
-                ? 'border-purple-500 text-purple-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <UserCheck className="w-4 h-4" /> User List & "Take Action" ({users.length})
-          </button>
-          <button
-            onClick={() => { setActiveTab('live-logs'); fetchLiveLogs(); }}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
-              activeTab === 'live-logs'
-                ? 'border-purple-500 text-purple-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4 text-sky-400" /> Received SMS & Notifications ({liveLogs.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('ingestion')}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
-              activeTab === 'ingestion'
-                ? 'border-purple-500 text-purple-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Database className="w-4 h-4" /> Ingestion Hub
-          </button>
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`pb-3 px-4 text-sm font-bold border-b-2 whitespace-nowrap transition flex items-center gap-2 ${
-              activeTab === 'audit'
-                ? 'border-purple-500 text-purple-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="w-4 h-4" /> Audit Action Logs ({auditLogs.length})
-          </button>
-        </div>
+            <nav className="flex flex-col space-y-2">
+              <button
+                onClick={() => setActiveTab('guide-support')}
+                className={`w-full text-left px-3.5 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                  activeTab === 'guide-support'
+                    ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'
+                    : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Headphones className="w-4 h-4 text-cyan-400" />
+                  Guide & Live Support
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('take-action')}
+                className={`w-full text-left px-3.5 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                  activeTab === 'take-action'
+                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                    : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <UserCheck className="w-4 h-4 text-purple-400" />
+                  User List & Take Action
+                </span>
+                <span className="text-[10px] bg-purple-950 text-purple-300 px-2 py-0.5 rounded-full border border-purple-800">
+                  {users.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('live-logs'); fetchLiveLogs(); }}
+                className={`w-full text-left px-3.5 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                  activeTab === 'live-logs'
+                    ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30'
+                    : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <MessageSquare className="w-4 h-4 text-sky-400" />
+                  Received SMS & Notifs
+                </span>
+                <span className="text-[10px] bg-sky-950 text-sky-300 px-2 py-0.5 rounded-full border border-sky-800">
+                  {liveLogs.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('ingestion')}
+                className={`w-full text-left px-3.5 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                  activeTab === 'ingestion'
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                    : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Database className="w-4 h-4 text-emerald-400" />
+                  Ingestion Hub
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('audit')}
+                className={`w-full text-left px-3.5 py-3 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                  activeTab === 'audit'
+                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                    : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <FileText className="w-4 h-4 text-amber-400" />
+                  Audit Action Logs
+                </span>
+                <span className="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded-full border border-amber-800">
+                  {auditLogs.length}
+                </span>
+              </button>
+            </nav>
+
+            <div className="pt-4 border-t border-slate-800 space-y-3">
+              <button
+                onClick={() => { fetchUsers(); fetchAuditLogs(); }}
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-2.5 px-3 rounded-xl shadow-lg shadow-purple-600/30 transition flex items-center justify-center gap-2"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh Telemetry
+              </button>
+            </div>
+          </aside>
+        )}
+
+        {/* Content Body Area */}
+        <main className="flex-1 space-y-6 min-w-0">
+          {/* Banner */}
+          <div className="bg-gradient-to-r from-purple-900/40 via-indigo-900/30 to-slate-900 border border-purple-800/40 rounded-2xl p-6 relative overflow-hidden shadow-xl">
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-purple-400 flex items-center gap-1 mb-1">
+                  <Sparkles className="w-3.5 h-3.5" /> Authorized Internal Dashboard
+                </span>
+                <h2 className="text-xl font-bold text-white">Administrative User Workflow & Data Ingestion</h2>
+                <p className="text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                  Securely ingest explicit user-consented SMS & system notifications, perform automated PII sanitization, and execute administrative "Take Action" workflows for auditing and support tracking.
+                </p>
+              </div>
+            </div>
+          </div>
 
         {/* TAB 0: GUIDE & LIVE SUPPORT SESSIONS */}
         {activeTab === 'guide-support' && <GuideSupportTab />}
@@ -844,6 +901,7 @@ export default function App() {
           </div>
         )}
       </main>
+      </div>
 
       {/* TAKE ACTION MODAL */}
       {selectedUserForAction && (
