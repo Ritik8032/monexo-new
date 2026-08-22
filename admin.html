@@ -162,10 +162,10 @@
       <div class="flex-1 flex flex-col lg:flex-row">
         
         <!-- Sidebar Navigation -->
-        <aside :class="['bg-white border-r border-slate-100 flex flex-col p-4 space-y-6 transition-all duration-300', isSidebarCollapsed ? 'hidden lg:flex lg:w-20 lg:items-center' : 'w-full lg:w-64']">
+        <aside v-if="!isSidebarCollapsed" class="bg-white border-r border-slate-100 flex flex-col p-4 space-y-6 w-full lg:w-64 shrink-0 transition-all duration-300">
           
           <!-- Mini Profile Header -->
-          <div v-if="!isSidebarCollapsed" class="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 w-full">
+          <div class="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 w-full">
             <img src="/static/images/avatar.png" class="h-10 w-10 rounded-full border border-slate-200 object-cover" alt="Profile" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
             <div>
               <h4 class="text-sm font-bold text-slate-800">Ritik Admin</h4>
@@ -174,46 +174,40 @@
               </span>
             </div>
           </div>
-          <div v-else class="flex justify-center w-full">
-            <img src="/static/images/avatar.png" class="h-10 w-10 rounded-full border border-slate-200 object-cover" alt="Profile" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
-          </div>
 
           <!-- Navigation Links -->
           <div class="flex flex-col space-y-1 w-full">
-            <span v-if="!isSidebarCollapsed" class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Navigation</span>
+            <span class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Navigation</span>
             
             <button @click="activeTab = 'dashboard'; selectedUser = null;" 
-              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'dashboard' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
-              :title="isSidebarCollapsed ? 'Dashboard' : ''">
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'dashboard' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
               <div class="flex items-center gap-3">
                 <i class="fa-solid fa-cube text-base"></i>
-                <span v-if="!isSidebarCollapsed">Dashboard</span>
+                <span>Dashboard</span>
               </div>
-              <i v-if="!isSidebarCollapsed" class="fa-solid fa-house text-xs opacity-50"></i>
+              <i class="fa-solid fa-house text-xs opacity-50"></i>
             </button>
 
             <button @click="activeTab = 'users'; selectedUser = null;" 
-              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'users' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
-              :title="isSidebarCollapsed ? 'Users List' : ''">
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'users' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
               <div class="flex items-center gap-3">
                 <i class="fa-solid fa-users text-base"></i>
-                <span v-if="!isSidebarCollapsed">Users List</span>
+                <span>Users List</span>
               </div>
-              <i v-if="!isSidebarCollapsed" class="fa-solid fa-angle-right text-xs opacity-50"></i>
+              <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
             </button>
 
             <button @click="activeTab = 'nodes'; selectedUser = null; fetchNodes();" 
-              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodes' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']"
-              :title="isSidebarCollapsed ? 'Node Settings' : ''">
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodes' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
               <div class="flex items-center gap-3">
                 <i class="fa-solid fa-circle-nodes text-base"></i>
-                <span v-if="!isSidebarCollapsed">Node Settings</span>
+                <span>Node Settings</span>
               </div>
-              <i v-if="!isSidebarCollapsed" class="fa-solid fa-angle-right text-xs opacity-50"></i>
+              <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
             </button>
           </div>
 
-          <div v-if="!isSidebarCollapsed" class="pt-6 border-t border-slate-100 w-full">
+          <div class="pt-6 border-t border-slate-100 w-full">
             <span class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Shortcuts</span>
             <div class="mt-2 space-y-2">
               <div class="bg-gradient-to-br from-purple-50 to-indigo-50 p-3.5 rounded-2xl border border-purple-100/50">
