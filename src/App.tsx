@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import SupportChat from './components/SupportChat';
 import GuideSupportTab from './components/GuideSupportTab';
 import {
@@ -258,6 +260,161 @@ export default function App() {
     }
   };
 
+  const drawWatermark = (doc: jsPDF, watermarkText: string = 'Monexo') => {
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      doc.saveGraphicsState();
+      if (typeof doc.setGState === 'function' && (doc as any).GState) {
+        doc.setGState(new (doc as any).GState({ opacity: 0.12 }));
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(54);
+      doc.setTextColor(182, 109, 255);
+
+      doc.text(watermarkText, pageWidth / 2, pageHeight / 2, {
+        align: 'center',
+        angle: 35,
+        rotationDirection: 0
+      });
+
+      doc.restoreGraphicsState();
+    }
+  };
+
+  const exportReactUsersPDF = () => {
+    const doc = new jsPDF();
+
+    doc.setFillColor(182, 109, 255);
+    doc.rect(0, 0, 210, 28, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('MONEXO - Users Registry Export', 14, 18);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated: ${new Date().toLocaleString('en-IN')} | Total Users: ${users.length}`, 14, 25);
+
+    const tableData = users.map((u, index) => [
+      index + 1,
+      u.userId ? String(u.userId) : '—',
+      u.phone || '—',
+      u.realName || '—',
+      `Rs. ${(u.balance || 0).toLocaleString('en-IN')}`,
+      u.kycStatus === 'VERIFIED' ? 'Verified' : 'Pending'
+    ]);
+
+    autoTable(doc, {
+      startY: 34,
+      head: [['#', 'Numeric UID (App ID)', 'Mobile / Phone Number', 'Real Name', 'Wallet Balance', 'KYC Status']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: {
+        fillColor: [154, 85, 255],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 9
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 3
+      },
+      alternateRowStyles: {
+        fillColor: [248, 245, 255]
+      }
+    });
+
+    drawWatermark(doc, 'Monexo');
+
+    doc.save(`Monexo_Users_Registry_${Date.now()}.pdf`);
+  };
+
+  const exportReactUserActionPDF = (u: any) => {
+    if (!u) return;
+    const doc = new jsPDF();
+
+    doc.setFillColor(182, 109, 255);
+    doc.rect(0, 0, 210, 28, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('MONEXO - User Administrative Dossier', 14, 16);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Export Date: ${new Date().toLocaleString('en-IN')}`, 14, 23);
+
+    let currentY = 36;
+
+    doc.setFillColor(245, 240, 255);
+    doc.rect(14, currentY, 182, 8, 'F');
+    doc.setTextColor(100, 40, 180);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text('1. CORE USER IDENTIFICATION & KYC DETAILS', 18, currentY + 5.5);
+
+    currentY += 12;
+
+    const identityRows = [
+      ['Numeric UID (App ID):', u.userId ? String(u.userId) : '—', 'Registered Mobile:', u.phone || '—'],
+      ['Real / Full Name:', u.realName || '—', 'KYC Verification Status:', u.kycStatus === 'VERIFIED' ? 'Verified (Approved)' : 'Pending Review'],
+      ['SMS Logs Count:', String(u.smsLogsCount || 0), 'Notifications Count:', String(u.notificationCount || 0)],
+      ['Workflow Status:', u.workflowStatus || 'REGISTERED', 'Last Action Date:', u.updatedAt || new Date().toLocaleDateString()]
+    ];
+
+    autoTable(doc, {
+      startY: currentY,
+      body: identityRows,
+      theme: 'plain',
+      styles: { fontSize: 8.5, cellPadding: 2.5 },
+      columnStyles: {
+        0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+        1: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 },
+        2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+        3: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 }
+      }
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 8;
+
+    doc.setFillColor(245, 240, 255);
+    doc.rect(14, currentY, 182, 8, 'F');
+    doc.setTextColor(100, 40, 180);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text('2. FINANCIAL BALANCE & WALLET SUMMARY', 18, currentY + 5.5);
+
+    currentY += 12;
+
+    const financeRows = [
+      ['Current Wallet Balance:', `Rs. ${(u.balance || 0).toLocaleString('en-IN')}`, 'Primary Account Status:', 'Active'],
+      ['Linked UPI VPA:', `${u.phone || '9182736450'}@upi`, 'Account Category:', 'Verified Investor']
+    ];
+
+    autoTable(doc, {
+      startY: currentY,
+      body: financeRows,
+      theme: 'plain',
+      styles: { fontSize: 8.5, cellPadding: 2.5 },
+      columnStyles: {
+        0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+        1: { fontStyle: 'bold', textColor: [180, 50, 50], cellWidth: 49 },
+        2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+        3: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 }
+      }
+    });
+
+    drawWatermark(doc, 'Monexo');
+
+    doc.save(`Monexo_User_${u.userId}_${u.phone}_Report.pdf`);
+  };
+
   const handleIngestPayload = async () => {
     setIngesting(true);
     setIngestResult(null);
@@ -488,10 +645,15 @@ export default function App() {
                 />
               </div>
 
-              <div className="text-xs text-slate-400 flex items-center gap-4">
+              <div className="text-xs text-slate-400 flex flex-wrap items-center gap-4">
                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> KYC Verified</span>
                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Pending Review</span>
-                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500"></div> Flagged</span>
+                <button
+                  onClick={exportReactUsersPDF}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md ml-2"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Export Users List PDF
+                </button>
               </div>
             </div>
 
@@ -913,15 +1075,25 @@ export default function App() {
                   <UserCheck className="w-4 h-4 text-purple-400" /> Execute Administrative Action
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  User: <span className="text-purple-300 font-mono font-bold">{selectedUserForAction.phone}</span> ({selectedUserForAction.realName})
+                  UID: <span className="text-purple-300 font-mono font-bold">{selectedUserForAction.userId}</span> | Mobile: <span className="text-slate-200 font-bold">{selectedUserForAction.phone}</span>
                 </p>
               </div>
-              <button
-                onClick={() => setSelectedUserForAction(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportReactUserActionPDF(selectedUserForAction)}
+                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                  title="Export User PDF Dossier"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Export PDF
+                </button>
+                <button
+                  onClick={() => setSelectedUserForAction(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg ml-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3 text-xs">
