@@ -1237,7 +1237,11 @@
 
   <!-- Vue.js 3 Production CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-  <!-- jsPDF & jsPDF-AutoTable CDNs -->
+  <!-- Local & Multi-CDN Fallback for jsPDF & jsPDF-AutoTable -->
+  <script src="/js/jspdf.umd.min.js"></script>
+  <script src="/js/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 
@@ -2035,6 +2039,58 @@
           }
         };
 
+        // Dynamic & Resilient loader for jsPDF & AutoTable across local/CDN sources
+        const getJsPDFInstance = async () => {
+          const resolveConstructor = () => {
+            if (window.jspdf && typeof window.jspdf.jsPDF === 'function') return window.jspdf.jsPDF;
+            if (typeof window.jsPDF === 'function') return window.jsPDF;
+            if (window.jspdf && typeof window.jspdf === 'function') return window.jspdf;
+            return null;
+          };
+
+          let ctor = resolveConstructor();
+          if (ctor) return ctor;
+
+          const loadScript = (src) => new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load ' + src));
+            document.head.appendChild(script);
+          });
+
+          const sources = [
+            ['/js/jspdf.umd.min.js', '/js/jspdf.plugin.autotable.min.js'],
+            ['https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js', 'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js'],
+            ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js']
+          ];
+
+          for (const [s1, s2] of sources) {
+            try {
+              await loadScript(s1);
+              await loadScript(s2);
+              ctor = resolveConstructor();
+              if (ctor) return ctor;
+            } catch (e) {
+              console.warn('Script load retry:', s1, e);
+            }
+          }
+
+          return resolveConstructor();
+        };
+
+        const applyAutoTable = (doc, options) => {
+          if (typeof doc.autoTable === 'function') {
+            doc.autoTable(options);
+          } else if (typeof window.jspdfAutoTable === 'function') {
+            window.jspdfAutoTable(doc, options);
+          } else if (typeof window.autoTable === 'function') {
+            window.autoTable(doc, options);
+          } else if (window.jspdf && typeof window.jspdf.autoTable === 'function') {
+            window.jspdf.autoTable(doc, options);
+          }
+        };
+
         // Draw transparent Monexo background watermark across PDF pages
         const drawWatermark = (doc, watermarkText = 'Monexo') => {
           const totalPages = doc.internal.getNumberOfPages();
@@ -2062,253 +2118,263 @@
         };
 
         // Export Users List to PDF
-        const exportUsersPDF = () => {
-          if (!window.jspdf) {
-            alert('PDF Generator library is loading. Please try again.');
-            return;
-          }
-          const { jsPDF } = window.jspdf;
-          const doc = new jsPDF();
-
-          doc.setFillColor(182, 109, 255);
-          doc.rect(0, 0, 210, 28, 'F');
-
-          doc.setTextColor(255, 255, 255);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(18);
-          doc.text('MONEXO - Database Users Registry', 14, 18);
-
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          doc.text(`Generated: ${new Date().toLocaleString('en-IN')} | Total Listed Users: ${users.value.length}`, 14, 25);
-
-          const tableData = users.value.map((u, index) => [
-            index + 1,
-            u._id ? String(u._id) : '—',
-            u.phone || '—',
-            u.realName || '—',
-            `Rs. ${formatCurrency(u.balance)}`,
-            `Rs. ${formatCurrency(u.recharge)}`,
-            u.kycStatus === 1 ? 'Verified' : 'Pending'
-          ]);
-
-          doc.autoTable({
-            startY: 34,
-            head: [['#', 'Numeric UID (App ID)', 'Mobile / Phone Number', 'Real Name', 'Wallet Balance', 'Recharge', 'KYC Status']],
-            body: tableData,
-            theme: 'striped',
-            headStyles: {
-              fillColor: [154, 85, 255],
-              textColor: [255, 255, 255],
-              fontStyle: 'bold',
-              fontSize: 9
-            },
-            bodyStyles: {
-              fontSize: 8,
-              cellPadding: 3
-            },
-            alternateRowStyles: {
-              fillColor: [248, 245, 255]
+        const exportUsersPDF = async () => {
+          try {
+            const JSClass = await getJsPDFInstance();
+            if (!JSClass) {
+              alert('Unable to load PDF generator library. Please check network connection.');
+              return;
             }
-          });
+            const doc = new JSClass();
 
-          drawWatermark(doc, 'Monexo');
+            doc.setFillColor(182, 109, 255);
+            doc.rect(0, 0, 210, 28, 'F');
 
-          doc.save(`Monexo_Users_Registry_${Date.now()}.pdf`);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(18);
+            doc.text('MONEXO - Database Users Registry', 14, 18);
+
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Generated: ${new Date().toLocaleString('en-IN')} | Total Listed Users: ${users.value.length}`, 14, 25);
+
+            const tableData = users.value.map((u, index) => [
+              index + 1,
+              u._id ? String(u._id) : '—',
+              u.phone || '—',
+              u.realName || '—',
+              `Rs. ${formatCurrency(u.balance)}`,
+              `Rs. ${formatCurrency(u.recharge)}`,
+              u.kycStatus === 1 ? 'Verified' : 'Pending'
+            ]);
+
+            applyAutoTable(doc, {
+              startY: 34,
+              head: [['#', 'Numeric UID (App ID)', 'Mobile / Phone Number', 'Real Name', 'Wallet Balance', 'Recharge', 'KYC Status']],
+              body: tableData,
+              theme: 'striped',
+              headStyles: {
+                fillColor: [154, 85, 255],
+                textColor: [255, 255, 255],
+                fontStyle: 'bold',
+                fontSize: 9
+              },
+              bodyStyles: {
+                fontSize: 8,
+                cellPadding: 3
+              },
+              alternateRowStyles: {
+                fillColor: [248, 245, 255]
+              }
+            });
+
+            drawWatermark(doc, 'Monexo');
+
+            doc.save(`Monexo_Users_Registry_${Date.now()}.pdf`);
+          } catch (err) {
+            console.error('PDF export error:', err);
+            alert('Failed to generate PDF: ' + (err.message || 'Unknown error'));
+          }
         };
 
         // Export Detailed Single User Dossier PDF
-        const exportUserActionPDF = () => {
+        const exportUserActionPDF = async () => {
           if (!selectedUser.value) return;
-          if (!window.jspdf) {
-            alert('PDF Generator library is loading. Please try again.');
-            return;
-          }
-          const { jsPDF } = window.jspdf;
-          const doc = new jsPDF();
-          const u = selectedUser.value;
-
-          doc.setFillColor(182, 109, 255);
-          doc.rect(0, 0, 210, 28, 'F');
-
-          doc.setTextColor(255, 255, 255);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(16);
-          doc.text('MONEXO - Administrative User Dossier', 14, 16);
-
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          doc.text(`Export Date: ${new Date().toLocaleString('en-IN')}`, 14, 23);
-
-          let currentY = 36;
-
-          doc.setFillColor(245, 240, 255);
-          doc.rect(14, currentY, 182, 8, 'F');
-          doc.setTextColor(100, 40, 180);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10.5);
-          doc.text('1. CORE USER IDENTIFICATION & KYC DETAILS', 18, currentY + 5.5);
-
-          currentY += 12;
-
-          const identityRows = [
-            ['Numeric UID (App ID):', u._id ? String(u._id) : '—', 'Registered Mobile:', u.phone || '—'],
-            ['Real / Full Name:', editUserForm.realName || u.realName || '—', 'KYC Verification Status:', editUserForm.kycStatus === 1 ? 'Verified (Approved)' : 'Pending Review'],
-            ['KYC Partner Details:', editUserForm.kycPartner || 'Shriram Finance Partner', 'UPI KYC Partner:', editUserForm.upiKycPartner || 'PhonePe Verified'],
-            ['Referral / Invite Code:', u.code || u.inviteCode || 'MNX-' + String(u._id).slice(-4), 'Parent / Referrer User:', editUserForm.parentUser || 'Direct System Signup']
-          ];
-
-          doc.autoTable({
-            startY: currentY,
-            body: identityRows,
-            theme: 'plain',
-            styles: { fontSize: 8.5, cellPadding: 2.5 },
-            columnStyles: {
-              0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
-              1: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 },
-              2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
-              3: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 }
+          try {
+            const JSClass = await getJsPDFInstance();
+            if (!JSClass) {
+              alert('Unable to load PDF generator library. Please check network connection.');
+              return;
             }
-          });
+            const doc = new JSClass();
+            const u = selectedUser.value;
 
-          currentY = doc.lastAutoTable.finalY + 8;
+            doc.setFillColor(182, 109, 255);
+            doc.rect(0, 0, 210, 28, 'F');
 
-          doc.setFillColor(245, 240, 255);
-          doc.rect(14, currentY, 182, 8, 'F');
-          doc.setTextColor(100, 40, 180);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10.5);
-          doc.text('2. WALLET BALANCE & FINANCIAL LEDGER SUMMARY', 18, currentY + 5.5);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(16);
+            doc.text('MONEXO - Administrative User Dossier', 14, 16);
 
-          currentY += 12;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Export Date: ${new Date().toLocaleString('en-IN')}`, 14, 23);
 
-          const financeRows = [
-            ['Current Wallet Balance:', `Rs. ${formatCurrency(editUserForm.balance)}`, 'Total Recharge Amount:', `Rs. ${formatCurrency(editUserForm.recharge)}`],
-            ['Total Commission Earned:', `Rs. ${formatCurrency(editUserForm.commission)}`, 'Today Net Profit:', `Rs. ${formatCurrency(editUserForm.todayProfit)}`],
-            ['VIP Tier Level:', `VIP ${editUserForm.vipLevel || 1}`, 'Inverter Details:', editUserForm.inverterDetails || 'Standard Active Node']
-          ];
+            let currentY = 36;
 
-          doc.autoTable({
-            startY: currentY,
-            body: financeRows,
-            theme: 'plain',
-            styles: { fontSize: 8.5, cellPadding: 2.5 },
-            columnStyles: {
-              0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
-              1: { fontStyle: 'bold', textColor: [180, 50, 50], cellWidth: 49 },
-              2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
-              3: { fontStyle: 'bold', textColor: [20, 130, 80], cellWidth: 49 }
-            }
-          });
+            doc.setFillColor(245, 240, 255);
+            doc.rect(14, currentY, 182, 8, 'F');
+            doc.setTextColor(100, 40, 180);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.text('1. CORE USER IDENTIFICATION & KYC DETAILS', 18, currentY + 5.5);
 
-          currentY = doc.lastAutoTable.finalY + 8;
+            currentY += 12;
 
-          doc.setFillColor(245, 240, 255);
-          doc.rect(14, currentY, 182, 8, 'F');
-          doc.setTextColor(100, 40, 180);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10.5);
-          doc.text('3. LINKED UPIs & BANK ACCOUNT DETAILS', 18, currentY + 5.5);
+            const identityRows = [
+              ['Numeric UID (App ID):', u._id ? String(u._id) : '—', 'Registered Mobile:', u.phone || '—'],
+              ['Real / Full Name:', editUserForm.realName || u.realName || '—', 'KYC Verification Status:', editUserForm.kycStatus === 1 ? 'Verified (Approved)' : 'Pending Review'],
+              ['KYC Partner Details:', editUserForm.kycPartner || 'Shriram Finance Partner', 'UPI KYC Partner:', editUserForm.upiKycPartner || 'PhonePe Verified'],
+              ['Referral / Invite Code:', u.code || u.inviteCode || 'MNX-' + String(u._id).slice(-4), 'Parent / Referrer User:', editUserForm.parentUser || 'Direct System Signup']
+            ];
 
-          currentY += 12;
-
-          const linkedDetails = [];
-          linkedDetails.push(['1', editUserForm.realName || u.realName || 'Primary Account', u.phone + '@upi', 'PhonePe / GPay Linked VPA', 'Active']);
-
-          if (buyTransactions.value && buyTransactions.value.length > 0) {
-            buyTransactions.value.slice(0, 3).forEach((tx) => {
-              if (tx.upi || tx.accountNumber) {
-                linkedDetails.push([
-                  String(linkedDetails.length + 1),
-                  tx.name || u.realName || 'Linked UPI',
-                  tx.upi || tx.accountNumber || '—',
-                  tx.bankName || 'UPI VPA Node',
-                  'Verified'
-                ]);
+            applyAutoTable(doc, {
+              startY: currentY,
+              body: identityRows,
+              theme: 'plain',
+              styles: { fontSize: 8.5, cellPadding: 2.5 },
+              columnStyles: {
+                0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+                1: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 },
+                2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+                3: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 }
               }
             });
-          }
 
-          doc.autoTable({
-            startY: currentY,
-            head: [['#', 'Account Holder Name', 'UPI ID / Account Number', 'Bank / Service Provider', 'Status']],
-            body: linkedDetails,
-            theme: 'grid',
-            headStyles: { fillColor: [154, 85, 255], textColor: [255, 255, 255], fontSize: 8 },
-            bodyStyles: { fontSize: 8, cellPadding: 2 }
-          });
+            currentY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : currentY + 30) + 8;
 
-          currentY = doc.lastAutoTable.finalY + 8;
+            doc.setFillColor(245, 240, 255);
+            doc.rect(14, currentY, 182, 8, 'F');
+            doc.setTextColor(100, 40, 180);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.text('2. WALLET BALANCE & FINANCIAL LEDGER SUMMARY', 18, currentY + 5.5);
 
-          doc.setFillColor(245, 240, 255);
-          doc.rect(14, currentY, 182, 8, 'F');
-          doc.setTextColor(100, 40, 180);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10.5);
-          doc.text('4. DEVICE TELEMETRY & NETWORK ADDRESS', 18, currentY + 5.5);
+            currentY += 12;
 
-          currentY += 12;
+            const financeRows = [
+              ['Current Wallet Balance:', `Rs. ${formatCurrency(editUserForm.balance)}`, 'Total Recharge Amount:', `Rs. ${formatCurrency(editUserForm.recharge)}`],
+              ['Total Commission Earned:', `Rs. ${formatCurrency(editUserForm.commission)}`, 'Today Net Profit:', `Rs. ${formatCurrency(editUserForm.todayProfit)}`],
+              ['VIP Tier Level:', `VIP ${editUserForm.vipLevel || 1}`, 'Inverter Details:', editUserForm.inverterDetails || 'Standard Active Node']
+            ];
 
-          const telemetryRows = [
-            ['IP Address:', selectedTelemetry.value.ip || '127.0.0.1', 'Network Operator:', selectedTelemetry.value.net || 'Jio Telecom'],
-            ['Device User-Agent:', parseUserAgent(selectedTelemetry.value.deviceType) || 'Mobile Android Webview', 'Registration Date:', formatDate(u.createdAt || Date.now())]
-          ];
+            applyAutoTable(doc, {
+              startY: currentY,
+              body: financeRows,
+              theme: 'plain',
+              styles: { fontSize: 8.5, cellPadding: 2.5 },
+              columnStyles: {
+                0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+                1: { fontStyle: 'bold', textColor: [180, 50, 50], cellWidth: 49 },
+                2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+                3: { fontStyle: 'bold', textColor: [20, 130, 80], cellWidth: 49 }
+              }
+            });
 
-          doc.autoTable({
-            startY: currentY,
-            body: telemetryRows,
-            theme: 'plain',
-            styles: { fontSize: 8.5, cellPadding: 2.5 },
-            columnStyles: {
-              0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
-              1: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 },
-              2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
-              3: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 }
+            currentY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : currentY + 30) + 8;
+
+            doc.setFillColor(245, 240, 255);
+            doc.rect(14, currentY, 182, 8, 'F');
+            doc.setTextColor(100, 40, 180);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.text('3. LINKED UPIs & BANK ACCOUNT DETAILS', 18, currentY + 5.5);
+
+            currentY += 12;
+
+            const linkedDetails = [];
+            linkedDetails.push(['1', editUserForm.realName || u.realName || 'Primary Account', u.phone + '@upi', 'PhonePe / GPay Linked VPA', 'Active']);
+
+            if (buyTransactions.value && buyTransactions.value.length > 0) {
+              buyTransactions.value.slice(0, 3).forEach((tx) => {
+                if (tx.upi || tx.accountNumber) {
+                  linkedDetails.push([
+                    String(linkedDetails.length + 1),
+                    tx.name || u.realName || 'Linked UPI',
+                    tx.upi || tx.accountNumber || '—',
+                    tx.bankName || 'UPI VPA Node',
+                    'Verified'
+                  ]);
+                }
+              });
             }
-          });
 
-          currentY = doc.lastAutoTable.finalY + 8;
+            applyAutoTable(doc, {
+              startY: currentY,
+              head: [['#', 'Account Holder Name', 'UPI ID / Account Number', 'Bank / Service Provider', 'Status']],
+              body: linkedDetails,
+              theme: 'grid',
+              headStyles: { fillColor: [154, 85, 255], textColor: [255, 255, 255], fontSize: 8 },
+              bodyStyles: { fontSize: 8, cellPadding: 2 }
+            });
 
-          doc.setFillColor(245, 240, 255);
-          doc.rect(14, currentY, 182, 8, 'F');
-          doc.setTextColor(100, 40, 180);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10.5);
-          doc.text('5. TRANSACTION LEDGER & HISTORY', 18, currentY + 5.5);
+            currentY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : currentY + 30) + 8;
 
-          currentY += 12;
+            doc.setFillColor(245, 240, 255);
+            doc.rect(14, currentY, 182, 8, 'F');
+            doc.setTextColor(100, 40, 180);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.text('4. DEVICE TELEMETRY & NETWORK ADDRESS', 18, currentY + 5.5);
 
-          const allTxs = [
-            ...(buyTransactions.value || []).map(t => ({ ...t, category: 'Recharge / Buy' })),
-            ...(sellTransactions.value || []).map(t => ({ ...t, category: 'Withdrawal / Sell' })),
-            ...(adminTransactions.value || []).map(t => ({ ...t, category: 'Admin Adjustment' }))
-          ];
+            currentY += 12;
 
-          const txRows = allTxs.slice(0, 10).map((t, i) => [
-            i + 1,
-            t.category,
-            `Rs. ${formatCurrency(t.amount)}`,
-            t.utr || t._id ? String(t.utr || t._id).slice(-10) : '—',
-            t.status === 1 || t.status === 'success' ? 'Success' : (t.status === 2 || t.status === 'failed' ? 'Failed' : 'Pending'),
-            formatDate(t.createdAt || t.time || Date.now())
-          ]);
+            const telemetryRows = [
+              ['IP Address:', selectedTelemetry.value.ip || '127.0.0.1', 'Network Operator:', selectedTelemetry.value.net || 'Jio Telecom'],
+              ['Device User-Agent:', parseUserAgent(selectedTelemetry.value.deviceType) || 'Mobile Android Webview', 'Registration Date:', formatDate(u.createdAt || Date.now())]
+            ];
 
-          if (txRows.length === 0) {
-            txRows.push(['1', 'Account Opening Deposit', 'Rs. 0.00', 'REG-' + String(u._id).slice(-6), 'Success', formatDate(Date.now())]);
+            applyAutoTable(doc, {
+              startY: currentY,
+              body: telemetryRows,
+              theme: 'plain',
+              styles: { fontSize: 8.5, cellPadding: 2.5 },
+              columnStyles: {
+                0: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+                1: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 },
+                2: { fontStyle: 'bold', textColor: [80, 80, 80], cellWidth: 42 },
+                3: { fontStyle: 'normal', textColor: [20, 20, 20], cellWidth: 49 }
+              }
+            });
+
+            currentY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : currentY + 30) + 8;
+
+            doc.setFillColor(245, 240, 255);
+            doc.rect(14, currentY, 182, 8, 'F');
+            doc.setTextColor(100, 40, 180);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.text('5. TRANSACTION LEDGER & HISTORY', 18, currentY + 5.5);
+
+            currentY += 12;
+
+            const allTxs = [
+              ...(buyTransactions.value || []).map(t => ({ ...t, category: 'Recharge / Buy' })),
+              ...(sellTransactions.value || []).map(t => ({ ...t, category: 'Withdrawal / Sell' })),
+              ...(adminTransactions.value || []).map(t => ({ ...t, category: 'Admin Adjustment' }))
+            ];
+
+            const txRows = allTxs.slice(0, 10).map((t, i) => [
+              i + 1,
+              t.category,
+              `Rs. ${formatCurrency(t.amount)}`,
+              t.utr || t._id ? String(t.utr || t._id).slice(-10) : '—',
+              t.status === 1 || t.status === 'success' ? 'Success' : (t.status === 2 || t.status === 'failed' ? 'Failed' : 'Pending'),
+              formatDate(t.createdAt || t.time || Date.now())
+            ]);
+
+            if (txRows.length === 0) {
+              txRows.push(['1', 'Account Opening Deposit', 'Rs. 0.00', 'REG-' + String(u._id).slice(-6), 'Success', formatDate(Date.now())]);
+            }
+
+            applyAutoTable(doc, {
+              startY: currentY,
+              head: [['#', 'Transaction Type', 'Amount', 'UTR / Reference Number', 'Status', 'Date & Time']],
+              body: txRows,
+              theme: 'striped',
+              headStyles: { fillColor: [154, 85, 255], textColor: [255, 255, 255], fontSize: 8 },
+              bodyStyles: { fontSize: 8, cellPadding: 2 }
+            });
+
+            drawWatermark(doc, 'Monexo');
+
+            doc.save(`Monexo_User_${u._id}_${u.phone}_Report.pdf`);
+          } catch (err) {
+            console.error('PDF export error:', err);
+            alert('Failed to generate PDF: ' + (err.message || 'Unknown error'));
           }
-
-          doc.autoTable({
-            startY: currentY,
-            head: [['#', 'Transaction Type', 'Amount', 'UTR / Reference Number', 'Status', 'Date & Time']],
-            body: txRows,
-            theme: 'striped',
-            headStyles: { fillColor: [154, 85, 255], textColor: [255, 255, 255], fontSize: 8 },
-            bodyStyles: { fontSize: 8, cellPadding: 2 }
-          });
-
-          drawWatermark(doc, 'Monexo');
-
-          doc.save(`Monexo_User_${u._id}_${u.phone}_Report.pdf`);
         };
 
         const resetNodeForm = () => {
