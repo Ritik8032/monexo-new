@@ -5719,9 +5719,41 @@ app.use('/static', express.static(path.join(process.cwd(), 'dist', 'static')));
 app.use('/static', express.static(path.join(process.cwd(), 'static')));
 app.use('/assets', express.static(path.join(process.cwd(), 'dist', 'assets')));
 app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
+app.use(express.static(path.join(process.cwd(), 'public')));
+app.use(express.static(path.join(process.cwd(), 'dist', 'public')));
 app.use(express.static(path.join(process.cwd(), 'dist')));
 app.use(express.static(process.cwd()));
 app.use(express.static(currentDirname));
+
+// Dedicated Endpoint handler for rsCfg.json
+app.get(['/rsCfg.json', '/public/rsCfg.json'], (req, res) => {
+  const possiblePaths = [
+    path.join(process.cwd(), 'public', 'rsCfg.json'),
+    path.join(process.cwd(), 'rsCfg.json'),
+    path.join(process.cwd(), 'dist', 'public', 'rsCfg.json'),
+    path.join(process.cwd(), 'dist', 'rsCfg.json'),
+    path.join(currentDirname, 'public', 'rsCfg.json'),
+    path.join(currentDirname, 'rsCfg.json'),
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      return res.sendFile(p);
+    }
+  }
+  return res.json({
+    code: 0,
+    msg: "success",
+    data: {
+      okTurnstileSitekey: "0",
+      rsKeyMode: -1,
+      siteKey: "",
+      antResetPassFlag: "0",
+      sliderSmsCaptcha: 0,
+      appDownloadUrl: "",
+      appVersion: "1.0.0"
+    }
+  });
+});
 
 // For SPA routing fallback to index.html
 if (process.env.NODE_ENV !== 'production') {
