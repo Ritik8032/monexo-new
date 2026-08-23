@@ -197,6 +197,15 @@
               <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
             </button>
 
+            <button @click="activeTab = 'payments'; selectedUser = null; fetchPaymentHistory();" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'payments' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-receipt text-base"></i>
+                <span>Payment History</span>
+              </div>
+              <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
+            </button>
+
             <button @click="activeTab = 'nodes'; selectedUser = null; fetchNodes();" 
               :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodes' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
               <div class="flex items-center gap-3">
@@ -227,10 +236,10 @@
               <div class="flex items-center gap-2 text-xs text-slate-400 font-semibold uppercase tracking-wider">
                 <span>Overview</span>
                 <i class="fa-solid fa-chevron-right text-[8px]"></i>
-                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : (activeTab === 'nodes' ? 'Node Settings' : 'Manage Users')) }}</span>
+                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : (activeTab === 'payments' ? 'Payment History' : (activeTab === 'nodes' ? 'Node Settings' : 'Manage Users'))) }}</span>
               </div>
               <h1 class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-800 mt-1">
-                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : (activeTab === 'nodes' ? 'Admin Payment Nodes' : 'Find & Manage Users')) }}
+                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : (activeTab === 'payments' ? 'Payment History & Order Verification' : (activeTab === 'nodes' ? 'Admin Payment Nodes' : 'Find & Manage Users'))) }}
               </h1>
             </div>
             
@@ -588,6 +597,324 @@
                 </div>
               </div>
 
+            </div>
+
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB 5: PAYMENT HISTORY & ORDER AUDIT      -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'payments' && !selectedUser" class="space-y-6">
+            
+            <!-- Search & Filter Panel -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+              <div class="w-full md:flex-1 relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <i class="fa-solid fa-magnifying-glass text-slate-400"></i>
+                </div>
+                <input type="text" v-model="paymentSearchQuery" @keyup.enter="fetchPaymentHistory"
+                  class="block w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium" 
+                  placeholder="Search by Order No (RPT), Buyer/Seller Phone, or User UUID...">
+              </div>
+              
+              <div class="flex flex-wrap sm:flex-nowrap gap-3 w-full md:w-auto">
+                <!-- Order Type Selector -->
+                <select v-model="paymentTypeFilter" @change="fetchPaymentHistory"
+                  class="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#b66dff]">
+                  <option value="all">All Order Types</option>
+                  <option value="buy">Buy Orders (Recharge)</option>
+                  <option value="sell">Sell Orders (Withdrawal)</option>
+                </select>
+
+                <!-- Status Selector -->
+                <select v-model="paymentStatusFilter" @change="fetchPaymentHistory"
+                  class="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#b66dff]">
+                  <option value="all">All Statuses</option>
+                  <option value="pending">In Review / Pending</option>
+                  <option value="success">Successfully (Completed)</option>
+                  <option value="rejected">Rejected / Cancelled</option>
+                </select>
+
+                <button @click="fetchPaymentHistory" class="px-6 py-3 purple-btn hover:opacity-95 text-white rounded-xl text-sm font-bold transition shadow-md flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-filter"></i> Filter
+                </button>
+
+                <button @click="paymentSearchQuery = ''; paymentTypeFilter = 'all'; paymentStatusFilter = 'all'; fetchPaymentHistory();" 
+                  class="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-bold transition">
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <!-- Loading State -->
+            <div v-if="paymentLoading" class="bg-white p-12 rounded-2xl border border-slate-100 text-center shadow-sm">
+              <i class="fa-solid fa-circle-notch animate-spin text-3xl purple-text mb-3"></i>
+              <p class="text-sm font-bold text-slate-700">Loading payment history and ledger verification...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div v-else-if="paymentOrders.length === 0" class="bg-white p-12 rounded-2xl border border-slate-100 text-center shadow-sm">
+              <div class="h-16 w-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-[#b66dff] text-2xl">
+                <i class="fa-solid fa-receipt"></i>
+              </div>
+              <h3 class="text-lg font-bold text-slate-800">No Orders Found</h3>
+              <p class="text-xs text-slate-400 max-w-md mx-auto mt-1">Try clearing or adjusting your search filters (Order ID, Mobile Number, or User UUID).</p>
+            </div>
+
+            <!-- Orders Grid -->
+            <div v-else class="space-y-4">
+              <div v-for="order in paymentOrders" :key="order._id" 
+                class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden hover:shadow-md transition">
+                
+                <!-- Card Header Bar -->
+                <div class="bg-slate-50/90 px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                  <div class="flex items-center gap-3">
+                    <!-- Order ID badge -->
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Order No:</span>
+                      <span class="mono-font font-bold text-slate-900 bg-white border border-slate-200 px-3 py-1 rounded-lg text-xs tracking-tight shadow-2xs select-all">
+                        #{{ order.orderId }}
+                      </span>
+                    </div>
+
+                    <!-- Type Badge -->
+                    <span :class="['inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide',
+                      order.type === 'recharge' || order.type === 'buy' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200']">
+                      <i :class="['fa-solid', order.type === 'recharge' || order.type === 'buy' ? 'fa-cart-shopping' : 'fa-hand-holding-dollar']"></i>
+                      {{ order.type === 'recharge' || order.type === 'buy' ? 'Buy Order' : 'Sell Order' }}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center gap-3">
+                    <!-- Timestamp -->
+                    <span class="text-xs text-slate-400 font-medium">
+                      <i class="fa-regular fa-clock mr-1"></i>{{ formatDate(order.ctime) }}
+                    </span>
+
+                    <!-- Overall Status Badge -->
+                    <span :class="['inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold shadow-2xs',
+                      order.payer_status === 3 ? 'bg-emerald-500 text-white' : (order.payer_status === 4 ? 'bg-rose-500 text-white' : 'bg-amber-400 text-slate-950 animate-pulse')]">
+                      <i :class="['fa-solid', order.payer_status === 3 ? 'fa-circle-check' : (order.payer_status === 4 ? 'fa-circle-xmark' : 'fa-hourglass-half')]"></i>
+                      {{ order.orderStatusLabel }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Card Main Content: 2-Column Grid (Buyer vs Seller / Payee) -->
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-slate-100">
+                  
+                  <!-- LEFT: Buyer Info -->
+                  <div class="bg-purple-50/50 p-4 rounded-xl border border-purple-100 space-y-2.5">
+                    <div class="flex items-center justify-between pb-2 border-b border-purple-100/60">
+                      <span class="text-xs font-extrabold text-purple-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-user-tag text-purple-600"></i> Buyer Info (Jis Buyer Ne Buy Kiya)
+                      </span>
+                      <span class="text-[10px] font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded">BUYER</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">Phone Number</span>
+                        <span class="font-bold text-slate-800 mono-font">{{ order.buyerPhone }}</span>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">User UUID / App ID</span>
+                        <span class="font-bold text-slate-700 mono-font text-[11px] truncate block" :title="order.buyerUid">{{ order.buyerUid }}</span>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">Order Amount</span>
+                        <span class="font-black text-purple-700 text-sm">₹{{ formatCurrency(order.amount) }}</span>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">Payment Method</span>
+                        <span class="font-bold text-slate-800">{{ order.paymentMethod }}</span>
+                      </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-purple-100/60 text-xs">
+                      <span class="text-slate-400 block text-[10px] font-bold uppercase">Selected UPI / Account</span>
+                      <span class="font-mono font-bold text-slate-800 bg-white px-2 py-1 rounded border border-purple-200 inline-block mt-0.5 select-all">
+                        {{ order.payeeAccount || 'Standard UPI' }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- RIGHT: Recipient / Seller Info -->
+                  <div class="bg-emerald-50/40 p-4 rounded-xl border border-emerald-100 space-y-2.5">
+                    <div class="flex items-center justify-between pb-2 border-b border-emerald-100/60">
+                      <span class="text-xs font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-building-columns text-emerald-600"></i> Payee / Recipient Details (Jisko Payment Milla/Karna H)
+                      </span>
+                      <span class="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded">PAYEE</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">API Verified Name</span>
+                        <span class="font-bold text-emerald-800 flex items-center gap-1">
+                          <i class="fa-solid fa-circle-check text-emerald-500"></i> {{ order.verifiedName }}
+                        </span>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">Payee Phone / UUID</span>
+                        <span class="font-bold text-slate-800 mono-font text-[11px] truncate block" :title="order.sellerPhone + ' / ' + order.sellerUid">
+                          {{ order.sellerPhone !== 'N/A' ? order.sellerPhone : order.sellerUid }}
+                        </span>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">Payee UPI VPA</span>
+                        <span class="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-emerald-200 text-[11px] select-all">
+                          {{ order.payeeAccount || 'N/A' }}
+                        </span>
+                      </div>
+                      <div>
+                        <span class="text-slate-400 block text-[10px] font-bold uppercase">Bank / IFSC</span>
+                        <span class="font-bold text-slate-700 text-[11px]">
+                          {{ order.payeeBankName || 'UPI' }} {{ order.payeeIfsc ? ' (' + order.payeeIfsc + ')' : '' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <!-- Card Footer Section: UTR + 4 Checkmark Badges + Manual Admin Action Buttons -->
+                <div class="px-6 py-4 bg-slate-50/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  
+                  <!-- UTR Display -->
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">UTR / Ref:</span>
+                    <span class="mono-font font-black text-slate-900 bg-amber-50 text-amber-900 border border-amber-200 px-3 py-1 rounded-lg text-xs shadow-2xs select-all">
+                      {{ order.utr || 'NOT SUBMITTED YET' }}
+                    </span>
+                  </div>
+
+                  <!-- 4 Verification Badges (Name Match, UPI Match, Amount Match, Payment Success) -->
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <!-- Name Match -->
+                    <span :class="['inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold border',
+                      order.nameMatch ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-rose-100 text-rose-800 border-rose-200']">
+                      <i :class="['fa-solid mr-1', order.nameMatch ? 'fa-check text-emerald-600' : 'fa-xmark text-rose-600']"></i>
+                      Name Match: {{ order.nameMatch ? 'Yes' : 'No' }}
+                    </span>
+
+                    <!-- UPI Match -->
+                    <span :class="['inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold border',
+                      order.upiMatch ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-rose-100 text-rose-800 border-rose-200']">
+                      <i :class="['fa-solid mr-1', order.upiMatch ? 'fa-check text-emerald-600' : 'fa-xmark text-rose-600']"></i>
+                      UPI: {{ order.upiMatch ? 'Yes' : 'No' }}
+                    </span>
+
+                    <!-- Amount Match -->
+                    <span :class="['inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold border',
+                      order.amountMatch ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-rose-100 text-rose-800 border-rose-200']">
+                      <i :class="['fa-solid mr-1', order.amountMatch ? 'fa-check text-emerald-600' : 'fa-xmark text-rose-600']"></i>
+                      Amount: {{ order.amountMatch ? 'Yes' : 'No' }}
+                    </span>
+
+                    <!-- Payment Success Status -->
+                    <span :class="['inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold border',
+                      order.paymentSuccessStatus ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-rose-100 text-rose-800 border-rose-200']">
+                      <i :class="['fa-solid mr-1', order.paymentSuccessStatus ? 'fa-check text-emerald-600' : 'fa-xmark text-rose-600']"></i>
+                      Payment Successful: {{ order.paymentSuccessStatus ? 'Yes' : 'No' }}
+                    </span>
+                  </div>
+
+                  <!-- Manual Action Buttons for Admin -->
+                  <div class="flex items-center gap-2 w-full md:w-auto justify-end pt-2 md:pt-0 border-t md:border-t-0 border-slate-200">
+                    <!-- Mark Successfully Button -->
+                    <button @click="openApproveModal(order)" 
+                      class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
+                      <i class="fa-solid fa-circle-check"></i> Mark Successfully
+                    </button>
+
+                    <!-- Reject Order Button -->
+                    <button @click="openRejectModal(order)" 
+                      class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
+                      <i class="fa-solid fa-circle-xmark"></i> Reject Order
+                    </button>
+                  </div>
+
+                </div>
+
+                <!-- Private Admin Reason Callout (Hidden from Buyers & Sellers in User APIs) -->
+                <div v-if="order.adminReason" class="bg-amber-50/90 border-t border-amber-200 px-6 py-2.5 text-xs text-amber-900 flex items-center gap-2 font-medium">
+                  <i class="fa-solid fa-user-shield text-amber-600 text-sm"></i>
+                  <span><strong>Admin Private Reason (Only Admin Can See):</strong> {{ order.adminReason }}</span>
+                  <span v-if="order.adminActionAt" class="ml-auto text-[10px] text-amber-700 opacity-80">{{ formatDate(order.adminActionAt) }}</span>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- APPROVAL MODAL -->
+            <div v-if="approveModalOpen" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-check text-emerald-600 text-lg"></i> Mark Order Successfully
+                  </h3>
+                  <button @click="approveModalOpen = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                  <div>
+                    <label class="block font-bold text-slate-700 mb-1">Order Number</label>
+                    <input type="text" :value="selectedOrderForAction?.orderId" disabled class="w-full bg-slate-100 p-2.5 rounded-xl border border-slate-200 font-mono font-bold text-slate-800">
+                  </div>
+
+                  <div>
+                    <label class="block font-bold text-slate-700 mb-1">UTR / Bank Reference Number</label>
+                    <input type="text" v-model="actionUtrInput" placeholder="Enter or confirm 12-digit UTR number" class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#b66dff]">
+                  </div>
+
+                  <div>
+                    <label class="block font-bold text-slate-700 mb-1">Approval Reason / Admin Internal Note</label>
+                    <textarea v-model="actionReasonInput" rows="3" placeholder="Enter reason for manual approval (Saved in DB, hidden from buyer/seller)..." class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff]"></textarea>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button @click="approveModalOpen = false" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">Cancel</button>
+                  <button @click="submitApproveOrder" :disabled="actionSubmitting" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center gap-1.5">
+                    <i v-if="actionSubmitting" class="fa-solid fa-circle-notch animate-spin"></i>
+                    <span>Confirm & Mark Successfully</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- REJECTION MODAL -->
+            <div v-if="rejectModalOpen" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-xmark text-rose-600 text-lg"></i> Reject Order (Manual Action)
+                  </h3>
+                  <button @click="rejectModalOpen = false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                  <div>
+                    <label class="block font-bold text-slate-700 mb-1">Order Number</label>
+                    <input type="text" :value="selectedOrderForAction?.orderId" disabled class="w-full bg-slate-100 p-2.5 rounded-xl border border-slate-200 font-mono font-bold text-slate-800">
+                  </div>
+
+                  <div>
+                    <label class="block font-bold text-slate-700 mb-1">Reason for Rejection <span class="text-rose-500">*</span></label>
+                    <textarea v-model="actionReasonInput" rows="3" placeholder="Why do you want to reject this order? (e.g. Invalid UTR, payment not received in account)..." class="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500"></textarea>
+                    <span class="text-[10px] text-slate-400 mt-1 block">This reason will be saved in DB for admin records only (hidden from buyer & seller).</span>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button @click="rejectModalOpen = false" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">Cancel</button>
+                  <button @click="submitRejectOrder" :disabled="actionSubmitting" class="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center gap-1.5">
+                    <i v-if="actionSubmitting" class="fa-solid fa-circle-notch animate-spin"></i>
+                    <span>Confirm & Reject Order</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -1273,6 +1600,20 @@
         const users = ref([]);
         const searchQuery = ref('');
 
+        // Payment History & Order Verification State
+        const paymentOrders = ref([]);
+        const paymentSearchQuery = ref('');
+        const paymentTypeFilter = ref('all');
+        const paymentStatusFilter = ref('all');
+        const paymentLoading = ref(false);
+
+        const approveModalOpen = ref(false);
+        const rejectModalOpen = ref(false);
+        const selectedOrderForAction = ref(null);
+        const actionUtrInput = ref('');
+        const actionReasonInput = ref('');
+        const actionSubmitting = ref(false);
+
         const nodes = ref([]);
         const isEditingNode = ref(false);
         const editNodeForm = reactive({
@@ -1656,6 +1997,8 @@
                 fetchUserDetailSoft(selectedUser.value._id);
               } else if (activeTab.value === 'dashboard') {
                 fetchStats();
+              } else if (activeTab.value === 'payments') {
+                fetchPaymentHistory();
               } else if (activeTab.value === 'nodes') {
                 fetchNodes();
               } else if (activeTab.value === 'users') {
@@ -1663,6 +2006,100 @@
               }
             }
           }, 8000);
+        };
+
+        const fetchPaymentHistory = async () => {
+          paymentLoading.value = true;
+          try {
+            const q = encodeURIComponent(paymentSearchQuery.value.trim());
+            const res = await fetch(`/xxapi/admin/paymentHistory?search=${q}&type=${paymentTypeFilter.value}&status=${paymentStatusFilter.value}`, {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              paymentOrders.value = data.data || [];
+            } else {
+              alert('Failed to load payment history: ' + data.msg);
+            }
+          } catch (e) {
+            console.error('Error fetching payment history:', e);
+          } finally {
+            paymentLoading.value = false;
+          }
+        };
+
+        const openApproveModal = (order) => {
+          selectedOrderForAction.value = order;
+          actionUtrInput.value = order.utr || '';
+          actionReasonInput.value = '';
+          approveModalOpen.value = true;
+        };
+
+        const openRejectModal = (order) => {
+          selectedOrderForAction.value = order;
+          actionReasonInput.value = '';
+          rejectModalOpen.value = true;
+        };
+
+        const submitApproveOrder = async () => {
+          if (!selectedOrderForAction.value) return;
+          actionSubmitting.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/updateOrderStatus', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                orderId: selectedOrderForAction.value.orderId,
+                action: 'success',
+                utr: actionUtrInput.value,
+                adminReason: actionReasonInput.value
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Order successfully marked as COMPLETED / SUCCESS!');
+              approveModalOpen.value = false;
+              fetchPaymentHistory();
+            } else {
+              alert('Error updating order: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Network error approving order.');
+          } finally {
+            actionSubmitting.value = false;
+          }
+        };
+
+        const submitRejectOrder = async () => {
+          if (!selectedOrderForAction.value) return;
+          if (!actionReasonInput.value || !actionReasonInput.value.trim()) {
+            alert('Please enter a rejection reason.');
+            return;
+          }
+          actionSubmitting.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/updateOrderStatus', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                orderId: selectedOrderForAction.value.orderId,
+                action: 'reject',
+                adminReason: actionReasonInput.value
+              })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Order successfully REJECTED.');
+              rejectModalOpen.value = false;
+              fetchPaymentHistory();
+            } else {
+              alert('Error rejecting order: ' + data.msg);
+            }
+          } catch (e) {
+            alert('Network error rejecting order.');
+          } finally {
+            actionSubmitting.value = false;
+          }
         };
 
         const fetchUserDetailSoft = async (userId) => {
@@ -2408,6 +2845,22 @@
           stats,
           users,
           searchQuery,
+          paymentOrders,
+          paymentSearchQuery,
+          paymentTypeFilter,
+          paymentStatusFilter,
+          paymentLoading,
+          approveModalOpen,
+          rejectModalOpen,
+          selectedOrderForAction,
+          actionUtrInput,
+          actionReasonInput,
+          actionSubmitting,
+          fetchPaymentHistory,
+          openApproveModal,
+          openRejectModal,
+          submitApproveOrder,
+          submitRejectOrder,
           selectedUser,
           selectedTelemetry,
           buyTransactions,

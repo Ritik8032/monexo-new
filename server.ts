@@ -5571,6 +5571,318 @@ app.delete('/xxapi/admin/nodes/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// Admin Payment History & Order Audit Trail
+app.get('/xxapi/admin/paymentHistory', requireAdmin, async (req, res) => {
+  try {
+    const { search, type, status } = req.query;
+    let queryFilter: any = {};
+
+    // Filter by type if specified
+    if (type && type !== 'all') {
+      if (type === 'buy' || type === 'recharge') {
+        queryFilter.type = { $in: ['recharge', 'buy'] };
+      } else if (type === 'sell') {
+        queryFilter.type = 'sell';
+      }
+    }
+
+    // Filter by status if specified
+    if (status && status !== 'all') {
+      if (status === 'pending' || status === 'review') {
+        queryFilter.payer_status = { $in: [1, 2] };
+      } else if (status === 'success' || status === 'successfully') {
+        queryFilter.payer_status = 3;
+      } else if (status === 'rejected' || status === 'failed' || status === 'cancel') {
+        queryFilter.payer_status = 4;
+      }
+    }
+
+    // Filter by search query (Order ID, Phone number, User UUID)
+    if (search && String(search).trim() !== '') {
+      const q = String(search).trim();
+      const conditions: any[] = [
+        { rptNo: new RegExp(q, 'i') },
+        { phone: new RegExp(q, 'i') },
+        { sellerPhone: new RegExp(q, 'i') },
+        { utr: new RegExp(q, 'i') },
+        { payee_recipients_name: new RegExp(q, 'i') },
+        { payee_bank_account: new RegExp(q, 'i') }
+      ];
+
+      if (mongoose.Types.ObjectId.isValid(q)) {
+        const objId = new mongoose.Types.ObjectId(q);
+        conditions.push({ _id: objId });
+        conditions.push({ userId: objId });
+        conditions.push({ sellerId: objId });
+      }
+
+      // Also try finding users matching phone or ID to search their transactions
+      const matchedUsers = await User.find({
+        $or: [
+          { phone: new RegExp(q, 'i') },
+          { mobileNo: new RegExp(q, 'i') },
+          { ownInviteCode: new RegExp(q, 'i') },
+          { providerId: new RegExp(q, 'i') }
+        ]
+      }).select('_id phone').limit(20);
+
+      if (matchedUsers.length > 0) {
+        const uIds = matchedUsers.map(u => u._id);
+        const uPhones = matchedUsers.map(u => u.phone).filter(Boolean);
+        conditions.push({ userId: { $in: uIds } });
+        conditions.push({ sellerId: { $in: uIds } });
+        conditions.push({ phone: { $in: uPhones } });
+        conditions.push({ sellerPhone: { $in: uPhones } });
+      }
+
+      if (queryFilter.$and) {
+        queryFilter.$and.push({ $or: conditions });
+      } else {
+        queryFilter.$or = conditions;
+      }
+    }
+
+    const txs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).limit(100);
+
+    // Enrich each transaction with buyer, seller, and verification details
+    const enrichedOrders = await Promise.all(txs.map(async (tx) => {
+      const txObj = tx.toObject ? tx.toObject() : { ...tx };
+      
+      // Fetch Buyer info
+      let buyer: any = null;
+      if (tx.userId) {
+        buyer = await User.findById(tx.userId).catch(() => null);
+      }
+      if (!buyer && tx.phone) {
+        buyer = await User.findOne({ $or: [{ phone: tx.phone }, { mobileNo: tx.phone }] }).catch(() => null);
+      }
+
+      // Fetch Seller info
+      let seller: any = null;
+      if (tx.sellerId) {
+        seller = await User.findById(tx.sellerId).catch(() => null);
+      }
+      if (!seller && tx.sellerPhone) {
+        seller = await User.findOne({ $or: [{ phone: tx.sellerPhone }, { mobileNo: tx.sellerPhone }] }).catch(() => null);
+      }
+
+      // Format Buyer Details
+      const buyerPhone = buyer ? (buyer.phone || buyer.mobileNo) : (tx.phone || 'N/A');
+      const buyerUid = buyer ? String(buyer._id) : 'N/A';
+      const buyerRealName = buyer ? (buyer.realName || buyer.fullName || 'N/A') : 'N/A';
+
+      // Format Seller / Recipient Details
+      const sellerPhone = seller ? (seller.phone || seller.mobileNo) : (tx.sellerPhone || 'N/A');
+      const sellerUid = seller ? String(seller._id) : 'N/A';
+      const payeeName = tx.payee_recipients_name || (seller ? (seller.realName || seller.fullName) : 'Monexo Merchant');
+      
+      // Verified Name resolution
+      let verifiedName = payeeName;
+      const payeeAccount = tx.payee_bank_account || '';
+      if (payeeAccount && payeeAccount.includes('@')) {
+        verifiedName = await getVerifiedUpiName(payeeAccount, payeeName);
+      }
+
+      // Payment Method label
+      let paymentMethodStr = 'UPI Payment';
+      if (tx.payment_method === 0 || tx.payment_method === 2) {
+        paymentMethodStr = 'Bank Transfer';
+      } else if (tx.ctType) {
+        paymentMethodStr = mapCtTypeToName(tx.ctType) || 'PhonePe UPI';
+      }
+
+      // Evaluate 4 Checkmarks/Matches
+      const nameMatch = Boolean(verifiedName && verifiedName.trim().length > 1);
+      const upiMatch = Boolean(payeeAccount && (payeeAccount.includes('@') || payeeAccount.length >= 8));
+      const amountMatch = Boolean(tx.amount && tx.amount > 0);
+      const paymentSuccessStatus = tx.payer_status === 3;
+
+      // Status label
+      let orderStatusLabel = 'In Review';
+      if (tx.payer_status === 3) orderStatusLabel = 'Successfully';
+      else if (tx.payer_status === 4) orderStatusLabel = 'Rejected';
+
+      return {
+        _id: txObj._id,
+        orderId: txObj.rptNo,
+        rptNo: txObj.rptNo,
+        amount: txObj.amount || 0,
+        type: txObj.type || 'recharge',
+        utr: txObj.utr || '',
+        ctime: txObj.ctime || Math.floor(Date.now() / 1000),
+        payer_status: txObj.payer_status || 1,
+        orderStatusLabel,
+        // Buyer Info
+        buyerPhone,
+        buyerUid,
+        buyerRealName,
+        // Seller / Payee Info
+        sellerPhone,
+        sellerUid,
+        payeeName,
+        verifiedName,
+        payeeAccount,
+        payeeIfsc: txObj.payee_ifsc || '',
+        payeeBankName: txObj.payee_bankname || '',
+        paymentMethod: paymentMethodStr,
+        // 4 Match Indicators
+        nameMatch,
+        upiMatch,
+        amountMatch,
+        paymentSuccessStatus,
+        // Internal Admin Reason / Note (Only returned to Admin Panel!)
+        adminReason: txObj.adminReason || txObj.internalAdminNote || '',
+        adminActionAt: txObj.adminActionAt || null
+      };
+    }));
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: enrichedOrders
+    });
+  } catch (err: any) {
+    console.error('Admin Payment History Error:', err);
+    return res.json({ code: 500, msg: 'Internal server error: ' + err.message });
+  }
+});
+
+// Admin Update Order Status (Manually Mark Successfully or Reject)
+app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
+  try {
+    const { orderId, action, utr, adminReason } = req.body;
+    if (!orderId || !action) {
+      return res.json({ code: 400, msg: 'orderId and action are required' });
+    }
+
+    const tx = await Transaction.findOne({
+      $or: [
+        { rptNo: orderId },
+        { _id: mongoose.Types.ObjectId.isValid(orderId) ? orderId : undefined }
+      ].filter(Boolean)
+    });
+
+    if (!tx) {
+      return res.json({ code: 404, msg: 'Order / Transaction not found' });
+    }
+
+    const previousStatus = tx.payer_status;
+    const isApprove = action === 'success' || action === 'successfully' || action === 'approve';
+
+    if (isApprove) {
+      tx.payer_status = 3; // Successfully
+      tx.currentStep = 2;
+      if (utr) {
+        tx.utr = String(utr).trim();
+      }
+      tx.adminReason = adminReason || 'Manually approved by admin';
+      tx.adminActionAt = new Date();
+      await tx.save();
+
+      // AUTO SYNC BALANCES FOR BUYER & SELLER IN DB
+      // 1. Buyer Balance Credit & Recharge sync
+      if (previousStatus !== 3) {
+        const buyer = await User.findOne({
+          $or: [
+            { _id: tx.userId },
+            { phone: tx.phone },
+            { mobileNo: tx.phone }
+          ].filter(Boolean)
+        });
+
+        if (buyer) {
+          buyer.balance = (buyer.balance || 0) + (tx.amount || 0);
+          buyer.recharge = (buyer.recharge || 0) + (tx.amount || 0);
+          await buyer.save();
+          console.log(`[Admin Manual Approval] Credited Buyer ${buyer.phone} +₹${tx.amount}. New Balance: ₹${buyer.balance}`);
+        }
+
+        // 2. Seller Balance Debit & Sell Transaction record if P2P
+        if (tx.sellerId || tx.sellerPhone) {
+          const seller = await User.findOne({
+            $or: [
+              { _id: tx.sellerId },
+              { phone: tx.sellerPhone },
+              { mobileNo: tx.sellerPhone }
+            ].filter(Boolean)
+          });
+
+          if (seller) {
+            seller.balance = Math.max(0, (seller.balance || 0) - (tx.amount || 0));
+            await seller.save();
+
+            const sellRptNo = `SELL_${tx.rptNo}`;
+            let sellTx = await Transaction.findOne({ rptNo: sellRptNo });
+            if (!sellTx) {
+              sellTx = new Transaction({
+                userId: seller._id,
+                phone: seller.phone,
+                rptNo: sellRptNo,
+                amount: tx.amount,
+                payer_status: 3,
+                type: 'sell',
+                payee_bank_account: tx.payee_bank_account,
+                payee_recipients_name: tx.payee_recipients_name,
+                adminReason: 'Synced with buyer order approval',
+                ctime: Math.floor(Date.now() / 1000)
+              });
+            } else {
+              sellTx.payer_status = 3;
+            }
+            await sellTx.save();
+          }
+        }
+      }
+    } else if (action === 'reject' || action === 'failed' || action === 'cancel') {
+      tx.payer_status = 4; // Rejected
+      tx.adminReason = adminReason || 'Order rejected by admin';
+      tx.adminActionAt = new Date();
+      await tx.save();
+
+      // AUTO SYNC BALANCES IF WAS PREVIOUSLY APPROVED
+      if (previousStatus === 3) {
+        const buyer = await User.findOne({
+          $or: [
+            { _id: tx.userId },
+            { phone: tx.phone },
+            { mobileNo: tx.phone }
+          ].filter(Boolean)
+        });
+
+        if (buyer) {
+          buyer.balance = Math.max(0, (buyer.balance || 0) - (tx.amount || 0));
+          await buyer.save();
+          console.log(`[Admin Manual Rejection] Reverted Buyer ${buyer.phone} -₹${tx.amount}. New Balance: ₹${buyer.balance}`);
+        }
+      }
+    }
+
+    // Log admin action
+    try {
+      await AdminActionLog.create({
+        adminPhone: '7870873927',
+        userId: tx.userId || new mongoose.Types.ObjectId(),
+        userPhone: tx.phone || 'N/A',
+        action: isApprove ? 'APPROVE' : 'REJECT',
+        targetType: 'TRANSACTION',
+        targetId: tx.rptNo,
+        previousStatus: String(previousStatus),
+        newStatus: String(tx.payer_status),
+        notes: adminReason || ''
+      });
+    } catch (lErr) {}
+
+    return res.json({
+      code: 0,
+      msg: `Order status updated to ${isApprove ? 'Successfully' : 'Rejected'}`,
+      data: tx
+    });
+  } catch (err: any) {
+    console.error('Update Order Status Error:', err);
+    return res.json({ code: 500, msg: 'Internal server error: ' + err.message });
+  }
+});
+
 // Generic fallback for any other unhandled xxapi requests
 app.all('/xxapi/*', async (req, res) => {
   console.log(`[Local API Fallback] ${req.method} called on ${req.originalUrl}`, req.body);
