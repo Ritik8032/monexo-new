@@ -3088,6 +3088,16 @@ app.post('/xxapi/buyitoken/processpaymentslips', async (req, res) => {
     if (processType === 'finish') {
       tx.payer_status = 2; // pending audit
       if (proof_payment) tx.paymentProof = proof_payment;
+
+      // Set BUYER's UPI/collection tools offline (state 7) until buyer manually relinks via authupi!
+      if (user.collectionTools && user.collectionTools.length > 0) {
+        user.collectionTools.forEach((t: any) => {
+          if (t) t.state = 7; // Temporarily disable/offline buyer's UPI
+        });
+        user.markModified('collectionTools');
+        await user.save();
+        console.log(`[Buyer Payment Submit] Buyer ${user.phone} UPI offline (state 7). Requires manual relink to verify.`);
+      }
     } else if (processType === 'cancel' || processType === 'Cancel') {
       tx.payer_status = 4; // cancelled
       if (cancel_remark) tx.cancelRemark = cancel_remark;
@@ -6219,12 +6229,14 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
         for (let i = 0; i < user.collectionTools.length; i++) {
           const tool = user.collectionTools[i];
           if (tool) {
-            // Keep tool active and available for selling
-            if (tool.status !== 1 || tool.state !== 2 || tool.inSell !== 1) {
-              tool.status = 1; // available
-              tool.state = 2; // idle / active online
-              tool.inSell = 1; // selling enabled
-              userUpdated = true;
+            // Keep tool active and available for selling unless explicitly waiting for buyer authupi (state 7)
+            if (tool.state !== 7) {
+              if (tool.status !== 1 || tool.state !== 2 || tool.inSell !== 1) {
+                tool.status = 1; // available
+                tool.state = 2; // idle / active online
+                tool.inSell = 1; // selling enabled
+                userUpdated = true;
+              }
             }
 
             if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
