@@ -4358,38 +4358,92 @@ app.get('/xxapi/transferToken/history', async (req, res) => {
 async function getSellHistory(req: any, res: any) {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  const txs = await Transaction.find({
-    $or: [
-      { userId: user._id, type: 'sell' },
-      { sellerId: user._id },
-      { sellerPhone: user.phone },
-      { phone: user.phone, type: 'sell' }
-    ]
-  }).sort({ ctime: -1 });
-  
+
+  const userIds = [user._id, user._id ? user._id.toString() : ''].filter(Boolean);
+  const phones = [user.phone, user.mobileNo].filter(Boolean);
+
+  const upiAccounts: string[] = [];
+  if (user.collectionTools && Array.isArray(user.collectionTools)) {
+    user.collectionTools.forEach((t: any) => {
+      if (t) {
+        if (t.account) upiAccounts.push(t.account);
+        if (t.upi) upiAccounts.push(t.upi);
+        if (t.bankAcc) upiAccounts.push(t.bankAcc);
+      }
+    });
+  }
+  if (user.bankDetails && Array.isArray(user.bankDetails)) {
+    user.bankDetails.forEach((b: any) => {
+      if (b) {
+        if (b.accountNo) upiAccounts.push(b.accountNo);
+        if (b.payAccount) upiAccounts.push(b.payAccount);
+      }
+    });
+  }
+  if (user.upiDetails && Array.isArray(user.upiDetails)) {
+    user.upiDetails.forEach((u: any) => {
+      if (u && u.upi) upiAccounts.push(u.upi);
+    });
+  }
+  const cleanUpis = Array.from(new Set(upiAccounts.map(a => String(a).trim()).filter(Boolean)));
+
+  const sellerOrConditions: any[] = [
+    { sellerId: { $in: userIds } },
+    { sellerPhone: { $in: phones } },
+    { userId: { $in: userIds }, type: 'sell' },
+    { phone: { $in: phones }, type: 'sell' },
+    { rptNo: /^SELL_/i, $or: [{ userId: { $in: userIds } }, { phone: { $in: phones } }] }
+  ];
+
+  if (cleanUpis.length > 0) {
+    sellerOrConditions.push({ payee_bank_account: { $in: cleanUpis } });
+  }
+
+  const queryFilter: any = { $or: sellerOrConditions };
+
+  // Parse status/tab filter from query or body
+  const rawStatus = (
+    req.query.status ?? req.body?.status ??
+    req.query.state ?? req.body?.state ??
+    req.query.orderState ?? req.body?.orderState ??
+    req.query.order_state ?? req.body?.order_state ??
+    req.query.tab ?? req.body?.tab ?? ''
+  );
+  const statusStr = String(rawStatus).toLowerCase().trim();
+
+  if (['1', '2', 'paying', 'dispatched', 'undispatched', 'pending', 'in_progress', 'active'].includes(statusStr)) {
+    queryFilter.payer_status = { $in: [1, 2] };
+  } else if (['3', 'success', 'successfully', 'done', 'completed'].includes(statusStr)) {
+    queryFilter.payer_status = 3;
+  } else if (['4', '5', 'cancel', 'cancelled', 'failed', 'offline'].includes(statusStr)) {
+    queryFilter.payer_status = { $in: [4, 5] };
+  }
+
+  const txs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 });
+
   const page = Number(req.query.page) || Number(req.body?.page) || 1;
-  const limit = Number(req.query.limit) || Number(req.body?.limit) || 10;
+  const limit = Number(req.query.limit) || Number(req.body?.limit) || 20;
   const start = (page - 1) * limit;
   const list = txs.slice(start, start + limit);
 
   const mappedList = list.map(tx => {
-    // Map payer_status to frontend sell status:
-    // sell_status_undispatched = 0, sell_status_dispatched = 1, sell_status_pending = 2,
-    // sell_status_success = 3, sell_status_offline = 4, sell_status_timeout = 5
     let orderState = 2; // Default to pending
-    if (tx.payer_status === 1) orderState = 1; // dispatched/paying
-    else if (tx.payer_status === 2) orderState = 2; // pending/In Review
+    if (tx.payer_status === 1) orderState = 1; // paying/dispatched
+    else if (tx.payer_status === 2) orderState = 2; // pending audit
     else if (tx.payer_status === 3) orderState = 3; // success
-    else if (tx.payer_status === 4) orderState = 4; // offline/cancelled
+    else if (tx.payer_status === 4) orderState = 4; // offline/cancel
     else if (tx.payer_status === 5) orderState = 5; // timeout
 
     const obj = tx.toObject ? tx.toObject() : { ...tx };
     const ctTypeVal = (tx as any).ctType || (tx as any).ct_type || 1;
-    const isUpi = tx.payment_method === 1;
+    const isUpi = tx.payment_method === 1 || String(tx.payee_bankname || '').toLowerCase().includes('upi') || !tx.payee_ifsc;
 
     return {
       ...obj,
-      id: tx._id.toString(),
+      id: tx._id ? tx._id.toString() : tx.rptNo,
+      rptNo: tx.rptNo,
+      order_id: tx.rptNo,
+      amount: tx.amount,
       orderState: orderState,
       order_state: orderState,
       state: orderState,
@@ -4412,9 +4466,9 @@ async function getSellHistory(req: any, res: any) {
       payee_recipients_name: tx.payee_recipients_name || "Merchant Partner",
       pnname: tx.payee_recipients_name || "Merchant Partner",
       name: tx.payee_recipients_name || "Merchant Partner",
-      uptDate: tx.ctime * 1000,
-      crtDate: tx.ctime * 1000,
-      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
+      uptDate: (tx.ctime || Math.floor(Date.now() / 1000)) * 1000,
+      crtDate: (tx.ctime || Math.floor(Date.now() / 1000)) * 1000,
+      fnsDate: tx.payer_status >= 3 ? (tx.ctime || Math.floor(Date.now() / 1000)) * 1000 : 0,
       secLimit: tx.countdown || 1800
     };
   });
@@ -4435,6 +4489,12 @@ app.get('/xxapi/getsellhistory', getSellHistory);
 app.post('/xxapi/getsellhistory', getSellHistory);
 app.get('/xxapi/sellhistory', getSellHistory);
 app.post('/xxapi/sellhistory', getSellHistory);
+app.get('/xxapi/sellHistory', getSellHistory);
+app.post('/xxapi/sellHistory', getSellHistory);
+app.get('/xxapi/sell_history', getSellHistory);
+app.post('/xxapi/sell_history', getSellHistory);
+app.get('/xxapi/sell/list', getSellHistory);
+app.post('/xxapi/sell/list', getSellHistory);
 
 app.post('/xxapi/sell/question', async (req, res) => {
   return res.json({ code: 0, msg: 'success' });
