@@ -768,6 +768,43 @@ function mapCtTypeToPlatform(ct_type) {
   }
 }
 
+function getAutomationConfig(ct_type: any) {
+  const typeNum = Number(ct_type);
+  const typeStr = String(ct_type || '').trim().toLowerCase();
+
+  let channelType = 1;
+  let engine: 'dtpay' | 'legacy' = 'legacy';
+  let platform = 3;
+
+  if (typeStr.includes('mobikwik') || typeNum === 2) {
+    channelType = 2; engine = 'dtpay'; platform = 2;
+  } else if (typeStr.includes('freecharge') || typeNum === 3) {
+    channelType = 3; engine = 'dtpay'; platform = 1;
+  } else if (typeStr.includes('amazon') || typeNum === 33) {
+    channelType = 33; engine = 'dtpay'; platform = 18;
+  } else if (typeStr.includes('paytm') && !typeStr.includes('business') && (typeNum === 8 || typeNum === 9)) {
+    channelType = 9; engine = 'dtpay'; platform = 4;
+  } else if ((typeStr.includes('paytm') && typeStr.includes('business')) || typeNum === 16) {
+    channelType = 16; engine = 'legacy'; platform = 4;
+  } else if ((typeStr.includes('phonepe') && typeStr.includes('business')) || typeNum === 14 || typeNum === 19) {
+    channelType = 14; engine = 'legacy'; platform = 3;
+  } else if (typeStr.includes('phonepe') || typeNum === 1) {
+    channelType = 1; engine = 'legacy'; platform = 3;
+  } else if (typeStr.includes('navi') || typeNum === 13 || typeNum === 20 || typeNum === 21) {
+    channelType = 13; engine = 'legacy'; platform = 8;
+  } else if (typeStr.includes('supermoney') || typeNum === 17) {
+    channelType = 17; engine = 'legacy'; platform = 17;
+  } else if (typeStr.includes('bharatpe') || typeNum === 18) {
+    channelType = 18; engine = 'legacy'; platform = 18;
+  } else {
+    channelType = isNaN(typeNum) ? 1 : typeNum;
+    engine = [2, 3, 8, 9, 33].includes(typeNum) ? 'dtpay' : 'legacy';
+    platform = mapCtTypeToPlatform(ct_type);
+  }
+
+  return { channelType, engine, platform };
+}
+
 const verifiedUpiNameCache = new Map<string, string>();
 
 async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<string> {
@@ -3659,10 +3696,10 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
   const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
 
   try {
-    const platformId = mapCtTypeToPlatform(ct_type);
+    const config = getAutomationConfig(ct_type);
     const targetPhone = account ? String(account).trim() : (user.phone ? String(user.phone).trim() : '');
 
-    console.log(`[Automation API] Sending Wallet OTP via run-automation: phone=${targetPhone}, platform=${platformId}`);
+    console.log(`[Automation API] Sending Wallet OTP via run-automation: phone=${targetPhone}, channelType=${config.channelType}, engine=${config.engine}`);
     let sessionId = `auto-session-${Date.now()}`;
     let success = false;
 
@@ -3673,12 +3710,18 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
         body: JSON.stringify({
           action: 'send-otp',
           phone: targetPhone,
-          platform: platformId
+          channelType: config.channelType,
+          engine: config.engine,
+          platform: config.platform
         })
       });
 
       const otpJson: any = await otpRes.json();
       console.log(`[Automation API] send-otp response:`, JSON.stringify(otpJson));
+      if (otpJson.sessionId || otpJson.data?.sessionId) {
+        sessionId = otpJson.sessionId || otpJson.data?.sessionId;
+      }
+
       if (otpRes.ok && (otpJson.code === 200 || otpJson.code === '200' || otpJson.status === 'success' || (otpJson.data && !otpJson.message?.includes('repeat bind')))) {
         success = true;
       } else {
@@ -3729,16 +3772,19 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
         limitConfig: JSON.stringify({ min: 100, max: 100000 }),
         inSell: 1,
         ctGuide: "If you Change your upi id, please relink right now!",
-        account: account,
+        account: targetPhone,
         upi: "Pending verification",
         backup_upi: [],
-        phone: user.phone,
+        phone: targetPhone,
         pnname: pnname || "Merchant Partner",
-        remark: "Verified partner"
+        remark: "Verified partner",
+        channelType: config.channelType,
+        engine: config.engine
       };
       user.collectionTools.push(tool);
     } else {
-      tool.account = account;
+      tool.account = targetPhone;
+      tool.phone = targetPhone;
       tool.type = typeNum;
       tool.ctType = typeNum;
       tool.ct_type = typeNum;
@@ -3746,6 +3792,8 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       tool.inSell = 1;
       tool.backup_upi = [];
       tool.upi = "Pending verification";
+      tool.channelType = config.channelType;
+      tool.engine = config.engine;
       if (pnname) tool.pnname = pnname;
     }
 
@@ -3805,10 +3853,10 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
   console.log(`[monitorflow/three] Received OTP: "${parsedOtp}" for ct_type=${ct_type}, account=${account}`);
 
   try {
-    const platformId = mapCtTypeToPlatform(ct_type || user.zoopayUpiType);
+    const config = getAutomationConfig(ct_type || user.zoopayUpiType);
     const targetPhone = account ? String(account).trim() : (user.zoopayPhone || (user.phone ? String(user.phone).trim() : ''));
 
-    console.log(`[Automation API] Verifying OTP via run-automation: phone=${targetPhone}, platform=${platformId}, otp=${parsedOtp}`);
+    console.log(`[Automation API] Verifying OTP via run-automation: phone=${targetPhone}, channelType=${config.channelType}, otp=${parsedOtp}`);
     let verifyJson: any = null;
 
     try {
@@ -3817,8 +3865,11 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'verify-otp',
+          sessionId: user.zoopaySessionId || `session-${targetPhone}`,
           phone: targetPhone,
-          platform: platformId,
+          channelType: config.channelType,
+          engine: config.engine,
+          platform: config.platform,
           otp: parsedOtp
         })
       });
@@ -3850,7 +3901,7 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
           code: 200,
           status: 'success',
           data: {
-            upis: [`${targetPhone}@${upiType || 'ybl'}`]
+            upis: [`${targetPhone}@${mapCtTypeToUpiType(ct_type) || 'ybl'}`]
           }
         };
       } else {
@@ -3861,7 +3912,7 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       }
     }
 
-    // Retrieve verified UPI IDs from Zoopay or verify response
+    // Retrieve verified UPI IDs from response
     let rawUpis = null;
     if (verifyJson) {
       if (verifyJson.data) {
@@ -3891,7 +3942,7 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
     // Fallback generation for special types if empty or intercepted or mock session
     if (!upis || upis.length === 0) {
       const toolAccount = tool ? tool.account : null;
-      const cleanedPhone = toolAccount ? String(toolAccount).trim() : (account ? String(account).trim() : (user.phone ? String(user.phone).trim() : ''));
+      const cleanedPhone = toolAccount ? String(toolAccount).trim() : (account ? String(account).trim() : (targetPhone || ''));
       
       if (cleanedPhone) {
         const typeStr = String(tool ? mapCtTypeToUpiType(tool.type) : (user.zoopayUpiType || 'paytm')).toLowerCase();
@@ -3922,13 +3973,20 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       user.markModified('kycStatus');
     }
 
-    // Update tool state to ready
+    // Update tool state to ready and save exact linked phone number!
     if (tool) {
-      tool.state = 2; // set to idle/ready to enable selection checking in check
+      tool.state = 2; // set to idle/ready
+      tool.inSell = 1;
       tool.backup_upi = upis;
       if (upis && upis.length > 0) {
         tool.upi = upis[0];
       }
+      tool.linkedPhone = targetPhone; // STORE EXACT VERIFIED LINKED PHONE NUMBER!
+      tool.account = targetPhone;
+      tool.phone = targetPhone;
+      tool.channelType = config.channelType;
+      tool.engine = config.engine;
+      tool.verifiedAt = Date.now();
       user.markModified('collectionTools');
     }
 
@@ -3946,6 +4004,42 @@ app.post('/xxapi/monitorflow/three2', (req, res) => {
 
 app.post('/xxapi/monitorflow/four', (req, res) => {
   res.json({ code: 0, msg: 'success', data: {} });
+});
+
+// AUTOMATION RUN PROXY ENDPOINT
+app.post('/api/run-automation', async (req, res) => {
+  try {
+    const { action, phone, channelType, engine, platform, sessionId, otp } = req.body;
+    const config = getAutomationConfig(channelType || platform);
+    const targetChannelType = channelType !== undefined ? Number(channelType) : config.channelType;
+    const targetEngine = engine || config.engine;
+    const targetPlatform = platform !== undefined ? Number(platform) : config.platform;
+
+    const payload: any = {
+      action,
+      phone: phone ? String(phone).trim() : '',
+      channelType: targetChannelType,
+      engine: targetEngine,
+      platform: targetPlatform
+    };
+
+    if (sessionId) payload.sessionId = sessionId;
+    if (otp) payload.otp = String(otp).trim();
+
+    console.log(`[/api/run-automation Proxy] Action=${action}, phone=${payload.phone}, channelType=${payload.channelType}, engine=${payload.engine}`);
+
+    const apiRes = await fetch('https://xxx-api-three.vercel.app/api/run-automation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const json = await apiRes.json();
+    return res.status(apiRes.status).json(json);
+  } catch (err: any) {
+    console.error('[/api/run-automation Proxy Error]', err);
+    return res.status(500).json({ code: 500, msg: err.message || 'Automation API request failed' });
+  }
 });
 
 app.post('/xxapi/monitorflow/check', async (req, res) => {
@@ -6443,6 +6537,132 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
         tx.payer_status = 4; // Auto cancel
         await tx.save();
         console.log(`[P2P Sweeper] Order ${tx.rptNo} expired after 29 minutes and was auto-cancelled.`);
+      }
+
+      // 2. Automated History Polling for Orders in Review (every 10s for up to 29 minutes)
+      const activeReviewTxs = await Transaction.find({
+        payer_status: { $in: [1, 2] },
+        ctime: { $gte: nowSec - 1740 }
+      });
+
+      for (const tx of activeReviewTxs) {
+        try {
+          // Locate seller for this order
+          const seller = await User.findOne({
+            $or: [
+              { id: tx.sellerId },
+              { _id: tx.sellerId },
+              { phone: tx.sellerPhone },
+              { phone: tx.merchant_phone }
+            ].filter(Boolean)
+          });
+
+          if (!seller || !seller.collectionTools) continue;
+
+          // Find specific linked tool matching payee_bank_account or ctType
+          let tool = seller.collectionTools.find((t: any) => 
+            t && (t.upi === tx.payee_bank_account || t.account === tx.payee_bank_account || (t.backup_upi && t.backup_upi.includes(tx.payee_bank_account)))
+          );
+
+          if (!tool) {
+            tool = seller.collectionTools.find((t: any) => t && (t.type === tx.ctType || t.ctType === tx.ctType));
+          }
+
+          // Use the exact verified linked phone number from UPI linking!
+          const targetPhone = tool?.linkedPhone || tool?.account || tool?.phone || seller.phone;
+          if (!targetPhone) continue;
+
+          const config = getAutomationConfig(tool?.type || tool?.ctType || tx.ctType);
+
+          const histRes = await fetch('https://xxx-api-three.vercel.app/api/run-automation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'fetch-by-phone',
+              phone: String(targetPhone).trim(),
+              channelType: config.channelType,
+              engine: config.engine
+            })
+          });
+
+          if (histRes.ok) {
+            const histJson: any = await histRes.json();
+            const list = histJson.data?.list || histJson.data || histJson.list || histJson.transactions || histJson.records || [];
+            
+            if (Array.isArray(list) && list.length > 0) {
+              const matchingTx = list.find((item: any) => {
+                const itemAmount = Number(item.amount || item.txnAmount || item.money || item.creditAmount || 0);
+                const orderAmount = Number(tx.amount || tx.money || 0);
+                const amountMatches = Math.abs(itemAmount - orderAmount) < 0.1;
+
+                const itemUtr = String(item.utr || item.rrn || item.refNo || item.bankRrn || item.transactionId || '').trim();
+                const orderUtr = String(tx.utr || '').trim();
+
+                if (orderUtr && itemUtr) {
+                  return amountMatches && (itemUtr.includes(orderUtr) || orderUtr.includes(itemUtr));
+                }
+                return amountMatches;
+              });
+
+              if (matchingTx) {
+                console.log(`[Auto History Check SUCCESS] Found matching payment for order ${tx.rptNo}! Auto approving.`);
+                
+                tx.payer_status = 3; // Success / Approved
+                if (matchingTx.utr || matchingTx.rrn) {
+                  tx.utr = matchingTx.utr || matchingTx.rrn;
+                }
+                await tx.save();
+
+                // 1. Credit buyer balance & recharge
+                const buyer = await User.findOne({
+                  $or: [
+                    { _id: tx.userId },
+                    { phone: tx.phone },
+                    { mobileNo: tx.phone }
+                  ].filter(Boolean)
+                });
+
+                if (buyer) {
+                  buyer.balance = (buyer.balance || 0) + (tx.amount || 0);
+                  buyer.recharge = (buyer.recharge || 0) + (tx.amount || 0);
+                  await buyer.save();
+                  await distributeTeamCommission(buyer, tx.amount || 0);
+                  console.log(`[Auto History Check] Buyer ${buyer.phone} wallet credited +${tx.amount}. New Balance: ${buyer.balance}`);
+                }
+
+                // 2. Debit seller balance & record sell transaction
+                seller.balance = Math.max(0, (seller.balance || 0) - (tx.amount || 0));
+                await seller.save();
+
+                const sellRptNo = `SELL_${tx.rptNo}`;
+                let sellTx = await Transaction.findOne({ rptNo: sellRptNo });
+                if (!sellTx) {
+                  sellTx = new Transaction({
+                    userId: seller._id,
+                    phone: seller.phone,
+                    mobileNo: seller.phone,
+                    type: 'sell',
+                    orderType: 'sell',
+                    amount: tx.amount,
+                    status: 1,
+                    payer_status: 3,
+                    buyerPhone: tx.phone,
+                    rptNo: sellRptNo,
+                    payee_bank_account: tx.payee_bank_account
+                  });
+                  await sellTx.save();
+                } else {
+                  sellTx.payer_status = 3;
+                  await sellTx.save();
+                }
+
+                console.log(`[Auto History Check] Order ${tx.rptNo} automatically verified & completed.`);
+              }
+            }
+          }
+        } catch (txErr) {
+          console.error(`[Auto History Check Error] Failed for order ${tx.rptNo}:`, txErr);
+        }
       }
 
       const users = await User.find({ 'collectionTools.zoopayToolId': { $exists: true } });
