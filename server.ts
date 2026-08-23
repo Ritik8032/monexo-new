@@ -2555,7 +2555,22 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
         const isBank = (primaryTool.type === 2 || primaryTool.type === 4 || primaryTool.type === 8);
         const methodVal = isBank ? 2 : 1;
 
-        const chunks = generateOrderChunks(seller.balance || 0);
+        // Calculate locked/pending in-progress sell orders for this seller
+        const pendingTxs = await Transaction.find({
+          $or: [
+            { sellerId: seller._id },
+            { sellerPhone: seller.phone }
+          ],
+          payer_status: { $in: [1, 2] } // 1: paying, 2: pending review
+        });
+        const pendingSum = pendingTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const availableBalance = Math.max(0, (seller.balance || 0) - pendingSum);
+
+        if (availableBalance < 100) {
+          continue; // Seller has no available tokens remaining to sell!
+        }
+
+        const chunks = generateOrderChunks(availableBalance);
         chunks.forEach((amt) => {
           const rptNo = generate15DigitRptNo();
           const slipItem: OrderSlipItem = {
@@ -2923,6 +2938,30 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
   let payment_method = slipData ? slipData.method : 1; // 1: upi, 2: bank
   let sellerUserId: any = slipData ? slipData.sellerId : null;
   let sellerPhoneVal = slipData ? slipData.sellerPhone : "";
+
+  if (sellerUserId || sellerPhoneVal) {
+    const sellerObj = await User.findOne({
+      $or: [
+        { _id: sellerUserId },
+        { phone: sellerPhoneVal }
+      ]
+    });
+    if (sellerObj) {
+      const activePending = await Transaction.find({
+        $or: [
+          { sellerId: sellerObj._id },
+          { sellerPhone: sellerObj.phone }
+        ],
+        rptNo: { $ne: order_id },
+        payer_status: { $in: [1, 2] }
+      });
+      const activeSum = activePending.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const remainingAvailable = Math.max(0, (sellerObj.balance || 0) - activeSum);
+      if (remainingAvailable < amount) {
+        return res.json({ code: 400, msg: 'Seller does not have enough available balance for this order.' });
+      }
+    }
+  }
 
   const parsedCtType = Number(ctType || ct_type || (slipData ? slipData.ctType : 1) || 1);
   const chosenCtType = (!parsedCtType || parsedCtType === 7) ? 1 : parsedCtType;
