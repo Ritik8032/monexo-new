@@ -474,37 +474,70 @@ const orderSlipMap = new Map<string, OrderSlipItem>();
 
 function generateOrderChunks(balance: number): number[] {
   if (balance < 100) return [];
+
+  // 10-minute time slot index
+  const slot10Min = Math.floor(Date.now() / (10 * 60 * 1000));
+  const isRoundedSlot = (slot10Min % 2 === 1); // Rotates every 10 minutes
+
   const chunks: number[] = [];
   let remaining = Math.floor(balance);
-  const stepSizes = [100, 200, 300, 400, 500, 1000, 2000, 5000];
-  let stepIdx = 0;
 
-  while (remaining >= 100) {
-    let chunkSize = stepSizes[stepIdx % stepSizes.length];
-    if (chunkSize > remaining) {
-      const possible = stepSizes.filter(s => s <= remaining);
-      if (possible.length > 0) {
-        chunkSize = possible[possible.length - 1];
-      } else {
-        chunkSize = remaining;
+  if (!isRoundedSlot) {
+    // Slot 1 (First 10 min): Granular split chunks like 110, 220, 240, 500, 560, 1000
+    const granularPattern = [110, 220, 240, 500, 560, 1000, 1500, 2000];
+    let idx = 0;
+    while (remaining >= 100) {
+      let target = granularPattern[idx % granularPattern.length];
+      if (target > remaining) {
+        const possible = granularPattern.filter(s => s <= remaining);
+        if (possible.length > 0) {
+          target = possible[possible.length - 1];
+        } else {
+          target = remaining;
+        }
       }
+      if (target >= 100) {
+        chunks.push(Math.floor(target));
+        remaining -= target;
+      } else {
+        break;
+      }
+      idx++;
     }
-    if (chunkSize >= 100) {
-      chunks.push(chunkSize);
-      remaining -= chunkSize;
+  } else {
+    // Slot 2 (After 10 min if unclicked): Clean rounded denominations ending in 00 or 000 (100, 200, 500, 1000, 2000, 5000)
+    const roundedPattern = [100, 200, 500, 1000, 2000, 5000];
+    let idx = 0;
+    while (remaining >= 100) {
+      let target = roundedPattern[idx % roundedPattern.length];
+      if (target > remaining) {
+        const possible = roundedPattern.filter(r => r <= remaining);
+        if (possible.length > 0) {
+          target = possible[possible.length - 1];
+        } else {
+          target = Math.floor(remaining / 100) * 100;
+        }
+      }
+      if (target >= 100) {
+        chunks.push(Math.floor(target));
+        remaining -= target;
+      } else {
+        break;
+      }
+      idx++;
+    }
+  }
+
+  // Handle leftover >= 100
+  if (remaining >= 100) {
+    if (isRoundedSlot) {
+      chunks.push(Math.floor(remaining / 100) * 100);
     } else {
-      break;
+      chunks.push(Math.floor(remaining));
     }
-    stepIdx++;
   }
 
-  if (remaining > 0 && chunks.length > 0) {
-    chunks[chunks.length - 1] += remaining;
-  } else if (remaining >= 100 && chunks.length === 0) {
-    chunks.push(remaining);
-  }
-
-  return chunks;
+  return chunks.filter(c => c >= 100);
 }
 
 const paymentNodeSchema = new mongoose.Schema({
@@ -2486,11 +2519,19 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
   try {
     const reqMethod = req.query.method !== undefined ? Number(req.query.method) : 1;
     const reqCtType = req.query.ctType !== undefined ? Number(req.query.ctType) : (req.query.ct_type !== undefined ? Number(req.query.ct_type) : undefined);
+    const currentUser = await getUserByToken(req).catch(() => null);
     const list: any[] = [];
 
-    // 1. Fetch active selling users with wallet balance
+    // 1. Fetch active selling users with wallet balance >= 100
     const sellingUsers = await User.find({ balance: { $gte: 100 } });
     for (const seller of sellingUsers) {
+      // ANTI-SELF-TRADING RULE: Prevent sellers from seeing or buying their own sell orders
+      if (currentUser) {
+        if (seller._id.toString() === currentUser._id.toString() || seller.phone === currentUser.phone) {
+          continue;
+        }
+      }
+
       const tools = seller.collectionTools || [];
       // Filter tools where tool is active/ready and inSell is enabled
       const activeTools = tools.filter((t: any) => t && t.state !== 0 && t.state !== 5 && (t.inSell === 1 || t.inSell === undefined));
@@ -4168,12 +4209,11 @@ async function getSellHistory(req: any, res: any) {
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const txs = await Transaction.find({
     $or: [
-      { userId: user._id },
+      { userId: user._id, type: 'sell' },
       { sellerId: user._id },
-      { phone: user.phone },
-      { sellerPhone: user.phone }
-    ],
-    type: 'sell'
+      { sellerPhone: user.phone },
+      { phone: user.phone, type: 'sell' }
+    ]
   }).sort({ ctime: -1 });
   
   const page = Number(req.query.page) || Number(req.body?.page) || 1;
@@ -6118,6 +6158,20 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
     try {
       // Guarantee DB connection before query
       await connectToDatabase();
+
+      // 1. Auto-cancel transactions exceeding 29 minutes (1740 seconds)
+      const nowSec = Math.floor(Date.now() / 1000);
+      const expiredTxs = await Transaction.find({
+        payer_status: { $in: [1, 2] },
+        ctime: { $lt: nowSec - 1740 }
+      });
+
+      for (const tx of expiredTxs) {
+        tx.payer_status = 4; // Auto cancel
+        await tx.save();
+        console.log(`[P2P Sweeper] Order ${tx.rptNo} expired after 29 minutes and was auto-cancelled.`);
+      }
+
       const users = await User.find({ 'collectionTools.zoopayToolId': { $exists: true } });
       for (const user of users) {
         if (!user.collectionTools) continue;
