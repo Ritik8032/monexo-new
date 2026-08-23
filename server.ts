@@ -232,7 +232,7 @@ const userSchema = new mongoose.Schema({
   upiDetails: { type: Array, default: [] },
   utrLogs: { type: Array, default: [] },
   balance: { type: Number, default: 10000 },
-  commission: { type: Number, default: 120 },
+  commission: { type: Number, default: 0 },
   recharge: { type: Number, default: 0 },
   vipLevel: { type: Number, default: 1 },
   kycStatus: { type: Number, default: 0 },
@@ -442,6 +442,68 @@ function sanitizeAndMaskPII(rawText: string): { sanitizedText: string; metadata:
   });
 
   return { sanitizedText: sanitized, metadata };
+}
+
+async function findParentUser(user: any) {
+  if (!user) return null;
+  const parentCode = user.invitercode || user.parentUser;
+  if (!parentCode || String(parentCode).trim() === '' || String(parentCode).trim() === '0') return null;
+  
+  const codeStr = String(parentCode).trim();
+  const parent = await User.findOne({
+    $or: [
+      { ownInviteCode: codeStr },
+      { referralCode: codeStr },
+      { providerId: codeStr },
+      { phone: codeStr },
+      { mobileNo: codeStr }
+    ]
+  });
+  return parent;
+}
+
+async function distributeTeamCommission(buyer: any, buyAmount: number) {
+  if (!buyer || !buyAmount || buyAmount <= 0) return;
+
+  try {
+    // Level 1 Parent (Direct Inviter) -> 0.3%
+    const level1Parent = await findParentUser(buyer);
+    if (level1Parent && level1Parent._id.toString() !== buyer._id.toString()) {
+      const l1Comm = Math.round((buyAmount * 0.003) * 100) / 100;
+      if (l1Comm > 0) {
+        level1Parent.commission = Math.round(((level1Parent.commission || 0) + l1Comm) * 100) / 100;
+        level1Parent.todayProfit = Math.round(((level1Parent.todayProfit || 0) + l1Comm) * 100) / 100;
+        await level1Parent.save();
+        console.log(`[Team Commission L1] Parent ${level1Parent.phone} received 0.3% (${l1Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+      }
+
+      // Level 2 Parent -> 0.2%
+      const level2Parent = await findParentUser(level1Parent);
+      if (level2Parent && level2Parent._id.toString() !== level1Parent._id.toString() && level2Parent._id.toString() !== buyer._id.toString()) {
+        const l2Comm = Math.round((buyAmount * 0.002) * 100) / 100;
+        if (l2Comm > 0) {
+          level2Parent.commission = Math.round(((level2Parent.commission || 0) + l2Comm) * 100) / 100;
+          level2Parent.todayProfit = Math.round(((level2Parent.todayProfit || 0) + l2Comm) * 100) / 100;
+          await level2Parent.save();
+          console.log(`[Team Commission L2] Parent ${level2Parent.phone} received 0.2% (${l2Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+        }
+
+        // Level 3 Parent -> 0.1%
+        const level3Parent = await findParentUser(level2Parent);
+        if (level3Parent && level3Parent._id.toString() !== level2Parent._id.toString() && level3Parent._id.toString() !== level1Parent._id.toString() && level3Parent._id.toString() !== buyer._id.toString()) {
+          const l3Comm = Math.round((buyAmount * 0.001) * 100) / 100;
+          if (l3Comm > 0) {
+            level3Parent.commission = Math.round(((level3Parent.commission || 0) + l3Comm) * 100) / 100;
+            level3Parent.todayProfit = Math.round(((level3Parent.todayProfit || 0) + l3Comm) * 100) / 100;
+            await level3Parent.save();
+            console.log(`[Team Commission L3] Parent ${level3Parent.phone} received 0.1% (${l3Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Team Commission Error]', err);
+  }
 }
 
 function generate15DigitRptNo(): string {
@@ -1516,7 +1578,7 @@ app.post('/xxapi/register', async (req, res) => {
       parentUser: invitercode || '',
       token: uniqueToken,
       balance: 10000,
-      commission: 120,
+      commission: 0,
       collectionTools: getDefaultCollectionTools(),
       sessions: [initialSession],
       providerId: finalProviderId,
@@ -2177,12 +2239,12 @@ app.get('/xxapi/simpConfig', async (req, res) => {
 });
 
 // Helper function to generate newbie rules with frontUrl and status
-const buildNewbieRules = (params: any) => [
+const buildNewbieRules = (params: any, totalBought: number = 0) => [
   { id: 1, name: 'Subscribe to Official Channel', activityCode: 'newbie_tg_channel', title: 'Subscribe to Official Channel', reward: 40, status: params.newbie_tg_channel ? 'done' : 'undone', frontd_url: 'https://t.me/monexoofficial', frontUrl: 'https://t.me/monexoofficial' },
   { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: params.newbie_tg_customer ? 'done' : 'undone', frontd_url: 'https://t.me/monexoofficial', frontUrl: 'https://t.me/monexoofficial' },
   { id: 3, name: 'Watch Beginner Tutorial', activityCode: 'newbie_watch_video', title: 'Watch Beginner Tutorial', reward: 40, status: params.newbie_watch_video ? 'done' : 'undone', frontd_url: '/newbie_watch_video', frontUrl: '/newbie_watch_video' },
   { id: 4, name: 'Link Amazon', activityCode: 'newbie_newct', title: 'Link Amazon', reward: 40, status: params.newbie_newct ? 'done' : 'undone', frontd_url: '/bankadd', frontUrl: '/bankadd' },
-  { id: 5, name: 'Purchase 5000 IToken', activityCode: 'newbie_buyitoken', title: 'Purchase 5000 IToken', reward: 40, status: params.newbie_buyitoken ? 'done' : 'undone', frontd_url: '/buy', frontUrl: '/buy' }
+  { id: 5, name: 'Purchase 1000 iToken', activityCode: 'newbie_buyitoken', title: 'Purchase 1000 iToken (Get ₹200 Reward)', reward: 200, status: (totalBought >= 1000 || params.newbie_buyitoken) ? 'done' : 'undone', frontd_url: '/buy', frontUrl: '/buy' }
 ];
 
 const getNewbieUserData = async (req: any) => {
@@ -2194,42 +2256,55 @@ const getNewbieUserData = async (req: any) => {
     newbie_newct: 0,
     newbie_buyitoken: 0
   };
-  if (user && (user as any).newbieParams) {
-    try { userParams = JSON.parse((user as any).newbieParams); } catch (e) {}
+  let totalBought = 0;
+  if (user) {
+    if ((user as any).newbieParams) {
+      try { userParams = JSON.parse((user as any).newbieParams); } catch (e) {}
+    }
+    const boughtTxs = await Transaction.find({
+      $or: [
+        { userId: user._id },
+        { phone: user.phone },
+        ...(user.mobileNo ? [{ phone: user.mobileNo }] : [])
+      ],
+      payer_status: 3,
+      type: { $ne: 'sell' }
+    });
+    totalBought = boughtTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
   }
-  const rules = buildNewbieRules(userParams);
-  const isDone = (user as any)?.newbieDone ? 1 : 0;
-  return { user, userParams, rules, isDone };
+  const rules = buildNewbieRules(userParams, totalBought);
+  const isDone = (user as any)?.newbieDone || totalBought >= 1000 ? 1 : 0;
+  return { user, userParams, rules, isDone, totalBought };
 };
 
 app.get('/xxapi/newbieDayStep/init', async (req, res) => {
-  const { userParams, rules, isDone } = await getNewbieUserData(req);
+  const { userParams, rules, isDone, totalBought } = await getNewbieUserData(req);
   return res.json({
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: isDone, condition: 0, settleAmt: isDone ? 200 : 0, params: JSON.stringify(userParams) },
+      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone ? 200 : 0, params: JSON.stringify(userParams) },
       activityRules: rules,
       guides: rules,
       allDone: isDone === 1,
-      buyToken: "0"
+      buyToken: String(totalBought)
     }
   });
 });
 
 app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
-  const { userParams, rules, isDone } = await getNewbieUserData(req);
+  const { userParams, rules, isDone, totalBought } = await getNewbieUserData(req);
   return res.json({
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: isDone, condition: 0, settleAmt: isDone ? 200 : 0, params: JSON.stringify(userParams) },
-      newbieStepRecord: { done: 0, condition: 0, settleAmt: 0, params: "{}" },
+      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone ? 200 : 0, params: JSON.stringify(userParams) },
+      newbieStepRecord: { done: isDone, condition: 1000, settleAmt: 200, params: "{}" },
       activityRules: rules,
       guides: rules,
       tgGroup: "https://t.me/monexoofficial",
       newbieReward: 200,
-      buyToken: "0",
+      buyToken: String(totalBought),
       allDone: isDone === 1,
       finishNewbie: isDone
     }
@@ -2253,12 +2328,15 @@ app.get('/xxapi/inviteNewbieStepTotal/init', async (req, res) => {
 
 app.post('/xxapi/newbieDayStep/reward', async (req, res) => {
   const user = await getUserByToken(req);
-  if (user) {
+  if (!user) return res.json({ code: 403, msg: "Unauthorized" });
+
+  if (!(user as any).newbieDone) {
     (user as any).newbieDone = true;
     user.balance = (user.balance || 0) + 200;
     await user.save();
+    console.log(`[Newbie Reward] User ${user.phone} received ₹200 newbie reward for buying 1000 iTokens.`);
   }
-  return res.json({ code: 0, msg: "success" });
+  return res.json({ code: 0, msg: "success", data: { reward: 200 } });
 });
 
 app.get('/xxapi/inviteDayStep/init', async (req, res) => {
@@ -2294,19 +2372,42 @@ app.post('/xxapi/buyInrTimes/reward', async (req, res) => {
 });
 
 app.get('/xxapi/buyInrAmount/init', async (req, res) => {
+  const user = await getUserByToken(req);
+  let totalBought = 0;
+  let isDone = false;
+  if (user) {
+    const boughtTxs = await Transaction.find({
+      $or: [{ userId: user._id }, { phone: user.phone }],
+      payer_status: 3,
+      type: { $ne: 'sell' }
+    });
+    totalBought = boughtTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+    isDone = (user as any).newbieDone || totalBought >= 1000;
+  }
   return res.json({
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: 0, condition: 0, settleAmt: 0, params: "{}" },
-      activityRules: [],
-      allDone: false
+      activityRecord: { done: isDone ? 1 : 0, condition: 1000, settleAmt: 200, params: JSON.stringify({ buyAmount: totalBought }) },
+      activityRules: [
+        { id: 1, name: "Purchase 1000 iToken", reward: 200, condition: 1000, current: totalBought, done: isDone }
+      ],
+      allDone: isDone
     }
   });
 });
 
 app.post('/xxapi/buyInrAmount/reward', async (req, res) => {
-  return res.json({ code: 0, msg: "success" });
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: "Unauthorized" });
+
+  if (!(user as any).newbieDone) {
+    (user as any).newbieDone = true;
+    user.balance = (user.balance || 0) + 200;
+    await user.save();
+    console.log(`[BuyInrAmount Reward] User ${user.phone} received ₹200 newbie reward.`);
+  }
+  return res.json({ code: 0, msg: "success", data: { reward: 200 } });
 });
 
 app.get('/xxapi/sellInrAmount/init', async (req, res) => {
@@ -4048,6 +4149,7 @@ app.get('/xxapi/chargeUtr/:rptNo/:utr', async (req, res) => {
   if (buyer) {
     buyer.balance = (buyer.balance || 0) + tx.amount;
     await buyer.save();
+    await distributeTeamCommission(buyer, tx.amount);
     console.log(`[Money Rotation] Buyer ${buyer.phone} wallet credited +${tx.amount}. New balance: ${buyer.balance}`);
   }
 
@@ -4469,23 +4571,101 @@ app.get('/xxapi/teaminfo', async (req, res) => {
   });
 });
 
-app.get('/xxapi/teaminfothree/:param', (req, res) => {
+app.get('/xxapi/teaminfothree/:param', async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  const inviteCode = user.ownInviteCode || user.referralCode || '';
+  const userProviderId = user.providerId || '';
+
+  // Level 1 Members
+  const level1Members = await User.find({
+    $or: [
+      { invitercode: inviteCode },
+      { parentUser: inviteCode },
+      ...(userProviderId ? [{ invitercode: userProviderId }, { parentUser: userProviderId }] : [])
+    ]
+  });
+
+  const level1Phones = level1Members.map(m => m.phone).filter(Boolean);
+  const level1Codes = level1Members.flatMap(m => [m.ownInviteCode, m.referralCode, m.providerId, m._id ? m._id.toString() : ''].filter(Boolean));
+
+  // Level 1 Total Recharge (Sum of successful buy transactions)
+  let level1Recharge = 0;
+  if (level1Phones.length > 0) {
+    const l1Txs = await Transaction.find({
+      phone: { $in: level1Phones },
+      payer_status: 3,
+      type: { $ne: 'sell' }
+    });
+    level1Recharge = l1Txs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  }
+  const level1Comm = (level1Recharge * 0.003).toFixed(2);
+
+  // Level 2 Members
+  let level2Members: any[] = [];
+  if (level1Codes.length > 0) {
+    level2Members = await User.find({
+      $or: [
+        { invitercode: { $in: level1Codes } },
+        { parentUser: { $in: level1Codes } }
+      ]
+    });
+  }
+  const level2Phones = level2Members.map(m => m.phone).filter(Boolean);
+  let level2Recharge = 0;
+  if (level2Phones.length > 0) {
+    const l2Txs = await Transaction.find({
+      phone: { $in: level2Phones },
+      payer_status: 3,
+      type: { $ne: 'sell' }
+    });
+    level2Recharge = l2Txs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  }
+  const level2Comm = (level2Recharge * 0.002).toFixed(2);
+
+  // Today Level 1 & 2 Recharges
+  const todayStartSec = Math.floor(new Date().setHours(0,0,0,0) / 1000);
+  let todayL1Recharge = 0;
+  if (level1Phones.length > 0) {
+    const todayL1Txs = await Transaction.find({
+      phone: { $in: level1Phones },
+      payer_status: 3,
+      type: { $ne: 'sell' },
+      ctime: { $gte: todayStartSec }
+    });
+    todayL1Recharge = todayL1Txs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  }
+  const todayL1Comm = (todayL1Recharge * 0.003).toFixed(2);
+
+  let todayL2Recharge = 0;
+  if (level2Phones.length > 0) {
+    const todayL2Txs = await Transaction.find({
+      phone: { $in: level2Phones },
+      payer_status: 3,
+      type: { $ne: 'sell' },
+      ctime: { $gte: todayStartSec }
+    });
+    todayL2Recharge = todayL2Txs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  }
+  const todayL2Comm = (todayL2Recharge * 0.002).toFixed(2);
+
   return res.json({
     code: 0,
     msg: 'success',
     data: {
-      one_count: 1,
-      one_total_recharge: 5000,
-      one_commission: "60.00",
-      two_count: 0,
-      two_totalrecharge: 0,
-      two_commission: "0.00",
-      today_one_count: 1,
-      today_one_total_recharge: 2000,
-      today_one_commission: "24.00",
-      today_two_count: 0,
-      today_two_totalrecharge: 0,
-      today_two_commission: "0.00"
+      one_count: level1Members.length,
+      one_total_recharge: level1Recharge,
+      one_commission: level1Comm,
+      two_count: level2Members.length,
+      two_totalrecharge: level2Recharge,
+      two_commission: level2Comm,
+      today_one_count: level1Members.length,
+      today_one_total_recharge: todayL1Recharge,
+      today_one_commission: todayL1Comm,
+      today_two_count: level2Members.length,
+      today_two_totalrecharge: todayL2Recharge,
+      today_two_commission: todayL2Comm
     }
   });
 });
@@ -4500,8 +4680,7 @@ app.get('/xxapi/myTeam', async (req, res) => {
       $or: [
         { invitercode: inviteCode },
         { parentUser: inviteCode },
-        { invitercode: user.providerId },
-        { parentUser: user.providerId }
+        ...(user.providerId ? [{ invitercode: user.providerId }, { parentUser: user.providerId }] : [])
       ]
     }).select('phone mobileNo createdAt balance providerId fullName recharge commission').lean();
 
@@ -4521,22 +4700,6 @@ app.get('/xxapi/myTeam', async (req, res) => {
         balance: m.balance ?? 0
       };
     });
-
-    if (list.length === 0) {
-      list = [
-        {
-          id: "TM88201",
-          phone: "9876543210",
-          username: "987****3210",
-          teamCount: 1,
-          recharge: 5000,
-          teamWorkId: "TM88201",
-          dividend: "60.00",
-          createdAt: new Date().toISOString(),
-          balance: 1000
-        }
-      ];
-    }
 
     return res.json({
       code: 0,
@@ -5883,6 +6046,7 @@ app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
           buyer.balance = (buyer.balance || 0) + (tx.amount || 0);
           buyer.recharge = (buyer.recharge || 0) + (tx.amount || 0);
           await buyer.save();
+          await distributeTeamCommission(buyer, tx.amount || 0);
           console.log(`[Admin Manual Approval] Credited Buyer ${buyer.phone} +₹${tx.amount}. New Balance: ₹${buyer.balance}`);
         }
 
@@ -7068,6 +7232,7 @@ Aapka enter kiya gaya OTP code galat hai. Order ID: <code>${pendingId}</code> ca
               if (buyer) {
                 buyer.balance = (buyer.balance || 0) + (tx.amount || 0);
                 await buyer.save();
+                await distributeTeamCommission(buyer, tx.amount || 0);
               }
               actionSuccess = true;
             }
