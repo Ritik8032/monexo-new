@@ -1998,7 +1998,7 @@
               } else if (activeTab.value === 'dashboard') {
                 fetchStats();
               } else if (activeTab.value === 'payments') {
-                fetchPaymentHistory();
+                fetchPaymentHistory(false);
               } else if (activeTab.value === 'nodes') {
                 fetchNodes();
               } else if (activeTab.value === 'users') {
@@ -2008,8 +2008,10 @@
           }, 8000);
         };
 
-        const fetchPaymentHistory = async () => {
-          paymentLoading.value = true;
+        const fetchPaymentHistory = async (isManual = true) => {
+          if (isManual && paymentOrders.value.length === 0) {
+            paymentLoading.value = true;
+          }
           try {
             const q = encodeURIComponent(paymentSearchQuery.value.trim());
             const res = await fetch(`/xxapi/admin/paymentHistory?search=${q}&type=${paymentTypeFilter.value}&status=${paymentStatusFilter.value}`, {
@@ -2018,13 +2020,15 @@
             const data = await res.json();
             if (data.code === 0) {
               paymentOrders.value = data.data || [];
-            } else {
+            } else if (isManual) {
               alert('Failed to load payment history: ' + data.msg);
             }
           } catch (e) {
             console.error('Error fetching payment history:', e);
           } finally {
-            paymentLoading.value = false;
+            if (isManual) {
+              paymentLoading.value = false;
+            }
           }
         };
 
