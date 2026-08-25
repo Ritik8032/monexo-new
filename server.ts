@@ -3605,23 +3605,35 @@ async function healAndGetCleanTools(user) {
     modified = true;
   }
 
-  const cleanTools = deduplicatedTools.map(t => {
-    const typeVal = t.type !== undefined ? t.type : 16;
+  const cleanTools: any[] = [];
+  
+  for (const t of deduplicatedTools) {
+    const typeVal = t.type !== undefined ? t.type : (t.ctType !== undefined ? t.ctType : 16);
     let upiVal = t.upi;
     
     // Find first available verified UPI ID from backup_upi or user.zoopayUpis
     let verifiedUpi = '';
-    if (t.backup_upi && t.backup_upi.length > 0) {
-      verifiedUpi = t.backup_upi[0];
-    } else if (user.zoopayUpis && user.zoopayUpis.length > 0) {
-      verifiedUpi = user.zoopayUpis[0];
+    if (t.backup_upi && Array.isArray(t.backup_upi) && t.backup_upi.length > 0) {
+      const found = t.backup_upi.find((u: string) => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification' && u !== 'Pending' && u !== 'undefined');
+      if (found) verifiedUpi = found;
+    }
+    if (!verifiedUpi && user.zoopayUpis && Array.isArray(user.zoopayUpis) && user.zoopayUpis.length > 0) {
+      const found = user.zoopayUpis.find((u: string) => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification' && u !== 'Pending' && u !== 'undefined');
+      if (found) verifiedUpi = found;
     }
     
-    // If upi is empty or "Pending verification", auto-heal it with the verified UPI ID
-    if ((!upiVal || upiVal === 'Pending verification' || upiVal === 'Pending') && verifiedUpi) {
+    // If upi is empty or "Pending verification" or "undefined", auto-heal it with the verified UPI ID if available
+    if ((!upiVal || upiVal === 'Pending verification' || upiVal === 'Pending' || upiVal === 'undefined' || !upiVal.includes('@')) && verifiedUpi) {
       upiVal = verifiedUpi;
       t.upi = verifiedUpi;
       modified = true;
+    }
+
+    // STRICT REQUIREMENT: Only OTP-verified UPIs should be shown in the app!
+    // Filter out unverified tools without a valid OTP-verified UPI ID containing "@"
+    if (!upiVal || upiVal === 'Pending verification' || upiVal === 'Pending' || upiVal === 'undefined' || !upiVal.includes('@')) {
+      console.log(`[Collection Tool Healing] Omitting unverified tool without OTP-verified UPI: id=${t.id}, upi=${t.upi}`);
+      continue;
     }
     
     // Auto-heal other fields if missing
@@ -3634,16 +3646,22 @@ async function healAndGetCleanTools(user) {
       t.ct_type = typeVal;
       modified = true;
     }
+    if (t.onlyPaymentFlag === undefined) {
+      t.onlyPaymentFlag = 3;
+      modified = true;
+    }
     
-    return {
+    cleanTools.push({
       ...t,
       status: t.status !== undefined ? t.status : 1,
       state: t.state !== undefined ? t.state : 2,
-      upi: upiVal || 'Pending verification',
+      inSell: t.inSell !== undefined ? t.inSell : 1,
+      onlyPaymentFlag: t.onlyPaymentFlag !== undefined ? t.onlyPaymentFlag : 3,
+      upi: upiVal,
       ctType: t.ctType !== undefined ? t.ctType : typeVal,
       ct_type: t.ct_type !== undefined ? t.ct_type : typeVal
-    };
-  });
+    });
+  }
   
   if (modified) {
     user.markModified('collectionTools');
@@ -4210,9 +4228,34 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
     }
 
     // Update tool state to ready and save exact linked phone number!
-    if (tool) {
+    const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
+    if (!tool) {
+      tool = {
+        id: pk || `tool-${Date.now()}`,
+        type: typeNum,
+        ctType: typeNum,
+        ct_type: typeNum,
+        account: targetPhone,
+        phone: targetPhone,
+        linkedPhone: targetPhone,
+        pnname: user.phone || 'Merchant Partner',
+        upi: (upis && upis.length > 0) ? upis[0] : `${targetPhone}@paytm`,
+        backup_upi: upis || [],
+        state: 2,
+        status: 1,
+        inSell: 1,
+        onlyPaymentFlag: 3,
+        channelType: config.channelType,
+        engine: config.engine,
+        verifiedAt: Date.now()
+      };
+      if (!user.collectionTools) user.collectionTools = [];
+      user.collectionTools.push(tool);
+    } else {
       tool.state = 2; // set to idle/ready
+      tool.status = 1;
       tool.inSell = 1;
+      tool.onlyPaymentFlag = 3;
       tool.backup_upi = upis;
       if (upis && upis.length > 0) {
         tool.upi = upis[0];
@@ -4223,8 +4266,8 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       tool.channelType = config.channelType;
       tool.engine = config.engine;
       tool.verifiedAt = Date.now();
-      user.markModified('collectionTools');
     }
+    user.markModified('collectionTools');
 
     await user.save();
     return res.json({ code: 0, msg: 'success', data: { upis } });
