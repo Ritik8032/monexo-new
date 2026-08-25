@@ -3352,14 +3352,14 @@ app.post('/xxapi/buyitoken/processpaymentslips', async (req, res) => {
       tx.payer_status = 2; // pending audit
       if (proof_payment) tx.paymentProof = proof_payment;
 
-      // Set BUYER's UPI/collection tools offline (state 7) until buyer manually relinks via authupi!
+      // Set BUYER's UPI/collection tools unlinked (state 5) until buyer manually relinks!
       if (user.collectionTools && user.collectionTools.length > 0) {
         user.collectionTools.forEach((t: any) => {
-          if (t) t.state = 7; // Temporarily disable/offline buyer's UPI
+          if (t) t.state = 5; // UnLink status
         });
         user.markModified('collectionTools');
         await user.save();
-        console.log(`[Buyer Payment Submit] Buyer ${user.phone} UPI offline (state 7). Requires manual relink to verify.`);
+        console.log(`[Buyer Payment Submit] Buyer ${user.phone} UPI unlinked (state 5). Requires manual relink to verify.`);
       }
     } else if (processType === 'cancel' || processType === 'Cancel') {
       tx.payer_status = 4; // cancelled
@@ -3593,7 +3593,7 @@ async function healAndGetCleanTools(user) {
       uniqueToolMap.set(key, t);
     } else {
       const existing = uniqueToolMap.get(key);
-      if ((existing.upi === 'Pending verification' || existing.state === 7) && (t.upi !== 'Pending verification' && t.state !== 7)) {
+      if ((existing.upi === 'Pending verification' || existing.state === 7 || existing.state === 5) && (t.upi && t.upi.includes('@') && t.state !== 7 && t.state !== 5)) {
         uniqueToolMap.set(key, t);
       }
       modified = true;
@@ -3636,6 +3636,12 @@ async function healAndGetCleanTools(user) {
       continue;
     }
     
+    // HEAL STATE: Ensure state is NEVER 7 (state 7 displays "waiting authupi" / "authupi" on UI badge)
+    if (t.state === 7 || t.state === undefined || t.state === null) {
+      t.state = 2; // Default to idle / active once verified with valid UPI!
+      modified = true;
+    }
+    
     // Auto-heal other fields if missing
     if (t.status === undefined) {
       t.status = 1; // available
@@ -3654,7 +3660,7 @@ async function healAndGetCleanTools(user) {
     cleanTools.push({
       ...t,
       status: t.status !== undefined ? t.status : 1,
-      state: t.state !== undefined ? t.state : 2,
+      state: t.state,
       inSell: t.inSell !== undefined ? t.inSell : 1,
       onlyPaymentFlag: t.onlyPaymentFlag !== undefined ? t.onlyPaymentFlag : 3,
       upi: upiVal,
@@ -3814,7 +3820,7 @@ app.post('/xxapi/collectiontoolStatus', async (req, res) => {
   // If relink action requested (status 5 = ct_status_loginerror or state 5):
   if (statusNum === 5 || stateNum === 5 || statusNum === 7 || stateNum === 7) {
     if (tool) {
-      tool.state = 7; // set waiting for OTP relink
+      tool.state = 5; // loginerror (UnLink status + Please relink alert)
       tool.upi = "Pending verification";
       tool.backup_upi = [];
       user.markModified('collectionTools');
@@ -4021,7 +4027,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
         ctType: typeNum,
         ct_type: typeNum,
         onlyPaymentFlag: 3,
-        state: 7, // waiting for OTP / Auth UPI
+        state: 5, // UnLink state while waiting for OTP verification
         minSellToken: 2,
         limitConfig: JSON.stringify({ min: 100, max: 100000 }),
         inSell: 1,
@@ -4042,7 +4048,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       tool.type = typeNum;
       tool.ctType = typeNum;
       tool.ct_type = typeNum;
-      tool.state = 7;
+      tool.state = 5; // UnLink state while waiting for OTP verification
       tool.inSell = 1;
       tool.backup_upi = [];
       tool.upi = "Pending verification";
@@ -4338,12 +4344,13 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
     }
   }
 
-  let state = tool ? (tool.state !== undefined ? tool.state : 7) : 7;
+  const isPendingOtp = !tool || tool.state === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.backup_upi || tool.backup_upi.length === 0;
+  let state = isPendingOtp ? 5 : (tool ? (tool.state !== undefined ? tool.state : 2) : 2);
   let upis: string[] = [];
 
   const toolUpiType = tool ? mapCtTypeToUpiType(tool.type) : mapCtTypeToUpiType(typeNum);
 
-  if (state === 7) {
+  if (isPendingOtp && (!tool || !tool.backup_upi || tool.backup_upi.length === 0)) {
     // While waiting for OTP entry, keep backup_upi empty so OTP modal stays open!
     upis = [];
   } else {
@@ -4370,9 +4377,9 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
     }
   }
 
-  // Auto-healing / auto-recovery: Only auto-recover if NOT in state 7 (waiting OTP) to avoid premature bypass
-  if (user.zoopayUpis && user.zoopayUpis.length > 0 && tool && tool.state !== 7 && user.zoopayUpiType === toolUpiType) {
-    if (tool.state === 7 || !tool.backup_upi || tool.backup_upi.length === 0 || !tool.upi || tool.upi === 'Pending verification') {
+  // Auto-healing / auto-recovery: Auto-recover if valid zoopayUpis exist
+  if (user.zoopayUpis && user.zoopayUpis.length > 0 && tool && user.zoopayUpiType === toolUpiType) {
+    if (!tool.backup_upi || tool.backup_upi.length === 0 || !tool.upi || tool.upi === 'Pending verification') {
       tool.state = 2;
       tool.backup_upi = user.zoopayUpis;
       if (user.zoopayUpis && user.zoopayUpis.length > 0) {
@@ -7113,8 +7120,8 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
         for (let i = 0; i < user.collectionTools.length; i++) {
           const tool = user.collectionTools[i];
           if (tool) {
-            // Keep tool active and available for selling unless explicitly waiting for buyer authupi (state 7)
-            if (tool.state !== 7) {
+            // Keep tool active and available for selling unless explicitly set to unlinked (state 5 or 0)
+            if (tool.state !== 5 && tool.state !== 0) {
               if (tool.status !== 1 || tool.state !== 2 || tool.inSell !== 1) {
                 tool.status = 1; // available
                 tool.state = 2; // idle / active online
