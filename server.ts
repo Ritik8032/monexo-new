@@ -2833,7 +2833,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
           continue; // Seller has no available tokens remaining to sell!
         }
 
-        const chunks = generateOrderChunks(availableBalance);
+        const chunks = Array.from(new Set(generateOrderChunks(availableBalance))).slice(0, 2);
         chunks.forEach((amt) => {
           const rptNo = generate15DigitRptNo();
           const slipItem: OrderSlipItem = {
@@ -3579,9 +3579,33 @@ async function healAndGetCleanTools(user) {
   }
   
   let modified = false;
-  const cleanTools = (user.collectionTools || []).filter(
-    t => t && t.id && !t.id.startsWith('tool-paytm-business') && !t.id.startsWith('tool-phonepe-business') && !t.id.startsWith('tool-amazon') && t.state !== 7
-  ).map(t => {
+
+  // 1. Filter out deleted or dummy paytm-business / amazon tools
+  let rawTools = (user.collectionTools || []).filter(
+    t => t && t.id && !t.id.startsWith('tool-paytm-business') && !t.id.startsWith('tool-phonepe-business') && !t.id.startsWith('tool-amazon')
+  );
+
+  // 2. Deduplicate tools by type / id / account so user doesn't accumulate 10-10 duplicate tools
+  const uniqueToolMap = new Map();
+  for (const t of rawTools) {
+    const key = t.id || `${t.type || t.ctType || 16}_${t.account || ''}`;
+    if (!uniqueToolMap.has(key)) {
+      uniqueToolMap.set(key, t);
+    } else {
+      const existing = uniqueToolMap.get(key);
+      if ((existing.upi === 'Pending verification' || existing.state === 7) && (t.upi !== 'Pending verification' && t.state !== 7)) {
+        uniqueToolMap.set(key, t);
+      }
+      modified = true;
+    }
+  }
+  const deduplicatedTools = Array.from(uniqueToolMap.values());
+  if (deduplicatedTools.length !== user.collectionTools.length) {
+    user.collectionTools = deduplicatedTools;
+    modified = true;
+  }
+
+  const cleanTools = deduplicatedTools.map(t => {
     const typeVal = t.type !== undefined ? t.type : 16;
     let upiVal = t.upi;
     
@@ -3615,7 +3639,7 @@ async function healAndGetCleanTools(user) {
       ...t,
       status: t.status !== undefined ? t.status : 1,
       state: t.state !== undefined ? t.state : 2,
-      upi: upiVal,
+      upi: upiVal || 'Pending verification',
       ctType: t.ctType !== undefined ? t.ctType : typeVal,
       ct_type: t.ct_type !== undefined ? t.ct_type : typeVal
     };
@@ -3644,6 +3668,13 @@ app.get('/xxapi/collectiontoollist', async (req, res) => {
 app.get('/xxapi/collectiontool', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+  const { id } = req.query;
+  if (id && user.collectionTools) {
+    const specificTool = user.collectionTools.find((t: any) => t.id === id);
+    if (specificTool) {
+      return res.json({ code: 0, msg: 'success', data: specificTool });
+    }
+  }
   const cleanTools = await healAndGetCleanTools(user);
   return res.json({ code: 0, msg: 'success', data: cleanTools[0] || null });
 });
@@ -3750,30 +3781,47 @@ app.post('/xxapi/collectiontool', async (req, res) => {
 app.post('/xxapi/collectiontoolStatus', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  const { id, inSell, state } = req.body;
+  const { id, inSell, state, status } = req.body;
   if (!user.collectionTools) user.collectionTools = [];
   const tool = user.collectionTools.find(t => t.id === id);
+  const statusNum = status !== undefined ? Number(status) : undefined;
+  const stateNum = state !== undefined ? Number(state) : undefined;
+
   if (tool) {
     if (inSell !== undefined) tool.inSell = Number(inSell);
     if (state !== undefined) tool.state = Number(state);
-    
-    // If we have a Zoopay ID, push state update to Zoopay too
-    if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
-      try {
-        const zoopayState = (Number(inSell) === 1 || Number(state) === 2) ? 'enabled' : 'disabled';
-        console.log(`[Zoopay] Syncing manual state update: id=${tool.zoopayToolId}, state=${zoopayState}`);
-        await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
-          method: 'POST',
-          body: JSON.stringify({
-            id: tool.zoopayToolId,
-            state: zoopayState
-          })
-        });
-      } catch (err) {
-        console.error('[Zoopay] Error syncing status:', err);
-      }
+    if (status !== undefined) tool.status = Number(status);
+  }
+  
+  // If relink action requested (status 5 = ct_status_loginerror or state 5):
+  if (statusNum === 5 || stateNum === 5 || statusNum === 7 || stateNum === 7) {
+    if (tool) {
+      tool.state = 7; // set waiting for OTP relink
+      tool.upi = "Pending verification";
+      tool.backup_upi = [];
+      user.markModified('collectionTools');
+      await user.save();
+    }
+    // Return non-zero code so frontend link(e) redirects to /linkkycpartner/:ctid for OTP verification!
+    return res.json({ code: 300, msg: 'Relink required. Redirecting to OTP verification...' });
+  }
+
+  if (tool && tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
+    try {
+      const zoopayState = (Number(inSell) === 1 || Number(state) === 2) ? 'enabled' : 'disabled';
+      console.log(`[Zoopay] Syncing manual state update: id=${tool.zoopayToolId}, state=${zoopayState}`);
+      await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: tool.zoopayToolId,
+          state: zoopayState
+        })
+      });
+    } catch (err) {
+      console.error('[Zoopay] Error syncing status:', err);
     }
   }
+
   user.markModified('collectionTools');
   await user.save();
   return res.json({ code: 0, msg: 'success' });
