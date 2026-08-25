@@ -2371,6 +2371,21 @@ app.post('/xxapi/newbieDayStep/reward', async (req, res) => {
     (user as any).newbieDone = true;
     user.balance = (user.balance || 0) + 200;
     await user.save();
+
+    const rptNo = 'NWB' + Date.now() + Math.floor(Math.random() * 1000);
+    const newTx = new Transaction({
+      userId: user._id,
+      phone: user.phone || user.mobileNo,
+      rptNo: rptNo,
+      amount: 200,
+      type: 'transfer_in',
+      payer_status: 3,
+      reason_for_rejection: 'Newbie Reward (1000 iTokens)',
+      ctime: Math.floor(Date.now() / 1000),
+      currentStep: 2
+    });
+    await newTx.save();
+
     console.log(`[Newbie Reward] User ${user.phone} received ₹200 newbie reward for buying 1000 iTokens.`);
   }
   return res.json({ code: 0, msg: "success", data: { reward: 200 } });
@@ -4437,16 +4452,79 @@ app.post('/xxapi/chargeToken/history', async (req, res) => {
   return getRechargeHistory(req, res);
 });
 
-app.get('/xxapi/transferToken/history', async (req, res) => {
-  return res.json({
-    code: 0,
-    msg: 'success',
-    data: {
-      total: 0,
-      list: []
+async function getTransferTokenHistory(req: any, res: any) {
+  try {
+    const user = await getUserByToken(req);
+    if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+    const inOut = req.query.in_out !== undefined 
+      ? Number(req.query.in_out) 
+      : (req.body?.in_out !== undefined ? Number(req.body.in_out) : 0);
+    const page = Number(req.query.page || req.body?.page) || 1;
+    const limit = Number(req.query.limit || req.body?.limit) || 10;
+
+    let typeFilter: any;
+    if (inOut === 0) {
+      // transfer_in / admin additions / recharges / rewards
+      typeFilter = { $in: ['transfer_in', 'admin', 'recharge', 'reward'] };
+    } else {
+      // transfer_out / admin deductions / sell
+      typeFilter = { $in: ['transfer_out', 'sell', 'admin_deduct'] };
     }
-  });
-});
+
+    const query: any = {
+      $or: [
+        { userId: user._id },
+        { phone: user.phone },
+        { phone: user.mobileNo },
+        { sellerId: user._id },
+        { sellerPhone: user.phone }
+      ].filter(Boolean),
+      payer_status: 3, // success
+      type: typeFilter
+    };
+
+    const total = await Transaction.countDocuments(query);
+    const txs = await Transaction.find(query)
+      .sort({ ctime: -1, createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const list = txs.map((tx: any) => {
+      const crtTime = tx.ctime ? tx.ctime * 1000 : (tx.createdAt ? new Date(tx.createdAt).getTime() : Date.now());
+      return {
+        id: tx.rptNo || tx._id.toString(),
+        rptNo: tx.rptNo || tx._id.toString(),
+        itoken: Math.abs(tx.amount || 0),
+        amount: Math.abs(tx.amount || 0),
+        orderState: tx.payer_status === 3 ? 3 : (tx.payer_status || 3),
+        order_state: tx.payer_status === 3 ? 3 : (tx.payer_status || 3),
+        state: tx.payer_status === 3 ? 3 : (tx.payer_status || 3),
+        crtDate: new Date(crtTime).toISOString().replace('T', ' ').substring(0, 19),
+        crtTime: crtTime,
+        type: tx.type,
+        reason: tx.reason_for_rejection || 'Transfer / Balance Adjustment'
+      };
+    });
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        total,
+        list
+      }
+    });
+  } catch (err: any) {
+    console.error('transferTokenHistory error:', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
+  }
+}
+
+app.get('/xxapi/transferToken/history', getTransferTokenHistory);
+app.post('/xxapi/transferToken/history', getTransferTokenHistory);
+app.get('/xxapi/transferTokenHistory', getTransferTokenHistory);
+app.post('/xxapi/transferTokenHistory', getTransferTokenHistory);
 
 // 11. SELL AND WITHDRAWAL ENDPOINTS
 async function getSellHistory(req: any, res: any) {
@@ -4868,9 +4946,69 @@ app.get('/xxapi/myTeam', async (req, res) => {
   }
 });
 
-app.get('/xxapi/quotaLog', async (req, res) => {
-  return res.json({ code: 0, msg: 'success', data: [] });
-});
+async function getQuotaLogHistory(req: any, res: any) {
+  try {
+    const user = await getUserByToken(req);
+    if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+    const page = Number(req.query.page || req.body?.page) || 1;
+    const limit = Number(req.query.limit || req.body?.limit) || 10;
+
+    const query = {
+      $or: [
+        { userId: user._id },
+        { phone: user.phone },
+        { phone: user.mobileNo }
+      ].filter(Boolean),
+      payer_status: 3
+    };
+
+    const total = await Transaction.countDocuments(query);
+    const txs = await Transaction.find(query)
+      .sort({ ctime: -1, createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const list = txs.map((tx: any) => {
+      const crtTime = tx.ctime ? tx.ctime * 1000 : (tx.createdAt ? new Date(tx.createdAt).getTime() : Date.now());
+      const isAdd = ['transfer_in', 'admin', 'recharge', 'reward'].includes(tx.type) || (tx.amount > 0);
+      
+      let feeType = 10; // admin_add
+      if (tx.type === 'transfer_out' || tx.type === 'sell' || tx.type === 'admin_deduct') feeType = 11; // admin_deducted
+      else if (tx.type === 'transfer_in') feeType = 14; // transfer_in
+      else if (tx.type === 'recharge') feeType = 1; // usdt_in / recharge
+
+      return {
+        id: tx.rptNo || tx._id.toString(),
+        orderno: tx.rptNo || tx._id.toString(),
+        rptNo: tx.rptNo || tx._id.toString(),
+        tranAmt: (isAdd ? '+' : '-') + Math.abs(tx.amount || 0).toFixed(2),
+        amount: tx.amount,
+        feeType: feeType,
+        crtDate: new Date(crtTime).toISOString().replace('T', ' ').substring(0, 19),
+        reason: tx.reason_for_rejection || 'Asset Record'
+      };
+    });
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        total,
+        list,
+        result: list
+      }
+    });
+  } catch (err: any) {
+    console.error('quotaLog error:', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
+  }
+}
+
+app.get('/xxapi/quotaLog', getQuotaLogHistory);
+app.post('/xxapi/quotaLog', getQuotaLogHistory);
+app.get('/xxapi/getassetsrecord', getQuotaLogHistory);
+app.post('/xxapi/getassetsrecord', getQuotaLogHistory);
 
 // 13. NEWS & OTHER HELPERS
 app.get('/xxapi/news/code/:code', (req, res) => {
@@ -5157,17 +5295,45 @@ app.post('/xxapi/admin/updateBalance', requireAdmin, async (req, res) => {
       return res.json({ code: 400, msg: 'Invalid amount' });
     }
     
+    let txType = 'transfer_in';
+    let txAmount = val;
+
     if (type === 'add') {
       user.balance = (user.balance || 0) + val;
+      txType = 'transfer_in';
+      txAmount = val;
     } else if (type === 'subtract') {
       user.balance = (user.balance || 0) - val;
+      txType = 'transfer_out';
+      txAmount = val;
     } else if (type === 'set') {
+      const diff = val - (user.balance || 0);
       user.balance = val;
+      txType = diff >= 0 ? 'transfer_in' : 'transfer_out';
+      txAmount = Math.abs(diff);
     } else {
       return res.json({ code: 400, msg: 'Invalid operation type' });
     }
     
     await user.save();
+
+    // Create transaction record for Transfer iToken History / Assets Record
+    if (txAmount > 0) {
+      const rptNo = 'ADM' + Date.now() + Math.floor(Math.random() * 1000);
+      const newTx = new Transaction({
+        userId: user._id,
+        phone: user.phone || user.mobileNo,
+        rptNo: rptNo,
+        amount: txAmount,
+        type: txType,
+        payer_status: 3,
+        reason_for_rejection: 'Admin Balance ' + (type === 'add' ? 'Add' : type === 'subtract' ? 'Subtract' : 'Set'),
+        ctime: Math.floor(Date.now() / 1000),
+        currentStep: 2
+      });
+      await newTx.save();
+    }
+
     return res.json({ code: 0, msg: 'Balance updated successfully', balance: user.balance });
   } catch (err) {
     console.error('Update balance error:', err);
