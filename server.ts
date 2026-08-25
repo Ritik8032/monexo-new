@@ -261,6 +261,7 @@ const userSchema = new mongoose.Schema({
   ownInviteCode: { type: String, sparse: true, index: true },
   referralCode: { type: String, sparse: true, index: true },
   referral_code: { type: String },
+  inviteFriendsClaimedAmt: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -3398,22 +3399,113 @@ app.get('/xxapi/returnToRpt/init', async (req, res) => {
 });
 
 app.get('/xxapi/inviteFriends/init', async (req, res) => {
-  return res.json({
-    code: 0,
-    msg: "success",
-    data: {
-      inviteFriendsReward: {
-        rule: JSON.stringify({ "1": 10, "3": 30, "5": 50 }),
-        fixed: 10
-      },
-      activityRecord: {
-        rewardAmt: 0,
-        params: "{}",
-        done: 0,
-        countDown: 0
+  try {
+    const user = await getUserByToken(req);
+    if (!user) return res.json({ code: 403, msg: "Unauthorized" });
+
+    const inviteCode = user.ownInviteCode || user.referralCode || user.referral_code || user.providerId || '';
+    const userProviderId = user.providerId || '';
+
+    const directMembers = await User.find({
+      $or: [
+        { invitercode: inviteCode },
+        { parentUser: inviteCode },
+        ...(userProviderId ? [{ invitercode: userProviderId }, { parentUser: userProviderId }] : [])
+      ]
+    });
+
+    const validFriends = directMembers.filter(m => (m.sessions && m.sessions.length > 0) || m.token || m.phone || m.mobileNo);
+    const validCount = validFriends.length;
+
+    const paramsObj: Record<string, string> = {};
+    validFriends.forEach((f, idx) => {
+      paramsObj[f.phone || f.mobileNo || f.providerId || `user_${idx}`] = "1";
+    });
+
+    const ruleObj = { "1": 10, "3": 30, "5": 50, "10": 100 };
+    const ruleStr = JSON.stringify(ruleObj);
+    const totalRewardPool = 190;
+    const claimedAmt = user.inviteFriendsClaimedAmt || 0;
+
+    return res.json({
+      code: 0,
+      msg: "success",
+      data: {
+        inviteFriendsReward: {
+          rule: ruleStr,
+          fixed: 10
+        },
+        activityRecord: {
+          rewardAmt: totalRewardPool,
+          params: JSON.stringify(paramsObj),
+          condition: validCount,
+          settleAmt: claimedAmt,
+          countDown: Date.now() + 864000000
+        }
+      }
+    });
+  } catch (e: any) {
+    return res.json({ code: 500, msg: e.message });
+  }
+});
+
+app.post('/xxapi/inviteFriends/reward', async (req, res) => {
+  try {
+    const user = await getUserByToken(req);
+    if (!user) return res.json({ code: 403, msg: "Unauthorized" });
+
+    const inviteCode = user.ownInviteCode || user.referralCode || user.referral_code || user.providerId || '';
+    const userProviderId = user.providerId || '';
+
+    const directMembers = await User.find({
+      $or: [
+        { invitercode: inviteCode },
+        { parentUser: inviteCode },
+        ...(userProviderId ? [{ invitercode: userProviderId }, { parentUser: userProviderId }] : [])
+      ]
+    });
+
+    const validFriends = directMembers.filter(m => (m.sessions && m.sessions.length > 0) || m.token || m.phone || m.mobileNo);
+    const validCount = validFriends.length;
+
+    const ruleObj: Record<string, number> = { "1": 10, "3": 30, "5": 50, "10": 100 };
+    let currentSum = 0;
+    let eligibleSum = 0;
+
+    for (const keyStr of Object.keys(ruleObj)) {
+      const reqCount = parseInt(keyStr, 10);
+      const rewardVal = ruleObj[keyStr];
+      currentSum += rewardVal;
+      if (validCount >= reqCount) {
+        eligibleSum = currentSum;
       }
     }
-  });
+
+    const currentClaimed = user.inviteFriendsClaimedAmt || 0;
+    if (eligibleSum > currentClaimed) {
+      const rewardToGive = eligibleSum - currentClaimed;
+      user.balance = (user.balance || 0) + rewardToGive;
+      user.commission = (user.commission || 0) + rewardToGive;
+      user.inviteFriendsClaimedAmt = eligibleSum;
+      await user.save();
+
+      await Transaction.create({
+        id: 'TXN_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        userId: user._id.toString(),
+        type: 'reward',
+        amount: rewardToGive,
+        status: 'SUCCESS',
+        description: 'Invite Friends Reward',
+        timestamp: new Date()
+      });
+
+      return res.json({ code: 0, msg: `Successfully claimed ₹${rewardToGive} reward!` });
+    } else {
+      return res.json({ code: 400, msg: "No claimable reward available or tier requirement not met." });
+    }
+  } catch (e: any) {
+    return res.json({ code: 500, msg: e.message });
+  }
 });
 
 app.get('/xxapi/oldRptNew/init', async (req, res) => {
@@ -4879,7 +4971,7 @@ app.get('/xxapi/teaminfo', async (req, res) => {
       inviteFriendsReward: "1",
       oldRptNewReward: "0",
       inviteStepFriends: "1",
-      returnToRpt: "1",
+      returnToRpt: "0",
       newbieDayStep: 1,
       notShowInvite: false
     }
