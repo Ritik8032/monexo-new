@@ -2348,19 +2348,127 @@ app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
   });
 });
 
-app.get('/xxapi/inviteNewbieStepTotal/init', async (req, res) => {
+async function getInviteNewbieData(req: any) {
+  const user = await getUserByToken(req);
+  if (!user) return null;
+
+  const inviteCode = user.ownInviteCode || user.referralCode || '';
+  const directMembers = await User.find({
+    $or: [
+      { invitercode: inviteCode },
+      { parentUser: inviteCode },
+      ...(user.providerId ? [{ invitercode: user.providerId }, { parentUser: user.providerId }] : [])
+    ]
+  });
+
+  const paramsObj: Record<string, string> = {};
+  let completedCount = 0;
+
+  for (const m of directMembers) {
+    const friendPhone = m.phone || m.mobileNo || `User_${m._id.toString().slice(-4)}`;
+    const isFriendDone = (m as any).newbieDone || false;
+    let friendTotalBought = 0;
+    if (!isFriendDone) {
+      const boughtTxs = await Transaction.find({
+        $or: [
+          { userId: m._id },
+          { phone: m.phone },
+          ...(m.mobileNo ? [{ phone: m.mobileNo }] : [])
+        ],
+        payer_status: 3,
+        type: { $ne: 'sell' }
+      });
+      friendTotalBought = boughtTxs.reduce((sum, t: any) => sum + (t.amount || 0), 0);
+    }
+    const friendDone = isFriendDone || friendTotalBought >= 1000;
+    if (friendDone) {
+      completedCount++;
+      paramsObj[friendPhone] = "1";
+    } else {
+      paramsObj[friendPhone] = "0";
+    }
+  }
+
+  const claimedCount = (user as any).claimedInviteNewbieCount || 0;
+  const claimedAmt = claimedCount * 200;
+
+  return {
+    user,
+    directMembers,
+    paramsObj,
+    totalFriends: directMembers.length,
+    completedCount,
+    claimedCount,
+    claimedAmt
+  };
+}
+
+app.get(['/xxapi/inviteNewbieStepTotal/init', '/xxapi/oldRptNew/init'], async (req, res) => {
+  const data = await getInviteNewbieData(req);
+  if (!data) return res.json({ code: 403, msg: "Unauthorized" });
+
+  const { paramsObj, completedCount, claimedCount, claimedAmt } = data;
+
   return res.json({
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: 0, condition: 0, settleAmt: 0, params: "{}" },
-      inviteDayStepRecord: { done: 0, condition: 0, settleAmt: 0, params: "{}" },
-      oldRptNewReward: { fixed: 0 },
+      activityRecord: {
+        done: completedCount > claimedCount ? 1 : 0,
+        condition: claimedCount,
+        settleAmt: claimedAmt,
+        params: JSON.stringify(paramsObj)
+      },
+      inviteDayStepRecord: {
+        done: 0,
+        condition: 0,
+        settleAmt: 0,
+        params: "{}"
+      },
+      oldRptNewReward: {
+        fixed: 200,
+        rule: JSON.stringify({ "1": 200 })
+      },
       dayStepParams: "{}",
       activityRules: [],
       allDone: false
     }
   });
+});
+
+app.post('/xxapi/oldRptNew/reward', async (req, res) => {
+  const data = await getInviteNewbieData(req);
+  if (!data) return res.json({ code: 403, msg: "Unauthorized" });
+
+  const { user, completedCount, claimedCount } = data;
+
+  const unclaimedCount = completedCount - claimedCount;
+  if (unclaimedCount <= 0) {
+    return res.json({ code: 1, msg: "No new completed newbie friends to claim." });
+  }
+
+  const rewardAmt = unclaimedCount * 200;
+  user.balance = (user.balance || 0) + rewardAmt;
+  (user as any).claimedInviteNewbieCount = claimedCount + unclaimedCount;
+  await user.save();
+
+  const rptNo = 'INV' + Date.now() + Math.floor(Math.random() * 1000);
+  const newTx = new Transaction({
+    userId: user._id,
+    phone: user.phone || user.mobileNo,
+    rptNo: rptNo,
+    amount: rewardAmt,
+    type: 'transfer_in',
+    payer_status: 3,
+    reason_for_rejection: `Invite Newbie Reward (${unclaimedCount} friends)`,
+    ctime: Math.floor(Date.now() / 1000),
+    currentStep: 2
+  });
+  await newTx.save();
+
+  console.log(`[Invite Reward] User ${user.phone} claimed ₹${rewardAmt} for ${unclaimedCount} friends.`);
+
+  return res.json({ code: 0, msg: "success", data: { rewardAmt } });
 });
 
 app.post('/xxapi/newbieDayStep/reward', async (req, res) => {
@@ -3326,35 +3434,7 @@ app.get('/xxapi/oldRptNew/init', async (req, res) => {
   });
 });
 
-app.get('/xxapi/inviteNewbieStepTotal/init', async (req, res) => {
-  return res.json({
-    code: 0,
-    msg: "success",
-    data: {
-      activityRecord: {
-        done: 0,
-        condition: 0,
-        settleAmt: 0,
-        params: "{}"
-      },
-      inviteDayStepRecord: {
-        done: 0,
-        condition: 0,
-        settleAmt: 0,
-        params: "{}"
-      },
-      oldRptNewReward: {
-        fixed: 10,
-        rule: JSON.stringify({ "1": 10 })
-      },
-      dayStepParams: "{}",
-      activityRules: [],
-      allDone: false
-    }
-  });
-});
-
-app.all(['/xxapi/deviceInfo', '/xxapi/referral*', '/xxapi/team/edit/ratio', '/xxapi/transfertochilder', '/xxapi/linkKyc', '/xxapi/bscAddress', '/xxapi/buyUsdt/binanceWithdrawalQuote', '/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/uploadimage*', '/xxapi/mark-as-read*', '/xxapi/mark-all-as-read', '/xxapi/authupi*', '/xxapi/cw_inviterank', '/xxapi/cw_profitrank', '/xxapi/cwkyc', '/xxapi/inviteFriends/*', '/xxapi/returnToRpt/*', '/xxapi/buyInrActivity/*', '/xxapi/oldRptNew/*', '/xxapi/linkUpi/*', '/xxapi/subBuyReward/*', '/xxapi/sevenDayCharge/*'], async (req, res) => {
+app.all(['/xxapi/deviceInfo', '/xxapi/referral*', '/xxapi/team/edit/ratio', '/xxapi/transfertochilder', '/xxapi/linkKyc', '/xxapi/bscAddress', '/xxapi/buyUsdt/binanceWithdrawalQuote', '/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/uploadimage*', '/xxapi/mark-as-read*', '/xxapi/mark-all-as-read', '/xxapi/authupi*', '/xxapi/cw_inviterank', '/xxapi/cw_profitrank', '/xxapi/cwkyc', '/xxapi/inviteFriends/*', '/xxapi/returnToRpt/*', '/xxapi/buyInrActivity/*', '/xxapi/linkUpi/*', '/xxapi/subBuyReward/*', '/xxapi/sevenDayCharge/*'], async (req, res) => {
   return res.json({ code: 0, msg: "success", data: {} });
 });
 
@@ -4340,24 +4420,26 @@ async function getRechargeHistory(req: any, res: any) {
 
   // Is USDT requested?
   const isUsdtRequest = currencyVal === '1' || currencyVal === 'usdt';
+  const isCancelRequest = currencyVal === 'inr_cancel' || currencyVal === 'cancel' || currencyVal === 'recharge_cancel' || (currencyVal === '1' && statusVal === '4');
 
   let query: any = {
-    $or: [{ userId: user._id }, { phone: user.phone }],
+    $or: [{ userId: user._id }, { phone: user.phone }, ...(user.mobileNo ? [{ phone: user.mobileNo }] : [])],
     type: 'recharge'
   };
 
   if (isUsdtRequest) {
     query.isUsdt = true;
     query.currency = 1;
-  } else {
-    // INR recharge transactions
+  } else if (isCancelRequest || statusVal === '4' || statusVal === '5') {
     query.isUsdt = { $ne: true };
-  }
-
-  if (currencyVal === 'recharge_cancel' || statusVal === '4' || statusVal === '5') {
     query.payer_status = { $in: [4, 5] };
-  } else if (statusVal === '1' || statusVal === '2' || statusVal === '3') {
-    query.payer_status = Number(statusVal);
+  } else {
+    query.isUsdt = { $ne: true };
+    if (statusVal === '1' || statusVal === '2' || statusVal === '3') {
+      query.payer_status = Number(statusVal);
+    } else {
+      query.payer_status = { $in: [1, 2, 3] };
+    }
   }
 
   const txs = await Transaction.find(query).sort({ ctime: -1 });
