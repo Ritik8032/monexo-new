@@ -379,7 +379,8 @@
                     
                     <tr v-for="user in users" :key="user._id" class="hover:bg-slate-50/50 transition">
                       <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
-                        {{ user._id }}
+                        <div class="font-bold text-slate-800 text-sm">{{ user.providerId || user.teamWorkId || '—' }}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">{{ user._id }}</div>
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-800">
                         {{ user.phone }}
@@ -937,7 +938,7 @@
                       {{ selectedUser.kycStatus === 1 ? 'KYC Verified' : 'KYC Pending' }}
                     </span>
                   </div>
-                  <p class="text-xs text-slate-400 font-mono mt-1">Numeric UID (App ID): <span class="text-slate-800 font-bold font-mono">{{ selectedUser._id }}</span></p>
+                  <p class="text-xs text-slate-400 font-mono mt-1">App ID: <span class="text-slate-800 font-bold font-mono">{{ selectedUser.providerId || selectedUser.teamWorkId || '—' }}</span> &nbsp;|&nbsp; Numeric UID: <span class="text-slate-500 font-mono">{{ selectedUser._id }}</span></p>
                 </div>
               </div>
               

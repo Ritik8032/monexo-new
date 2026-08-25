@@ -1978,6 +1978,7 @@ app.get('/xxapi/userinfo', async (req, res) => {
     const todayTimes = sellTxs.length;
 
     const myInviteCode = user.ownInviteCode || user.referralCode || '';
+    const userPhone = user.phone || user.mobileNo || '';
 
     return res.json({
       code: 0,
@@ -1985,8 +1986,8 @@ app.get('/xxapi/userinfo', async (req, res) => {
       data: {
         uid: user._id,
         id: user.providerId,
-        username: user.providerId,
-        phone: user.phone || user.mobileNo || '',
+        username: userPhone,
+        phone: userPhone,
         teamWorkId: user.providerId,
         ownInviteCode: myInviteCode,
         referralCode: myInviteCode,
@@ -5310,7 +5311,9 @@ app.get('/xxapi/admin/users', requireAdmin, async (req, res) => {
         filter = { 
           $or: [
             { phone: new RegExp(trimmed, 'i') }, 
-            { mobileNo: new RegExp(trimmed, 'i') }
+            { mobileNo: new RegExp(trimmed, 'i') },
+            { providerId: new RegExp(trimmed, 'i') },
+            { ownInviteCode: new RegExp(trimmed, 'i') }
           ] 
         };
       }
@@ -5331,6 +5334,9 @@ app.get('/xxapi/admin/users', requireAdmin, async (req, res) => {
       
       return {
         _id: user._id,
+        providerId: user.providerId || user.ownInviteCode || '',
+        teamWorkId: user.providerId || user.ownInviteCode || '',
+        ownInviteCode: user.ownInviteCode || user.referralCode || '',
         phone: user.phone || user.mobileNo || 'N/A',
         balance: user.balance || 0,
         recharge: user.recharge || 0,
@@ -5519,6 +5525,9 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
       data: {
         user: {
           _id: user._id,
+          providerId: user.providerId || user.ownInviteCode || '',
+          teamWorkId: user.providerId || user.ownInviteCode || '',
+          ownInviteCode: user.ownInviteCode || user.referralCode || '',
           phone: user.phone || user.mobileNo || '',
           mobileNo: user.mobileNo || user.phone || '',
           email: user.email || '',
