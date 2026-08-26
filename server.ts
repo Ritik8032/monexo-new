@@ -783,10 +783,10 @@ function getAutomationConfig(ct_type: any) {
     channelType = 3; engine = 'dtpay'; platform = 1;
   } else if (typeStr.includes('amazon') || typeNum === 33) {
     channelType = 33; engine = 'dtpay'; platform = 18;
-  } else if (typeStr.includes('paytm') && !typeStr.includes('business') && (typeNum === 8 || typeNum === 9)) {
-    channelType = 9; engine = 'dtpay'; platform = 4;
   } else if ((typeStr.includes('paytm') && typeStr.includes('business')) || typeNum === 16) {
     channelType = 16; engine = 'legacy'; platform = 4;
+  } else if ((typeStr.includes('paytm') && !typeStr.includes('business')) || typeNum === 8 || typeNum === 9) {
+    channelType = 9; engine = 'dtpay'; platform = 4;
   } else if ((typeStr.includes('phonepe') && typeStr.includes('business')) || typeNum === 14 || typeNum === 19) {
     channelType = 14; engine = 'legacy'; platform = 3;
   } else if (typeStr.includes('phonepe') || typeNum === 1) {
@@ -798,9 +798,13 @@ function getAutomationConfig(ct_type: any) {
   } else if (typeStr.includes('bharatpe') || typeNum === 18) {
     channelType = 18; engine = 'legacy'; platform = 18;
   } else {
-    channelType = isNaN(typeNum) ? 1 : typeNum;
-    engine = [2, 3, 8, 9, 33].includes(typeNum) ? 'dtpay' : 'legacy';
-    platform = mapCtTypeToPlatform(ct_type);
+    if (typeNum === 8 || typeNum === 9) {
+      channelType = 9; engine = 'dtpay'; platform = 4;
+    } else {
+      channelType = isNaN(typeNum) ? 1 : typeNum;
+      engine = [2, 3, 9, 33].includes(channelType) ? 'dtpay' : 'legacy';
+      platform = mapCtTypeToPlatform(ct_type);
+    }
   }
 
   return { channelType, engine, platform };
@@ -3987,7 +3991,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       } else {
         const errMsg = otpJson.message || otpJson.msg || otpJson.error || 'Failed to send OTP';
         const lowerErr = String(errMsg).toLowerCase();
-        if (lowerErr.includes('legacy') || lowerErr.includes('stale') || lowerErr.includes('limit') || lowerErr.includes('lockout') || lowerErr.includes('attempt') || lowerErr.includes('purged')) {
+        if (lowerErr.includes('unsupported provider') || lowerErr.includes('provider type') || lowerErr.includes('legacy') || lowerErr.includes('stale') || lowerErr.includes('limit') || lowerErr.includes('lockout') || lowerErr.includes('attempt') || lowerErr.includes('purged')) {
           console.warn('[Automation API] Fallback activated in send-otp for error:', errMsg);
           success = true;
         } else {
