@@ -4273,6 +4273,16 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       tool.engine = config.engine;
       tool.verifiedAt = Date.now();
     }
+
+    // Clean up or deactivate old unverified tools of same ctType so history checks use the verified tool only!
+    if (user.collectionTools && user.collectionTools.length > 0) {
+      user.collectionTools.forEach((t: any) => {
+        if (t && t.id !== tool.id && (t.type === typeNum || t.ctType === typeNum) && (t.state === 5 || t.upi === 'Pending verification')) {
+          t.state = 0; // Disable unverified failed attempt
+          t.inSell = 0;
+        }
+      });
+    }
     user.markModified('collectionTools');
 
     await user.save();
@@ -7006,10 +7016,14 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
 
           if (!seller || !seller.collectionTools) continue;
 
-          // Find specific linked tool matching payee_bank_account or ctType
+          // Find specific linked tool matching payee_bank_account or ctType (prefer active verified tools state === 2)
           let tool = seller.collectionTools.find((t: any) => 
-            t && (t.upi === tx.payee_bank_account || t.account === tx.payee_bank_account || (t.backup_upi && t.backup_upi.includes(tx.payee_bank_account)))
+            t && t.state !== 0 && t.state !== 5 && (t.upi === tx.payee_bank_account || t.account === tx.payee_bank_account || (t.backup_upi && t.backup_upi.includes(tx.payee_bank_account)))
           );
+
+          if (!tool) {
+            tool = seller.collectionTools.find((t: any) => t && t.state !== 0 && t.state !== 5 && (t.type === tx.ctType || t.ctType === tx.ctType));
+          }
 
           if (!tool) {
             tool = seller.collectionTools.find((t: any) => t && (t.type === tx.ctType || t.ctType === tx.ctType));

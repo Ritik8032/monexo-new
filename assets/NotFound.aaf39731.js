@@ -1,1 +1,0 @@
-import{n as e}from"./index.83942a7f.js";const o={name:"NotFound",components:{},data(){return{}},mounted(){},methods:{}};var r=function(){var t=this,n=t._self._c;return n("div",[n("md-result-page",{attrs:{type:"lost",subtext:"page not found"}})],1)},s=[],a=e(o,r,s,!1,null,null,null,null);const _=a.exports;export{_ as default};
