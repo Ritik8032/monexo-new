@@ -685,22 +685,23 @@ function generateMd5Password(phone) {
 function mapCtTypeToUpiType(ct_type) {
   if (!ct_type) return "phonepe";
   const typeStr = String(ct_type).trim().toLowerCase();
-  if (typeStr.includes("amazon")) return "amazon";
-  if (typeStr.includes("freecharge")) return "freecharge";
-  if (typeStr.includes("mobikwik")) return "mobikwik";
+  if (typeStr.includes("amazon") || typeStr === "33") return "amazon";
+  if (typeStr.includes("freecharge") || typeStr === "3" || typeStr === "2") return "freecharge";
+  if (typeStr.includes("mobikwik") || typeStr === "4") return "mobikwik";
   if (typeStr.includes("phonepe") && typeStr.includes("business")) return "phonepebusiness";
-  if (typeStr.includes("phonepe")) return "phonepe";
+  if (typeStr.includes("phonepe") || typeStr === "1") return "phonepe";
   if (typeStr.includes("paytm") && typeStr.includes("business")) return "paytmbusiness";
-  if (typeStr.includes("paytm")) return "paytm";
-  if (typeStr.includes("navi")) return "navi";
-  if (typeStr.includes("supermoney")) return "supermoney";
-  if (typeStr.includes("bharatpe")) return "bharatpebusiness";
+  if (typeStr.includes("paytm") || typeStr === "8" || typeStr === "9") return "paytm";
+  if (typeStr.includes("navi") || typeStr === "13" || typeStr === "20" || typeStr === "21") return "navi";
+  if (typeStr.includes("supermoney") || typeStr === "17") return "supermoney";
+  if (typeStr.includes("bharatpe") || typeStr === "18") return "bharatpebusiness";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
     case 1: return "phonepe";
-    case 2: return "mobikwik";
+    case 2: return "freecharge";
     case 3: return "freecharge";
+    case 4: return "mobikwik";
     case 8: case 9: return "paytm";
     case 13: case 20: case 21: return "navi";
     case 14: case 19: return "phonepebusiness";
@@ -715,22 +716,23 @@ function mapCtTypeToUpiType(ct_type) {
 function mapCtTypeToName(ct_type) {
   if (!ct_type) return "PhonePe";
   const typeStr = String(ct_type).trim().toLowerCase();
-  if (typeStr.includes("amazon")) return "Amazon Pay";
-  if (typeStr.includes("freecharge")) return "Freecharge";
-  if (typeStr.includes("mobikwik")) return "MobiKwik";
+  if (typeStr.includes("amazon") || typeStr === "33") return "Amazon Pay";
+  if (typeStr.includes("freecharge") || typeStr === "3" || typeStr === "2") return "Freecharge";
+  if (typeStr.includes("mobikwik") || typeStr === "4") return "MobiKwik";
   if (typeStr.includes("phonepe") && typeStr.includes("business")) return "PhonePeBusiness";
-  if (typeStr.includes("phonepe")) return "PhonePe";
+  if (typeStr.includes("phonepe") || typeStr === "1") return "PhonePe";
   if (typeStr.includes("paytm") && typeStr.includes("business")) return "PaytmBusiness";
-  if (typeStr.includes("paytm")) return "Paytm";
-  if (typeStr.includes("navi")) return "Navi";
-  if (typeStr.includes("supermoney")) return "SuperMoney";
-  if (typeStr.includes("bharatpe")) return "BharatPeBusiness";
+  if (typeStr.includes("paytm") || typeStr === "8" || typeStr === "9") return "Paytm";
+  if (typeStr.includes("navi") || typeStr === "13" || typeStr === "20" || typeStr === "21") return "Navi";
+  if (typeStr.includes("supermoney") || typeStr === "17") return "SuperMoney";
+  if (typeStr.includes("bharatpe") || typeStr === "18") return "BharatPeBusiness";
 
   const typeNum = Number(ct_type);
   switch (typeNum) {
     case 1: return "PhonePe";
-    case 2: return "MobiKwik";
+    case 2: return "Freecharge";
     case 3: return "Freecharge";
+    case 4: return "MobiKwik";
     case 8: case 9: return "Paytm";
     case 13: case 20: case 21: return "Navi";
     case 14: case 19: return "PhonePeBusiness";
@@ -745,8 +747,8 @@ function mapCtTypeToName(ct_type) {
 function mapCtTypeToPlatform(ct_type) {
   if (!ct_type) return 3; // default PhonePe
   const typeStr = String(ct_type).trim().toLowerCase();
-  if (typeStr.includes("freecharge")) return 1;
-  if (typeStr.includes("mobikwik")) return 2;
+  if (typeStr.includes("freecharge") || typeStr === "3" || typeStr === "2") return 1;
+  if (typeStr.includes("mobikwik") || typeStr === "4") return 2;
   if (typeStr.includes("phonepe")) return 3;
   if (typeStr.includes("paytm")) return 4;
   if (typeStr.includes("navi")) return 8;
@@ -756,8 +758,9 @@ function mapCtTypeToPlatform(ct_type) {
   const typeNum = Number(ct_type);
   switch (typeNum) {
     case 1: return 3; // PhonePe
-    case 2: return 2; // MobiKwik
+    case 2: return 1; // Freecharge in bundle
     case 3: return 1; // Freecharge
+    case 4: return 2; // MobiKwik in bundle
     case 8: case 9: return 4; // Paytm
     case 13: case 20: case 21: return 8; // Navi
     case 14: case 19: return 3; // PhonePe Business
@@ -777,9 +780,9 @@ function getAutomationConfig(ct_type: any) {
   let engine: 'dtpay' | 'legacy' = 'legacy';
   let platform = 3;
 
-  if (typeStr.includes('mobikwik') || typeNum === 2) {
+  if (typeStr.includes('mobikwik') || typeNum === 4) {
     channelType = 2; engine = 'dtpay'; platform = 2;
-  } else if (typeStr.includes('freecharge') || typeNum === 3) {
+  } else if (typeStr.includes('freecharge') || typeNum === 3 || typeNum === 2) {
     channelType = 3; engine = 'dtpay'; platform = 1;
   } else if (typeStr.includes('amazon') || typeNum === 33) {
     channelType = 33; engine = 'dtpay'; platform = 18;
@@ -4031,7 +4034,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
         ctType: typeNum,
         ct_type: typeNum,
         onlyPaymentFlag: 3,
-        state: 5, // UnLink state while waiting for OTP verification
+        state: 7, // 7 = waiting_authupi state while waiting for OTP verification
         minSellToken: 2,
         limitConfig: JSON.stringify({ min: 100, max: 100000 }),
         inSell: 1,
@@ -4052,7 +4055,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       tool.type = typeNum;
       tool.ctType = typeNum;
       tool.ct_type = typeNum;
-      tool.state = 5; // UnLink state while waiting for OTP verification
+      tool.state = 7; // 7 = waiting_authupi state while waiting for OTP verification
       tool.inSell = 1;
       tool.backup_upi = [];
       tool.upi = "Pending verification";
@@ -4358,9 +4361,23 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
     }
   }
 
-  const isPendingOtp = !tool || tool.state === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.backup_upi || tool.backup_upi.length === 0;
-  let state = isPendingOtp ? 5 : (tool ? (tool.state !== undefined ? tool.state : 2) : 2);
+  const isPendingOtp = !tool || tool.state === 7 || tool.state === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.backup_upi || tool.backup_upi.length === 0;
+  
+  let state = 7;
   let upis: string[] = [];
+
+  if (tool) {
+    if (tool.state === 2 || (tool.backup_upi && tool.backup_upi.length > 0 && tool.upi && tool.upi !== 'Pending verification')) {
+      state = 2; // ready / active
+      upis = tool.backup_upi && tool.backup_upi.length > 0 ? tool.backup_upi : [tool.upi];
+    } else if (tool.state === 0) {
+      state = 0; // disabled
+    } else {
+      state = 7; // waiting_authupi while waiting for OTP
+    }
+  } else {
+    state = 7; // waiting_authupi
+  }
 
   const toolUpiType = tool ? mapCtTypeToUpiType(tool.type) : mapCtTypeToUpiType(typeNum);
 
