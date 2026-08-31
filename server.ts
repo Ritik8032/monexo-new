@@ -605,12 +605,18 @@ function generateOrderChunks(balance: number): number[] {
 
 const paymentNodeSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  type: { type: String, enum: ['upi', 'bank'], default: 'bank' },
+  type: { type: String, enum: ['upi', 'bank'], default: 'upi' },
   bankName: { type: String, default: '' },
   accountNumber: { type: String, required: true },
   ifsc: { type: String, default: '' },
   amount: { type: Number, required: true },
   status: { type: Boolean, default: true },
+  displayDuration: { type: Number, default: 300 }, // in seconds (e.g. 300s = 5 min)
+  displayEndTime: { type: Date },
+  orderState: { type: String, enum: ['ACTIVE', 'CLAIMED', 'COMPLETED', 'EXPIRED', 'CANCELLED'], default: 'ACTIVE' },
+  claimedByPhone: { type: String, default: '' },
+  claimedRptNo: { type: String, default: '' },
+  utr: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -2790,6 +2796,64 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
     const reqMethod = req.query.method !== undefined ? Number(req.query.method) : 1;
     const reqCtType = req.query.ctType !== undefined ? Number(req.query.ctType) : (req.query.ct_type !== undefined ? Number(req.query.ct_type) : undefined);
     const currentUser = await getUserByToken(req).catch(() => null);
+    
+    // 0. PRIORITY ADMIN NODE CHECK: If an admin created an active order with display time running, ONLY show this order!
+    const now = new Date();
+    const activeAdminNode = await PaymentNode.findOne({
+      status: true,
+      orderState: 'ACTIVE',
+      displayEndTime: { $gt: now }
+    }).sort({ createdAt: -1 });
+
+    if (activeAdminNode) {
+      const rptNo = activeAdminNode.claimedRptNo || generate15DigitRptNo();
+      const methodVal = activeAdminNode.type === 'upi' ? 1 : 2;
+      const nodeCtType = reqCtType || 1;
+      const slipItem: OrderSlipItem = {
+        rptNo,
+        amount: activeAdminNode.amount,
+        method: methodVal,
+        ctType: nodeCtType,
+        upi: activeAdminNode.accountNumber,
+        pnname: activeAdminNode.name,
+        ctime: Math.floor(Date.now() / 1000)
+      };
+      (slipItem as any).isAdminNode = true;
+      (slipItem as any).nodeId = activeAdminNode._id.toString();
+      orderSlipMap.set(rptNo, slipItem);
+
+      return res.json({
+        code: 0,
+        msg: "success",
+        data: [{
+          rptNo,
+          amount: activeAdminNode.amount.toString(),
+          method: methodVal,
+          payment_method: methodVal,
+          ctType: nodeCtType,
+          ct_type: nodeCtType,
+          upi: activeAdminNode.accountNumber,
+          account: activeAdminNode.accountNumber,
+          ctAccount: activeAdminNode.accountNumber,
+          pnaccount: activeAdminNode.accountNumber,
+          accountNumber: activeAdminNode.accountNumber,
+          payAccount: activeAdminNode.accountNumber,
+          acctNo: activeAdminNode.accountNumber,
+          pnname: activeAdminNode.name,
+          name: activeAdminNode.name,
+          account_name: activeAdminNode.name,
+          isAdminNode: true,
+          nodeId: activeAdminNode._id.toString()
+        }]
+      });
+    }
+
+    // Auto-expire past due admin active nodes
+    await PaymentNode.updateMany(
+      { orderState: 'ACTIVE', displayEndTime: { $lte: now } },
+      { orderState: 'EXPIRED' }
+    );
+
     const list: any[] = [];
 
     // 1. Fetch active selling users with wallet balance >= 100
@@ -3203,6 +3267,27 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
   let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 200);
   let payee_recipients_name = slipData ? slipData.pnname : "Monexo Merchant";
   let payee_bank_account = slipData ? slipData.upi : "monexo@paytm";
+
+  // Check and claim Admin Node order if active
+  if (slipData && (slipData as any).isAdminNode && (slipData as any).nodeId) {
+    await PaymentNode.findByIdAndUpdate((slipData as any).nodeId, {
+      orderState: 'CLAIMED',
+      claimedByPhone: user.phone,
+      claimedRptNo: order_id
+    });
+  } else if (payee_bank_account) {
+    const adminNode = await PaymentNode.findOne({
+      status: true,
+      orderState: 'ACTIVE',
+      accountNumber: payee_bank_account
+    });
+    if (adminNode) {
+      adminNode.orderState = 'CLAIMED';
+      adminNode.claimedByPhone = user.phone;
+      adminNode.claimedRptNo = order_id;
+      await adminNode.save();
+    }
+  }
   let payee_ifsc = "";
   let payee_bankname = "";
   let payment_method = slipData ? slipData.method : 1; // 1: upi, 2: bank
@@ -6380,12 +6465,43 @@ app.get('/xxapi/admin/action-history', requireAdmin, async (req, res) => {
 app.get('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
   try {
     const nodes = await PaymentNode.find().sort({ createdAt: -1 }).lean();
+    const now = Date.now();
     const enrichedNodes = await Promise.all(nodes.map(async (n: any) => {
-      if (n.accountNumber && typeof n.accountNumber === 'string' && n.accountNumber.includes('@')) {
-        const vName = await getVerifiedUpiName(n.accountNumber, n.name);
-        return { ...n, verifiedName: vName };
+      let state = n.orderState || 'ACTIVE';
+      let remainingSeconds = 0;
+      if (n.displayEndTime) {
+        const diffMs = new Date(n.displayEndTime).getTime() - now;
+        remainingSeconds = Math.max(0, Math.floor(diffMs / 1000));
+        if (state === 'ACTIVE' && remainingSeconds <= 0) {
+          state = 'EXPIRED';
+          await PaymentNode.updateOne({ _id: n._id }, { orderState: 'EXPIRED' });
+        }
       }
-      return n;
+
+      let txUtr = n.utr || '';
+      if (n.claimedRptNo) {
+        const tx = await Transaction.findOne({ rptNo: n.claimedRptNo });
+        if (tx) {
+          if (tx.utr) txUtr = tx.utr;
+          if (tx.payer_status === 3 && state !== 'COMPLETED') {
+            state = 'COMPLETED';
+            await PaymentNode.updateOne({ _id: n._id }, { orderState: 'COMPLETED', utr: txUtr });
+          }
+        }
+      }
+
+      let vName = n.name;
+      if (n.accountNumber && typeof n.accountNumber === 'string' && n.accountNumber.includes('@')) {
+        vName = (await getVerifiedUpiName(n.accountNumber, n.name)) || n.name;
+      }
+
+      return {
+        ...n,
+        orderState: state,
+        remainingSeconds,
+        utr: txUtr,
+        verifiedName: vName
+      };
     }));
     return res.json({ code: 0, msg: 'success', data: enrichedNodes });
   } catch (err) {
@@ -6394,12 +6510,63 @@ app.get('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/xxapi/admin/nodeHistory', requireAdmin, async (req, res) => {
+  try {
+    const nodes = await PaymentNode.find().sort({ createdAt: -1 }).lean();
+    const now = Date.now();
+    
+    const enrichedHistory = await Promise.all(nodes.map(async (n: any) => {
+      let state = n.orderState || 'ACTIVE';
+      let remainingSeconds = 0;
+      if (n.displayEndTime) {
+        const diffMs = new Date(n.displayEndTime).getTime() - now;
+        remainingSeconds = Math.max(0, Math.floor(diffMs / 1000));
+        if (state === 'ACTIVE' && remainingSeconds <= 0) {
+          state = 'EXPIRED';
+          await PaymentNode.updateOne({ _id: n._id }, { orderState: 'EXPIRED' });
+        }
+      }
+
+      let txUtr = n.utr || '';
+      let buyerPhone = n.claimedByPhone || '';
+      if (n.claimedRptNo) {
+        const tx = await Transaction.findOne({ rptNo: n.claimedRptNo });
+        if (tx) {
+          if (tx.utr) txUtr = tx.utr;
+          if (tx.phone) buyerPhone = tx.phone;
+          if (tx.payer_status === 3 && state !== 'COMPLETED') {
+            state = 'COMPLETED';
+            await PaymentNode.updateOne({ _id: n._id }, { orderState: 'COMPLETED', utr: txUtr });
+          }
+        }
+      }
+
+      return {
+        ...n,
+        orderState: state,
+        remainingSeconds,
+        utr: txUtr,
+        claimedByPhone: buyerPhone,
+        displayEndTimeFormatted: n.displayEndTime ? new Date(n.displayEndTime).toLocaleString() : ''
+      };
+    }));
+
+    return res.json({ code: 0, msg: 'success', data: enrichedHistory });
+  } catch (err) {
+    console.error('Get node history error:', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
 app.post('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
   try {
-    const { name, type, bankName, accountNumber, ifsc, amount, status } = req.body;
+    const { name, type, bankName, accountNumber, ifsc, amount, status, displayDuration } = req.body;
     if (!name || !type || !accountNumber || amount === undefined) {
       return res.json({ code: 400, msg: 'Missing required fields' });
     }
+    const duration = Number(displayDuration) || 300;
+    const endTime = new Date(Date.now() + duration * 1000);
+
     const node = new PaymentNode({
       name,
       type,
@@ -6407,7 +6574,13 @@ app.post('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
       accountNumber,
       ifsc: ifsc || '',
       amount: Number(amount),
-      status: status !== undefined ? Boolean(status) : true
+      status: status !== undefined ? Boolean(status) : true,
+      displayDuration: duration,
+      displayEndTime: endTime,
+      orderState: 'ACTIVE',
+      claimedByPhone: '',
+      claimedRptNo: '',
+      utr: ''
     });
     await node.save();
     return res.json({ code: 0, msg: 'success', data: node });
@@ -6420,7 +6593,7 @@ app.post('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
 app.put('/xxapi/admin/nodes/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, type, bankName, accountNumber, ifsc, amount, status } = req.body;
+    const { name, type, bankName, accountNumber, ifsc, amount, status, displayDuration, resetTimer } = req.body;
     const node = await PaymentNode.findById(id);
     if (!node) {
       return res.json({ code: 404, msg: 'Node not found' });
@@ -6432,6 +6605,15 @@ app.put('/xxapi/admin/nodes/:id', requireAdmin, async (req, res) => {
     if (ifsc !== undefined) node.ifsc = ifsc;
     if (amount !== undefined) node.amount = Number(amount);
     if (status !== undefined) node.status = Boolean(status);
+    if (displayDuration !== undefined) node.displayDuration = Number(displayDuration);
+    if (resetTimer || (status === true && node.orderState === 'EXPIRED')) {
+      const dur = Number(displayDuration) || node.displayDuration || 300;
+      node.displayEndTime = new Date(Date.now() + dur * 1000);
+      node.orderState = 'ACTIVE';
+      node.claimedByPhone = '';
+      node.claimedRptNo = '';
+      node.utr = '';
+    }
     
     await node.save();
     return res.json({ code: 0, msg: 'success', data: node });

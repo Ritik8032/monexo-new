@@ -214,6 +214,15 @@
               </div>
               <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
             </button>
+
+            <button @click="activeTab = 'nodeHistory'; selectedUser = null; fetchNodeHistory();" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodeHistory' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-clock-rotate-left text-base"></i>
+                <span>Admin Node History</span>
+              </div>
+              <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
+            </button>
           </div>
 
           <div class="pt-6 border-t border-slate-100 w-full">
@@ -236,10 +245,10 @@
               <div class="flex items-center gap-2 text-xs text-slate-400 font-semibold uppercase tracking-wider">
                 <span>Overview</span>
                 <i class="fa-solid fa-chevron-right text-[8px]"></i>
-                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : (activeTab === 'payments' ? 'Payment History' : (activeTab === 'nodes' ? 'Node Settings' : 'Manage Users'))) }}</span>
+                <span class="purple-text">{{ selectedUser ? 'User take action' : (activeTab === 'dashboard' ? 'Dashboard' : (activeTab === 'payments' ? 'Payment History' : (activeTab === 'nodes' ? 'Node Settings' : (activeTab === 'nodeHistory' ? 'Admin Node History' : 'Manage Users')))) }}</span>
               </div>
               <h1 class="text-2xl lg:text-3xl font-bold tracking-tight text-slate-800 mt-1">
-                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : (activeTab === 'payments' ? 'Payment History & Order Verification' : (activeTab === 'nodes' ? 'Admin Payment Nodes' : 'Find & Manage Users'))) }}
+                {{ selectedUser ? 'User Take Action Panel' : (activeTab === 'dashboard' ? 'Dashboard Stats' : (activeTab === 'payments' ? 'Payment History & Order Verification' : (activeTab === 'nodes' ? 'Admin Payment Nodes' : (activeTab === 'nodeHistory' ? 'Admin Node Order History & API Audit' : 'Find & Manage Users')))) }}
               </h1>
             </div>
             
@@ -480,6 +489,23 @@
                       <span class="text-[10px] text-slate-400 font-medium mt-1 block">When users place orders for this amount, these payment details will be served.</span>
                     </div>
 
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Order Display Showing Time (Seconds)</label>
+                      <div class="mt-1 flex gap-2 items-center">
+                        <input type="number" v-model.number="editNodeForm.displayDuration" min="10" required placeholder="e.g. 300"
+                          class="flex-1 px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
+                        <span class="text-xs font-bold text-slate-600 min-w-[65px] text-right">{{ Math.floor((editNodeForm.displayDuration || 0) / 60) }}m {{ (editNodeForm.displayDuration || 0) % 60 }}s</span>
+                      </div>
+                      <div class="flex gap-1.5 mt-2 flex-wrap">
+                        <button type="button" @click="editNodeForm.displayDuration = 60" class="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-700 rounded-lg font-bold">1 min (60s)</button>
+                        <button type="button" @click="editNodeForm.displayDuration = 180" class="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-700 rounded-lg font-bold">3 mins (180s)</button>
+                        <button type="button" @click="editNodeForm.displayDuration = 300" class="px-2.5 py-1 text-[11px] bg-purple-100 text-purple-700 rounded-lg font-bold">5 mins (300s)</button>
+                        <button type="button" @click="editNodeForm.displayDuration = 600" class="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-700 rounded-lg font-bold">10 mins (600s)</button>
+                        <button type="button" @click="editNodeForm.displayDuration = 1800" class="px-2.5 py-1 text-[11px] bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-700 rounded-lg font-bold">30 mins</button>
+                      </div>
+                      <span class="text-[10px] text-slate-400 font-medium mt-1.5 block">While this order display timer is active, user app buy list will EXCLUSIVELY display ONLY this fixed order amount until claimed or expired.</span>
+                    </div>
+
                     <div class="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
                       <div>
                         <span class="block text-xs font-bold text-slate-700">Node Active Status</span>
@@ -563,15 +589,21 @@
 
                           <!-- Status -->
                           <td class="px-5 py-4">
-                            <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider', node.status ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-50 text-slate-400 border border-slate-200']">
-                              <span :class="['h-1.5 w-1.5 rounded-full mr-1.5', node.status ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300']"></span>
-                              {{ node.status ? 'Serving' : 'Inactive' }}
+                            <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider', node.status && node.orderState === 'ACTIVE' ? 'bg-purple-50 text-purple-700 border border-purple-100' : (node.status ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-50 text-slate-400 border border-slate-200')]">
+                              <span :class="['h-1.5 w-1.5 rounded-full mr-1.5', node.status ? 'bg-purple-500 animate-pulse' : 'bg-slate-300']"></span>
+                              {{ node.orderState === 'ACTIVE' ? 'Active Timer' : (node.orderState || (node.status ? 'Serving' : 'Inactive')) }}
                             </span>
+                            <div v-if="node.orderState === 'ACTIVE' && node.remainingSeconds > 0" class="text-[10px] text-purple-600 font-bold mt-1">
+                              {{ Math.floor(node.remainingSeconds / 60) }}m {{ node.remainingSeconds % 60 }}s left
+                            </div>
                           </td>
 
                           <!-- Actions -->
                           <td class="px-5 py-4 text-right">
                             <div class="flex items-center justify-end gap-1.5">
+                              <button @click="resetNodeTimer(node)" class="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition" title="Start / Re-activate Order Timer in User App">
+                                <i class="fa-solid fa-play text-xs"></i>
+                              </button>
                               <button @click="editNode(node)" class="p-2 text-slate-400 hover:text-[#b66dff] hover:bg-purple-50 rounded-lg transition" title="Modify Details">
                                 <i class="fa-solid fa-pencil"></i>
                               </button>
@@ -600,6 +632,100 @@
 
             </div>
 
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB: ADMIN NODE HISTORY & API AUDIT        -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'nodeHistory' && !selectedUser" class="space-y-6">
+            <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
+              <div>
+                <h3 class="text-lg font-bold text-slate-800">Admin Node Orders History & API Audit</h3>
+                <p class="text-xs text-slate-400">Track orders initiated by admin nodes, buyer pickup user details, UTR fetched from API, and live order status.</p>
+              </div>
+              <button @click="fetchNodeHistory" class="px-4 py-2.5 purple-btn text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> Refresh History
+              </button>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-100 text-sm">
+                  <thead class="bg-slate-50/70">
+                    <tr>
+                      <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Order Ref / ID</th>
+                      <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">UPI / Payee Details</th>
+                      <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Target Amount</th>
+                      <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Display Timer</th>
+                      <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Buyer User</th>
+                      <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Order Status</th>
+                      <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Result (API UTR)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-slate-100">
+                    <tr v-for="node in nodeHistory" :key="node._id" class="hover:bg-slate-50/50 transition">
+                      <td class="px-5 py-4 font-mono font-bold text-xs text-slate-700">
+                        {{ node.claimedRptNo || node._id }}
+                      </td>
+                      <td class="px-5 py-4">
+                        <span class="block font-bold text-slate-800">{{ node.name }}</span>
+                        <span class="block text-xs font-mono text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded inline-block mt-0.5 border border-purple-100/50">{{ node.accountNumber }}</span>
+                      </td>
+                      <td class="px-5 py-4">
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 font-bold text-xs">
+                          ₹{{ formatCurrency(node.amount) }}
+                        </span>
+                      </td>
+                      <td class="px-5 py-4 text-xs font-medium">
+                        <div v-if="node.orderState === 'ACTIVE' && node.remainingSeconds > 0" class="text-purple-600 font-bold flex items-center gap-1">
+                          <i class="fa-solid fa-stopwatch animate-pulse"></i>
+                          <span>{{ Math.floor(node.remainingSeconds / 60) }}m {{ node.remainingSeconds % 60 }}s left</span>
+                        </div>
+                        <div v-else-if="node.displayEndTimeFormatted" class="text-slate-400">
+                          Ended: {{ node.displayEndTimeFormatted }}
+                        </div>
+                        <div v-else class="text-slate-400">--</div>
+                      </td>
+                      <td class="px-5 py-4">
+                        <span v-if="node.claimedByPhone" class="font-bold font-mono text-xs text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                          <i class="fa-solid fa-user-check text-[10px] mr-1"></i> {{ node.claimedByPhone }}
+                        </span>
+                        <span v-else class="text-xs text-slate-400 italic">Not claimed yet</span>
+                      </td>
+                      <td class="px-5 py-4">
+                        <span v-if="node.orderState === 'ACTIVE'" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100">
+                          <span class="h-1.5 w-1.5 rounded-full bg-purple-500 mr-1.5 animate-ping"></span> Displaying in App
+                        </span>
+                        <span v-else-if="node.orderState === 'CLAIMED'" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-100">
+                          <span class="h-1.5 w-1.5 rounded-full bg-amber-500 mr-1.5"></span> Claimed / Paying
+                        </span>
+                        <span v-else-if="node.orderState === 'COMPLETED'" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
+                          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1.5"></span> Completed (Paid)
+                        </span>
+                        <span v-else class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200">
+                          Expired
+                        </span>
+                      </td>
+                      <td class="px-5 py-4 font-mono text-xs">
+                        <div v-if="node.utr" class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 inline-block">
+                          UTR: {{ node.utr }}
+                        </div>
+                        <div v-else class="text-slate-400 text-xs italic">
+                          Awaiting UTR...
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="nodeHistory.length === 0">
+                      <td colspan="7" class="px-5 py-12 text-center text-slate-400">
+                        <i class="fa-solid fa-clock-rotate-left text-3xl opacity-30 mb-2 block"></i>
+                        <p class="font-bold text-slate-600 text-sm">No admin node orders logged yet</p>
+                        <p class="text-xs">Orders created via Node Settings will be tracked here with live UTR results.</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           <!-- ========================================== -->
@@ -1616,15 +1742,18 @@
         const actionSubmitting = ref(false);
 
         const nodes = ref([]);
+        const nodeHistory = ref([]);
+        const nodeHistoryLoading = ref(false);
         const isEditingNode = ref(false);
         const editNodeForm = reactive({
           _id: '',
           name: '',
-          type: 'bank',
+          type: 'upi',
           bankName: '',
           accountNumber: '',
           ifsc: '',
           amount: '',
+          displayDuration: 300,
           status: true
         });
 
@@ -2404,6 +2533,23 @@
           }
         };
 
+        const fetchNodeHistory = async () => {
+          nodeHistoryLoading.value = true;
+          try {
+            const res = await fetch('/xxapi/admin/nodeHistory', { headers: getAuthHeaders() });
+            const data = await res.json();
+            if (data.code === 0) {
+              nodeHistory.value = data.data || [];
+            } else {
+              console.error('Failed to load node history:', data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+          } finally {
+            nodeHistoryLoading.value = false;
+          }
+        };
+
         const saveNode = async () => {
           if (!editNodeForm.name || !editNodeForm.accountNumber || editNodeForm.amount === '') {
             alert('Please fill all required fields.');
@@ -2425,6 +2571,7 @@
                 accountNumber: editNodeForm.accountNumber,
                 ifsc: editNodeForm.ifsc,
                 amount: Number(editNodeForm.amount),
+                displayDuration: Number(editNodeForm.displayDuration || 300),
                 status: editNodeForm.status
               })
             });
@@ -2444,15 +2591,39 @@
           }
         };
 
+        const resetNodeTimer = async (node) => {
+          if (!confirm('Re-activate order timer for this Payment Node? This will start serving the fixed order amount in user app.')) return;
+          fetching.value = true;
+          try {
+            const res = await fetch(`/xxapi/admin/nodes/${node._id}`, {
+              method: 'PUT',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ resetTimer: true, status: true })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              alert('Order timer re-activated successfully! Order is now active in user app.');
+              fetchNodes();
+            } else {
+              alert('Failed to reset timer: ' + data.msg);
+            }
+          } catch (e) {
+            console.error(e);
+          } finally {
+            fetching.value = false;
+          }
+        };
+
         const editNode = (node) => {
           isEditingNode.value = true;
           editNodeForm._id = node._id;
           editNodeForm.name = node.name;
-          editNodeForm.type = node.type;
+          editNodeForm.type = node.type || 'upi';
           editNodeForm.bankName = node.bankName;
           editNodeForm.accountNumber = node.accountNumber;
           editNodeForm.ifsc = node.ifsc;
           editNodeForm.amount = node.amount;
+          editNodeForm.displayDuration = node.displayDuration || 300;
           editNodeForm.status = node.status;
         };
 
@@ -2823,11 +2994,12 @@
           isEditingNode.value = false;
           editNodeForm._id = '';
           editNodeForm.name = '';
-          editNodeForm.type = 'bank';
+          editNodeForm.type = 'upi';
           editNodeForm.bankName = '';
           editNodeForm.accountNumber = '';
           editNodeForm.ifsc = '';
           editNodeForm.amount = '';
+          editNodeForm.displayDuration = 300;
           editNodeForm.status = true;
         };
 
@@ -2897,6 +3069,10 @@
           toggleCollectionToolState,
           terminateUserSession,
           nodes,
+          nodeHistory,
+          nodeHistoryLoading,
+          fetchNodeHistory,
+          resetNodeTimer,
           isEditingNode,
           editNodeForm,
           fetchNodes,
