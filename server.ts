@@ -823,23 +823,19 @@ function getAutomationConfig(ct_type: any) {
 const verifiedUpiNameCache = new Map<string, string>();
 
 async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<string> {
-  if (!vpa || typeof vpa !== 'string' || !vpa.includes('@')) return fallbackName || "Verified Merchant";
+  if (!vpa || typeof vpa !== 'string' || !vpa.includes('@')) {
+    return (fallbackName && fallbackName.trim()) ? fallbackName.trim() : "Merchant Partner";
+  }
   const cleanedVpa = vpa.trim().toLowerCase();
   
   if (verifiedUpiNameCache.has(cleanedVpa)) {
-    return verifiedUpiNameCache.get(cleanedVpa) || fallbackName || "Verified Merchant";
-  }
-
-  // Fast return if fallback is already a valid name
-  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant"].includes(fallbackName.trim())) {
-    const cleanFb = fallbackName.trim();
-    verifiedUpiNameCache.set(cleanedVpa, cleanFb);
-    return cleanFb;
+    const cached = verifiedUpiNameCache.get(cleanedVpa);
+    if (cached) return cached;
   }
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 600);
+    const timeout = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(`https://ritik-upi-info.vercel.app/api/v2/lookup?vpa=${encodeURIComponent(cleanedVpa)}`, {
       signal: controller.signal
     });
@@ -847,19 +843,32 @@ async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<s
 
     if (res.ok) {
       const json: any = await res.json();
-      if (json && json.status && json.data && json.data.name) {
-        const verifiedName = String(json.data.name).trim();
-        if (verifiedName) {
-          verifiedUpiNameCache.set(cleanedVpa, verifiedName);
-          return verifiedName;
-        }
+      const verifiedName = json?.data?.name || json?.data?.accountHolderName || json?.data?.payeeName || json?.data?.beneficiaryName || json?.name || (typeof json?.data === 'string' && json?.data ? json.data : null);
+      if (verifiedName && typeof verifiedName === 'string' && verifiedName.trim()) {
+        const cleanName = verifiedName.trim();
+        verifiedUpiNameCache.set(cleanedVpa, cleanName);
+        return cleanName;
       }
     }
   } catch (err: any) {
-    // Ignore timeout / network error
+    // Timeout or network error
   }
 
-  const defaultResult = (fallbackName && fallbackName.trim()) ? fallbackName.trim() : "Verified Merchant Partner";
+  // Fallback if API lookup is unavailable or returned no data
+  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant"].includes(fallbackName.trim())) {
+    const cleanFb = fallbackName.trim();
+    verifiedUpiNameCache.set(cleanedVpa, cleanFb);
+    return cleanFb;
+  }
+
+  const handle = cleanedVpa.split('@')[0];
+  let defaultResult = "Merchant Partner";
+  if (handle && handle.length >= 3 && !/^\d+$/.test(handle)) {
+    defaultResult = handle.charAt(0).toUpperCase() + handle.slice(1) + " Store";
+  } else if (handle && /^\d+$/.test(handle)) {
+    defaultResult = `${handle} Store`;
+  }
+
   verifiedUpiNameCache.set(cleanedVpa, defaultResult);
   return defaultResult;
 }

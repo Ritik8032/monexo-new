@@ -1466,7 +1466,7 @@
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-slate-400 font-bold">KYC Partner details:</span>
-                        <span class="text-slate-800 font-bold uppercase">{{ getUpiTypeLabel(tool.upi) }}</span>
+                        <span class="text-slate-800 font-bold uppercase">{{ getUpiTypeLabel(tool) }}</span>
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-slate-400 font-bold">Registered Mobile Linked:</span>
@@ -1635,15 +1635,39 @@
           return 'Pending';
         };
 
-        const getUpiTypeLabel = (upi) => {
-          if (!upi) return 'UPI Partner';
-          const u = upi.toLowerCase();
-          if (u.includes('ybl') || u.includes('phonepe')) return 'PhonePe Merchant Verified';
-          if (u.includes('paytm')) return 'Paytm Payments Bank';
-          if (u.includes('okaxis') || u.includes('gpay')) return 'Google Pay / Axis';
-          if (u.includes('icici')) return 'ICICI Merchant Partner';
-          if (u.includes('idfc')) return 'IDFC UPI Partner';
-          return 'Shriram Finance / UPI Partner';
+        const getUpiTypeLabel = (toolOrUpi) => {
+          if (!toolOrUpi) return 'UPI Partner';
+          if (typeof toolOrUpi === 'object') {
+            if (toolOrUpi.name && !toolOrUpi.name.includes('tool-') && !toolOrUpi.name.includes('undefined')) {
+              return toolOrUpi.name;
+            }
+            if (toolOrUpi.kycPartner) return toolOrUpi.kycPartner;
+            if (toolOrUpi.appName) return toolOrUpi.appName;
+            if (toolOrUpi.brandName) return toolOrUpi.brandName;
+            const typeNum = Number(toolOrUpi.type || toolOrUpi.ctType || toolOrUpi.ct_type);
+            if (typeNum === 1) return 'PhonePe';
+            if (typeNum === 2 || typeNum === 3) return 'Freecharge';
+            if (typeNum === 4) return 'MobiKwik';
+            if (typeNum === 8 || typeNum === 9 || typeNum === 16) return 'Paytm';
+            if (typeNum === 13 || typeNum === 20 || typeNum === 21) return 'Navi';
+            if (typeNum === 14 || typeNum === 19) return 'PhonePe Business';
+            if (typeNum === 18) return 'BharatPe';
+            if (typeNum === 33) return 'Amazon Pay';
+            const upiStr = toolOrUpi.upi || toolOrUpi.account || '';
+            if (upiStr) return getUpiTypeLabel(upiStr);
+            return 'UPI Partner';
+          }
+          const u = String(toolOrUpi).toLowerCase();
+          if (u.includes('paytm')) return 'Paytm';
+          if (u.includes('ybl') || u.includes('phonepe')) return 'PhonePe';
+          if (u.includes('freecharge')) return 'Freecharge';
+          if (u.includes('ikwik') || u.includes('mobikwik')) return 'MobiKwik';
+          if (u.includes('navi')) return 'Navi';
+          if (u.includes('amazon')) return 'Amazon Pay';
+          if (u.includes('axis') || u.includes('gpay')) return 'Google Pay';
+          if (u.includes('icici')) return 'ICICI Bank';
+          if (u.includes('idfc')) return 'IDFC Bank';
+          return 'UPI Partner';
         };
 
         const fetchUpiHistory = (tool) => {
@@ -2732,7 +2756,7 @@
             const identityRows = [
               ['Numeric UID (App ID):', u._id ? String(u._id) : '—', 'Registered Mobile:', u.phone || '—'],
               ['Real / Full Name:', editUserForm.realName || u.realName || '—', 'KYC Verification Status:', editUserForm.kycStatus === 1 ? 'Verified (Approved)' : 'Pending Review'],
-              ['KYC Partner Details:', editUserForm.kycPartner || 'Shriram Finance Partner', 'UPI KYC Partner:', editUserForm.upiKycPartner || 'PhonePe Verified'],
+              ['KYC Partner Details:', editUserForm.kycPartner || u.kycPartner || 'UPI Partner', 'UPI KYC Partner:', editUserForm.upiKycPartner || u.upiKycPartner || 'Verified'],
               ['Referral / Invite Code:', u.code || u.inviteCode || 'MNX-' + String(u._id).slice(-4), 'Parent / Referrer User:', editUserForm.parentUser || 'Direct System Signup']
             ];
 
