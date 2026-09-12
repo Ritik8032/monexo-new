@@ -833,9 +833,16 @@ async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<s
     if (cached) return cached;
   }
 
+  // Fast return if fallbackName is already a valid human name (not placeholder)
+  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant", "Verified Merchant Partner"].includes(fallbackName.trim())) {
+    const cleanFb = fallbackName.trim();
+    verifiedUpiNameCache.set(cleanedVpa, cleanFb);
+    return cleanFb;
+  }
+
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
+    const timeout = setTimeout(() => controller.abort(), 300); // Super fast 300ms timeout to avoid API thread blocking
     const res = await fetch(`https://ritik-upi-info.vercel.app/api/v2/lookup?vpa=${encodeURIComponent(cleanedVpa)}`, {
       signal: controller.signal
     });
@@ -5830,11 +5837,26 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
       net: user.net || 'WiFi/Cellular'
     };
 
-    // Fetch transactions
-    const allTransactions = await Transaction.find({ userId: user._id }).sort({ ctime: -1 });
-    const buyTransactions = allTransactions.filter(tx => tx.type === 'recharge');
-    const sellTransactions = allTransactions.filter(tx => tx.type === 'sell');
-    const adminTransactions = allTransactions.filter(tx => tx.type === 'admin' || tx.type === 'admin_adjustment');
+    // Fetch transactions matching user ID or user phone numbers
+    const phones = [user.phone, user.mobileNo].filter(Boolean);
+    const allTransactions = await Transaction.find({
+      $or: [
+        { userId: user._id },
+        { sellerId: user._id },
+        { phone: { $in: phones } },
+        { sellerPhone: { $in: phones } }
+      ]
+    }).sort({ ctime: -1, createdAt: -1 });
+
+    const buyTransactions = allTransactions.filter(tx => 
+      tx.type === 'recharge' || tx.type === 'buy' || tx.type === 'deposit' || (!tx.type && tx.amount > 0 && String(tx.sellerId) !== String(user._id))
+    );
+    const sellTransactions = allTransactions.filter(tx => 
+      tx.type === 'sell' || tx.type === 'withdrawal' || (tx.sellerId && String(tx.sellerId) === String(user._id))
+    );
+    const adminTransactions = allTransactions.filter(tx => 
+      tx.type === 'admin' || tx.type === 'admin_adjustment' || tx.type === 'transfer'
+    );
 
     // Count how many users were invited by this user and fetch invited users list
     const userPhoneStr = [user.phone, user.mobileNo].filter(Boolean);
@@ -5863,12 +5885,67 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
     const userNotifications = await Notification.find({ userId: user._id }).sort({ createdAt: -1 }).limit(100);
     const userSmsLogs = await SmsLog.find({ userId: user._id }).sort({ receivedAt: -1 }).limit(100);
 
+    // Build consolidated collectionTools & upiDetails
+    let rawTools: any[] = [];
+    if (Array.isArray(user.collectionTools) && user.collectionTools.length > 0) {
+      rawTools = user.collectionTools.map((t: any) => (t.toObject ? t.toObject() : { ...t }));
+    }
+
+    // Merge upiDetails & zoopayUpis if not already present in collectionTools
+    if (Array.isArray(user.upiDetails)) {
+      user.upiDetails.forEach((u: any, idx: number) => {
+        let upiVal = '';
+        let nameVal = '';
+        let typeVal = 'UPI Partner';
+        if (typeof u === 'string') {
+          upiVal = u;
+        } else if (u && typeof u === 'object') {
+          upiVal = u.upi || u.upiId || u.account || u.upi_id || '';
+          nameVal = u.name || u.pnname || '';
+          typeVal = u.type || u.bankName || 'UPI Partner';
+        }
+        if (upiVal && !rawTools.some(t => t.upi === upiVal || t.account === upiVal)) {
+          rawTools.push({
+            id: `upi_detail_${idx}`,
+            upi: upiVal,
+            account: user.phone || user.mobileNo || '',
+            pnname: nameVal || user.realName || user.fullName || 'Verified Partner',
+            verified_name: nameVal || user.realName || user.fullName || 'Verified Partner',
+            inSell: 1,
+            state: 2,
+            type: 1,
+            name: typeVal,
+            ctime: user.createdAt
+          });
+        }
+      });
+    }
+
+    if (Array.isArray(user.zoopayUpis)) {
+      user.zoopayUpis.forEach((zUpi: string, idx: number) => {
+        if (zUpi && !rawTools.some(t => t.upi === zUpi || t.account === zUpi)) {
+          rawTools.push({
+            id: `zoopay_${idx}`,
+            upi: zUpi,
+            account: user.phone || user.mobileNo || '',
+            pnname: user.realName || user.fullName || 'Verified Partner',
+            verified_name: user.realName || user.fullName || 'Verified Partner',
+            inSell: 1,
+            state: 2,
+            type: 1,
+            name: 'Zoopay Verified UPI',
+            ctime: user.createdAt
+          });
+        }
+      });
+    }
+
     // Enrich collectionTools with verified UPI names
-    const enrichedCollectionTools = await Promise.all((user.collectionTools || []).map(async (tool: any) => {
-      const toolObj = tool.toObject ? tool.toObject() : { ...tool };
+    const enrichedCollectionTools = await Promise.all(rawTools.map(async (tool: any) => {
+      const toolObj = { ...tool };
       const upiVpa = toolObj.upi || toolObj.accountNumber || toolObj.account;
       if (upiVpa && typeof upiVpa === 'string' && upiVpa.includes('@')) {
-        const vName = await getVerifiedUpiName(upiVpa, toolObj.pnname);
+        const vName = await getVerifiedUpiName(upiVpa, toolObj.pnname || user.realName || user.fullName);
         toolObj.pnname = vName;
         toolObj.verified_name = vName;
         toolObj.verification_name = vName;
@@ -5878,9 +5955,9 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
 
     const enrichedUpiDetails = await Promise.all((user.upiDetails || []).map(async (u: any) => {
       const uObj = u.toObject ? u.toObject() : { ...u };
-      const upiVpa = uObj.upi || uObj.accountNumber || uObj.account;
+      const upiVpa = uObj.upi || uObj.accountNumber || uObj.account || (typeof u === 'string' ? u : '');
       if (upiVpa && typeof upiVpa === 'string' && upiVpa.includes('@')) {
-        const vName = await getVerifiedUpiName(upiVpa, uObj.pnname || uObj.name);
+        const vName = await getVerifiedUpiName(upiVpa, uObj.pnname || uObj.name || user.realName || user.fullName);
         uObj.pnname = vName;
         uObj.name = vName;
         uObj.verified_name = vName;
@@ -5891,7 +5968,7 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
     const enrichedBuyTx = await Promise.all(buyTransactions.map(async (tx) => {
       const txObj = tx.toObject ? tx.toObject() : { ...tx };
       if (txObj.payee_bank_account && typeof txObj.payee_bank_account === 'string' && txObj.payee_bank_account.includes('@')) {
-        const vName = await getVerifiedUpiName(txObj.payee_bank_account, txObj.payee_recipients_name);
+        const vName = await getVerifiedUpiName(txObj.payee_bank_account, txObj.payee_recipients_name || user.realName || user.fullName);
         txObj.payee_recipients_name = vName;
         txObj.pnname = vName;
         txObj.verified_name = vName;
@@ -5902,7 +5979,7 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
     const enrichedSellTx = await Promise.all(sellTransactions.map(async (tx) => {
       const txObj = tx.toObject ? tx.toObject() : { ...tx };
       if (txObj.payee_bank_account && typeof txObj.payee_bank_account === 'string' && txObj.payee_bank_account.includes('@')) {
-        const vName = await getVerifiedUpiName(txObj.payee_bank_account, txObj.payee_recipients_name);
+        const vName = await getVerifiedUpiName(txObj.payee_bank_account, txObj.payee_recipients_name || user.realName || user.fullName);
         txObj.payee_recipients_name = vName;
         txObj.pnname = vName;
         txObj.verified_name = vName;

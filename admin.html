@@ -1864,11 +1864,25 @@
 
         // Workspace Loader
         const loadTakeActionWorkspace = (user) => {
-          fetchUserDetail(user._id);
+          selectedUser.value = user;
+          takeActionTab.value = 'info';
+          editUserForm.realName = user.realName || user.fullName || '';
+          editUserForm.phone = user.phone || user.mobileNo || '';
+          editUserForm.kycPartner = user.kycPartner || '';
+          editUserForm.upiKycPartner = user.upiKycPartner || '';
+          editUserForm.kycStatus = user.kycStatus || 0;
+          editUserForm.balance = user.balance || 0;
+          editUserForm.recharge = user.recharge || 0;
+          editUserForm.commission = user.commission || 0;
+          editUserForm.todayProfit = user.todayProfit || 0;
+          editUserForm.inverterDetails = user.inverterDetails || '';
+          editUserForm.vipLevel = user.vipLevel || 1;
+          editUserForm.parentUser = user.parentUser || '';
+          fetchUserDetail(user._id, true);
         };
 
-        const fetchUserDetail = async (userId) => {
-          fetching.value = true;
+        const fetchUserDetail = async (userId, isSoft = false) => {
+          if (!isSoft) fetching.value = true;
           try {
             const res = await fetch(`/xxapi/admin/userDetail?userId=${userId}`, {
               headers: getAuthHeaders()
@@ -1878,15 +1892,15 @@
               selectedUser.value = data.data.user;
               invitedUsers.value = data.data.invitedUsers || [];
               selectedTelemetry.value = data.data.telemetry;
-              buyTransactions.value = data.data.buyTransactions;
-              sellTransactions.value = data.data.sellTransactions;
-              adminTransactions.value = data.data.adminTransactions;
+              buyTransactions.value = data.data.buyTransactions || [];
+              sellTransactions.value = data.data.sellTransactions || [];
+              adminTransactions.value = data.data.adminTransactions || [];
               userNotifications.value = data.data.notifications || [];
               userSmsLogs.value = data.data.smsLogs || [];
 
               // Populate edit forms
-              editUserForm.realName = selectedUser.value.realName || '';
-              editUserForm.phone = selectedUser.value.phone || '';
+              editUserForm.realName = selectedUser.value.realName || selectedUser.value.fullName || '';
+              editUserForm.phone = selectedUser.value.phone || selectedUser.value.mobileNo || '';
               editUserForm.kycPartner = selectedUser.value.kycPartner || '';
               editUserForm.upiKycPartner = selectedUser.value.upiKycPartner || '';
               editUserForm.kycStatus = selectedUser.value.kycStatus || 0;
@@ -1904,7 +1918,7 @@
             console.error(e);
             alert('Failed to connect to backend detailed profiles.');
           } finally {
-            fetching.value = false;
+            if (!isSoft) fetching.value = false;
           }
         };
 
