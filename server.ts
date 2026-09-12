@@ -366,6 +366,14 @@ const tgSessionSchema = new mongoose.Schema({
   pendingOtpVerified: { type: Boolean, default: false },
   updatedAt: { type: Date, default: Date.now }
 });
+const siteConfigSchema = new mongoose.Schema({
+  key: { type: String, default: 'global', unique: true },
+  bannerSrcs: [String],
+  newsList: [mongoose.Schema.Types.Mixed],
+  updatedAt: { type: Date, default: Date.now }
+});
+const SiteConfig = mongoose.models.SiteConfig || mongoose.model('SiteConfig', siteConfigSchema);
+
 const TgSession = mongoose.models.TgSession || mongoose.model('TgSession', tgSessionSchema);
 
 const supportSessionSchema = new mongoose.Schema({
@@ -2268,6 +2276,24 @@ app.patch('/xxapi/cwkyc', async (req, res) => {
 
 // 8. CONFIG ENDPOINTS (No live vercel fetch - completely isolated local data)
 app.get('/xxapi/config', async (req, res) => {
+  let dbConfig = null;
+  try {
+    dbConfig = await SiteConfig.findOne({ key: 'global' });
+  } catch (e) {}
+
+  const defaultBanners = [
+    "https://ik.imagekit.io/Monexo/IMG_20260912_101706_979.jpg",
+    "https://ik.imagekit.io/Monexo/IMG_20260912_101703_329.jpg",
+    "https://ik.imagekit.io/Monexo/IMG_20260912_101705_433.jpg",
+    "https://ik.imagekit.io/Monexo/IMG_20260912_101701_804.jpg"
+  ];
+  const defaultNews = [
+    { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="https://ik.imagekit.io/Monexo/5172295577775.png?updatedAt=1786268547822" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
+  ];
+
+  const bannerSrcs = (dbConfig && dbConfig.bannerSrcs && dbConfig.bannerSrcs.length) ? dbConfig.bannerSrcs : defaultBanners;
+  const newsList = (dbConfig && dbConfig.newsList && dbConfig.newsList.length) ? dbConfig.newsList : defaultNews;
+
   return res.json({
     code: 0,
     msg: "success",
@@ -2286,18 +2312,11 @@ app.get('/xxapi/config', async (req, res) => {
         today_buy_times_reward: { name: "today_buy_times_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 1, rule: "{\"1\": 10, \"3\": 20, \"5\": 20, \"10\": 50}" },
         usdt_buy_dividend: { name: "usdt_buy_dividend", fixed: 0, ratio: 0, minCondi: 100, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.001, \"3\": 0.0}" }
       },
-      bannerSrcs: [
-        "https://ik.imagekit.io/Monexo/IMG_20260912_101706_979.jpg",
-        "https://ik.imagekit.io/Monexo/IMG_20260912_101703_329.jpg",
-        "https://ik.imagekit.io/Monexo/IMG_20260912_101705_433.jpg",
-        "https://ik.imagekit.io/Monexo/IMG_20260912_101701_804.jpg"
-      ],
-      newsList: [
-        { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="https://ik.imagekit.io/Monexo/5172295577775.png?updatedAt=1786268547822" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
-      ],
+      bannerSrcs: bannerSrcs,
+      newsList: newsList,
       pinFlag: false,
-      ctTypes: [1, 2, 3, 9, 13, 14, 16, 17, 18, 33],
-      ctTypesPayType: { "1": 2, "2": 2, "3": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "33": 2 },
+      ctTypes: [1, 2, 3, 9, 13, 14, 16, 17, 18, 21, 33],
+      ctTypesPayType: { "1": 2, "2": 2, "3": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "21": 2, "33": 2 },
       ifFinishNewbieActivity: 0,
       rptPaymentMode: 1,
       webLicenseId: "19711455",
@@ -5821,10 +5840,28 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
     const sellTransactions = allTransactions.filter(tx => tx.type === 'sell');
     const adminTransactions = allTransactions.filter(tx => tx.type === 'admin' || tx.type === 'admin_adjustment');
 
-    // Count how many users were invited by this user
-    const invitedCount = await User.countDocuments({
-      parentUser: { $in: [user.phone, user.mobileNo].filter(Boolean) }
-    });
+    // Count how many users were invited by this user and fetch invited users list
+    const userPhoneStr = [user.phone, user.mobileNo].filter(Boolean);
+    const userCodes = [user.ownInviteCode, user.referralCode, user.providerId].filter(Boolean);
+    const invitedUsersList = await User.find({
+      $or: [
+        { parentUser: { $in: userPhoneStr } },
+        { parentUser: { $in: userCodes } },
+        { invitercode: { $in: userCodes } }
+      ]
+    }).select('_id phone mobileNo balance ctime createdAt kycStatus vipLevel').sort({ createdAt: -1 });
+
+    const invitedUsers = invitedUsersList.map(u => ({
+      _id: u._id,
+      phone: u.phone || u.mobileNo || 'N/A',
+      balance: u.balance || 0,
+      ctime: u.ctime || u.createdAt,
+      createdAt: u.createdAt,
+      kycStatus: u.kycStatus || 0,
+      vipLevel: u.vipLevel || 1
+    }));
+
+    const invitedCount = invitedUsers.length;
 
     // Fetch notifications and SMS logs for user
     const userNotifications = await Notification.find({ userId: user._id }).sort({ createdAt: -1 }).limit(100);
@@ -5913,6 +5950,7 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
         buyTransactions: enrichedBuyTx,
         sellTransactions: enrichedSellTx,
         adminTransactions,
+        invitedUsers,
         notifications: userNotifications,
         smsLogs: userSmsLogs
       }
@@ -5920,6 +5958,97 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Get user detailed view error:', err);
     return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin Check UPI History Endpoint
+app.post('/xxapi/admin/checkUpiHistory', requireAdmin, async (req, res) => {
+  try {
+    const { upiId, phone } = req.body;
+    let filter: any = {};
+    if (upiId) {
+      filter.$or = [
+        { payee_bank_account: { $regex: upiId, $options: 'i' } },
+        { upi: { $regex: upiId, $options: 'i' } }
+      ];
+    } else if (phone) {
+      filter.$or = [
+        { phone: phone },
+        { payee_bank_account: { $regex: phone, $options: 'i' } }
+      ];
+    }
+    const history = await Transaction.find(filter).sort({ ctime: -1 }).limit(50);
+    return res.json({ code: 0, msg: 'success', data: history });
+  } catch (err: any) {
+    return res.status(500).json({ code: 500, msg: err.message });
+  }
+});
+
+// Admin Toggle Collection Tool InSell State
+app.post('/xxapi/admin/toggleCollectionToolInSell', requireAdmin, async (req, res) => {
+  try {
+    const { userId, toolId, inSell } = req.body;
+    if (!userId || toolId === undefined) {
+      return res.status(400).json({ code: 400, msg: 'userId and toolId are required' });
+    }
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ code: 404, msg: 'User not found' });
+
+    if (Array.isArray(user.collectionTools)) {
+      user.collectionTools = user.collectionTools.map((t: any) => {
+        if (t.id === toolId || t._id === toolId || String(t.id) === String(toolId)) {
+          return { ...t, inSell: inSell !== undefined ? Number(inSell) : (t.inSell === 1 ? 0 : 1) };
+        }
+        return t;
+      });
+      user.markModified('collectionTools');
+      await user.save();
+    }
+    return res.json({ code: 0, msg: 'Selling status updated successfully' });
+  } catch (err: any) {
+    return res.status(500).json({ code: 500, msg: err.message });
+  }
+});
+
+// Admin Update Site Config & Official Notice
+app.post('/xxapi/admin/updateSiteConfig', requireAdmin, async (req, res) => {
+  try {
+    const { noticeTitle, noticeContent, noticeImage, bannerSrcs } = req.body;
+    let config = await SiteConfig.findOne({ key: 'global' });
+    if (!config) {
+      config = new SiteConfig({ key: 'global' });
+    }
+
+    if (bannerSrcs && Array.isArray(bannerSrcs) && bannerSrcs.length > 0) {
+      config.bannerSrcs = bannerSrcs;
+    }
+
+    let finalContent = noticeContent;
+    if (noticeImage) {
+      finalContent = `<img src="${noticeImage}" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>`;
+    }
+
+    if (noticeTitle || finalContent) {
+      config.newsList = [
+        {
+          id: 32,
+          cover: "",
+          name: noticeTitle || "Official Notice",
+          code: "official_notice",
+          type: 1,
+          content: finalContent || (config.newsList && config.newsList[0] ? config.newsList[0].content : '<img src="https://ik.imagekit.io/Monexo/5172295577775.png?updatedAt=1786268547822" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>'),
+          crtDate: Math.floor(Date.now() / 1000),
+          crtUser: "admin",
+          sort: 1
+        }
+      ];
+    }
+
+    config.updatedAt = new Date();
+    await config.save();
+    return res.json({ code: 0, msg: 'Site Config & Official Notice saved successfully!', data: config });
+  } catch (err: any) {
+    return res.status(500).json({ code: 500, msg: err.message });
   }
 });
 

@@ -6,5 +6,3 @@ coverage/
 *.log
 .env*
 !.env.example
-node-compile-cache/
-.d9cbbeb7775def77*

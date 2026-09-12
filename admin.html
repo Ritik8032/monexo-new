@@ -252,8 +252,11 @@
               </h1>
             </div>
             
-            <div v-if="selectedUser" class="flex gap-2">
-              <button @click="selectedUser = null" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-bold text-slate-600 transition shadow-sm">
+            <div class="flex items-center gap-2">
+              <button @click="showNoticeConfigModal = true" class="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-bold transition shadow-sm">
+                <i class="fa-solid fa-bullhorn"></i> Official Notice &amp; Popup Config
+              </button>
+              <button v-if="selectedUser" @click="selectedUser = null" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-bold text-slate-600 transition shadow-sm">
                 <i class="fa-solid fa-arrow-left"></i> Back to List
               </button>
             </div>
@@ -1083,601 +1086,462 @@
               </div>
             </div>
 
-            <!-- Grid Layout of Action Categories -->
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              
-              <!-- Left Column: Core Settings (KYC, Inverter/Investor, Partner details) -->
-              <div class="lg:col-span-5 space-y-8">
-                
-                <!-- Category A: Identity, KYC Partner & UPI Details Form -->
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                  <div class="flex items-center gap-2 pb-4 border-b border-slate-50">
-                    <i class="fa-solid fa-passport purple-text text-lg"></i>
-                    <h3 class="text-base font-bold text-slate-800">KYC &amp; Partner Details</h3>
-                  </div>
-
-                  <form @submit.prevent="updateTakeActionProfile" class="space-y-4">
-                    <div>
-                      <label class="block text-xs font-bold text-slate-400 uppercase">Real Name (Full Name)</label>
-                      <input type="text" v-model="editUserForm.realName"
-                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                    </div>
-
-                    <div>
-                      <label class="block text-xs font-bold text-slate-400 uppercase">Registered Mobile Linked</label>
-                      <input type="text" v-model="editUserForm.phone"
-                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                    </div>
-
-                    <div>
-                      <label class="block text-xs font-bold text-slate-400 uppercase">KYC Partner details</label>
-                      <input type="text" v-model="editUserForm.kycPartner" placeholder="e.g. Shriram Finance Partner, Digilocker"
-                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                    </div>
-
-                    <div>
-                      <label class="block text-xs font-bold text-slate-400 uppercase">UPI KYC Partner Details</label>
-                      <input type="text" v-model="editUserForm.upiKycPartner" placeholder="e.g. PhonePe Merchant Verified, IDFC UPI"
-                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                    </div>
-
-                    <div>
-                      <label class="block text-xs font-bold text-slate-400 uppercase">KYC Status</label>
-                      <select v-model="editUserForm.kycStatus"
-                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
-                        <option :value="0">Pending Verification</option>
-                        <option :value="1">Verified / Approved</option>
-                      </select>
-                    </div>
-
-                    <button type="submit" :disabled="editProfileLoading"
-                      class="w-full py-3.5 purple-btn text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition duration-150 disabled:opacity-50">
-                      <span v-if="editProfileLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Saving Profile...</span>
-                      <span v-else>Save Integration Details</span>
-                    </button>
-                  </form>
-                </div>
-
-                <!-- Category B: Investor / Inverter details -->
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                  <div class="flex items-center gap-2 pb-4 border-b border-slate-50">
-                    <i class="fa-solid fa-chart-line purple-text text-lg"></i>
-                    <h3 class="text-base font-bold text-slate-800">Inverter / Investor details</h3>
-                  </div>
-
-                  <form @submit.prevent="updateInvestorDetails" class="space-y-4">
-                    <div class="grid grid-cols-2 gap-4">
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Wallet Balance (₹)</label>
-                        <input type="number" step="0.01" v-model="editUserForm.balance"
-                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
-                      </div>
-                      
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Total Recharge (₹)</label>
-                        <input type="number" step="0.01" v-model="editUserForm.recharge"
-                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-4">
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Commission (₹)</label>
-                        <input type="number" step="0.01" v-model="editUserForm.commission"
-                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                      </div>
-                      
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Today Profit (₹)</label>
-                        <input type="number" step="0.01" v-model="editUserForm.todayProfit"
-                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-4">
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Invited By (Inviter Code)</label>
-                        <input type="text" v-model="editUserForm.parentUser" placeholder="e.g. 7870873927"
-                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                      </div>
-
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Total Users Invited</label>
-                        <div class="mt-1 px-3.5 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 text-sm font-bold flex items-center gap-2 h-[46px]">
-                          <i class="fa-solid fa-users text-purple-500"></i> {{ selectedUser.invitedCount || 0 }} Users
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label class="block text-xs font-bold text-slate-400 uppercase">Inverter Model / Inverter details</label>
-                      <textarea rows="3" v-model="editUserForm.inverterDetails" placeholder="Type specific system inverter details, nodes, serial numbers, capacity..."
-                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium"></textarea>
-                    </div>
-
-                    <div>
-                      <label class="block text-xs font-bold text-slate-400 uppercase">VIP Tier level</label>
-                      <input type="number" v-model="editUserForm.vipLevel" min="1" max="10"
-                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
-                    </div>
-
-                    <button type="submit" :disabled="editInvestorLoading"
-                      class="w-full py-3.5 purple-btn text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition duration-150 disabled:opacity-50">
-                      <span v-if="editInvestorLoading"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Saving Investor info...</span>
-                      <span v-else>Update Investor &amp; Inverter Info</span>
-                    </button>
-                  </form>
-                </div>
-
-              </div>
-
-              <!-- Right Column: Ledger Histories and Add manual entry -->
-              <div class="lg:col-span-7 space-y-8">
-                
-                <!-- Sub-Tabs Navigation for transaction list -->
-                <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                      <h3 class="text-base font-bold text-slate-800">Financial Audit Ledgers</h3>
-                      <p class="text-xs text-slate-400">Inspecting transaction records mapped to UID</p>
-                    </div>
-
-                    <div class="flex gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-bold">
-                      <button @click="ledgerTab = 'buy'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'buy' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
-                        Buy ({{ buyTransactions.length }})
-                      </button>
-                      <button @click="ledgerTab = 'sell'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'sell' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
-                        Sell ({{ sellTransactions.length }})
-                      </button>
-                      <button @click="ledgerTab = 'admin'" :class="['px-3 py-1.5 rounded-lg transition', ledgerTab === 'admin' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
-                        Admin ({{ adminTransactions.length }})
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Table content depending on active sub-tab -->
-                  <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
-                    
-                     <!-- BUY TRANSACTION TAB -->
-                    <table v-if="ledgerTab === 'buy'" class="min-w-full divide-y divide-slate-100">
-                      <thead class="bg-slate-50/70 sticky top-0 z-10">
-                        <tr>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">UTR</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Recipient Name (API Verified)</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
-                        <tr v-if="buyTransactions.length === 0">
-                          <td colspan="6" class="px-6 py-10 text-center text-slate-400">
-                            No Buy (recharge) transactions found.
-                          </td>
-                        </tr>
-                        <tr v-for="tx in buyTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
-                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
-                          <td class="px-5 py-3 font-semibold text-slate-800">{{ tx.utr || '—' }}</td>
-                          <td class="px-5 py-3 font-bold text-emerald-700">
-                            <span class="inline-flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                              <i class="fa-solid fa-circle-check text-emerald-500 text-[10px]"></i>
-                              {{ tx.payee_recipients_name || tx.pnname || 'Verified Recipient' }}
-                            </span>
-                          </td>
-                          <td class="px-5 py-3 font-extrabold text-slate-900">₹{{ formatCurrency(tx.amount) }}</td>
-                          <td class="px-5 py-3">
-                            <span :class="['inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')]">
-                              {{ tx.payer_status === 3 ? 'Success' : (tx.payer_status === 4 ? 'Cancelled' : 'Pending') }}
-                            </span>
-                          </td>
-                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-
-                    <!-- SELL TRANSACTION TAB -->
-                    <table v-if="ledgerTab === 'sell'" class="min-w-full divide-y divide-slate-100">
-                      <thead class="bg-slate-50/70 sticky top-0 z-10">
-                        <tr>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Recipient Name (API Verified)</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
-                        <tr v-if="sellTransactions.length === 0">
-                          <td colspan="5" class="px-6 py-10 text-center text-slate-400">
-                            No Sell (withdrawal) transactions found.
-                          </td>
-                        </tr>
-                        <tr v-for="tx in sellTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
-                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
-                          <td class="px-5 py-3 font-bold text-emerald-700">
-                            <span class="inline-flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                              <i class="fa-solid fa-circle-check text-emerald-500 text-[10px]"></i>
-                              {{ tx.payee_recipients_name || tx.pnname || 'Verified Recipient' }}
-                            </span>
-                          </td>
-                          <td class="px-5 py-3 font-extrabold text-slate-900">₹{{ formatCurrency(tx.amount) }}</td>
-                          <td class="px-5 py-3">
-                            <span :class="['inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600')]">
-                              {{ tx.payer_status === 3 ? 'Success' : (tx.payer_status === 4 ? 'Cancelled' : 'Pending') }}
-                            </span>
-                          </td>
-                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-
-                    <!-- ADMIN ADJUSTMENT TRANSACTION TAB -->
-                    <table v-if="ledgerTab === 'admin'" class="min-w-full divide-y divide-slate-100">
-                      <thead class="bg-slate-50/70 sticky top-0 z-10">
-                        <tr>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Report No</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Amount</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Notes/Reason</th>
-                          <th scope="col" class="px-5 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody class="divide-y divide-slate-100 bg-white text-xs">
-                        <tr v-if="adminTransactions.length === 0">
-                          <td colspan="5" class="px-6 py-10 text-center text-slate-400">
-                            No Admin transactions found.
-                          </td>
-                        </tr>
-                        <tr v-for="tx in adminTransactions" :key="tx._id" class="hover:bg-slate-50/50 transition">
-                          <td class="px-5 py-3 font-mono text-slate-500">{{ tx.rptNo }}</td>
-                          <td class="px-5 py-3 font-extrabold text-slate-900" :class="tx.amount >= 0 ? 'text-emerald-600' : 'text-red-500'">
-                            {{ tx.amount >= 0 ? '+' : '' }}₹{{ formatCurrency(tx.amount) }}
-                          </td>
-                          <td class="px-5 py-3">
-                            <span class="inline-flex px-2 py-0.5 rounded-full font-bold uppercase text-[9px] bg-slate-100 text-slate-700">
-                              Success
-                            </span>
-                          </td>
-                          <td class="px-5 py-3 font-medium text-slate-600">{{ tx.reason_for_rejection || 'Admin Adjustment' }}</td>
-                          <td class="px-5 py-3 text-slate-400">{{ formatDate(tx.ctime) }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-
-                  </div>
-                </div>
-
-                <!-- Dynamic Balance Management (New Feature) -->
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
-                    <div class="flex items-center gap-2">
-                      <i class="fa-solid fa-scale-balanced purple-text text-lg"></i>
-                      <h3 class="text-base font-bold text-slate-800">Direct Balance Management</h3>
-                    </div>
-                    <span class="text-xs bg-purple-50 text-purple-700 font-extrabold px-3 py-1 rounded-full">
-                      Current: ₹{{ formatCurrency(selectedUser.balance) }}
-                    </span>
-                  </div>
-
-                  <div class="space-y-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Amount (₹)</label>
-                        <input type="number" step="0.01" v-model="balanceActionAmount" placeholder="e.g. 500"
-                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
-                      </div>
-
-                      <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Reason / Notes</label>
-                        <input type="text" v-model="balanceActionReason" placeholder="e.g. Referral bonus reward"
-                          class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-3 gap-3 pt-2">
-                      <button @click="handleBalanceAction('add')" :disabled="balanceActionLoading"
-                        class="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
-                        <i class="fa-solid fa-plus text-[10px]"></i> Deposit (+)
-                      </button>
-
-                      <button @click="handleBalanceAction('subtract')" :disabled="balanceActionLoading"
-                        class="py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
-                        <i class="fa-solid fa-minus text-[10px]"></i> Deduct (-)
-                      </button>
-
-                      <button @click="handleBalanceAction('set')" :disabled="balanceActionLoading"
-                        class="py-3 bg-slate-950 hover:bg-slate-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
-                        <i class="fa-solid fa-equals text-[10px]"></i> Set Balance (=)
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Successfully Linked UPI Partners & Status Card (New Feature) -->
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
-                    <div class="flex items-center gap-2">
-                      <i class="fa-solid fa-building-columns purple-text text-lg"></i>
-                      <h3 class="text-base font-bold text-slate-800">Linked UPI Partners &amp; Selling Status</h3>
-                    </div>
-                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">KYC Binds</span>
-                  </div>
-
-                  <div class="space-y-4">
-                    <div v-if="!selectedUser.collectionTools || selectedUser.collectionTools.length === 0" class="py-6 text-center text-slate-400">
-                      <div class="flex flex-col items-center justify-center max-w-xs mx-auto">
-                        <i class="fa-solid fa-wallet text-2xl text-slate-200 mb-2"></i>
-                        <h4 class="text-xs font-bold text-slate-600">No linked UPI partners found</h4>
-                        <p class="text-[11px] text-slate-400 mt-0.5">The user has not linked any UPI accounts to this wallet yet.</p>
-                      </div>
-                    </div>
-
-                    <div v-else class="space-y-4">
-                      <div v-for="tool in selectedUser.collectionTools" :key="tool.id" class="p-4 bg-slate-50 rounded-xl border border-slate-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div class="space-y-1.5">
-                          <div class="flex items-center gap-2 flex-wrap">
-                            <span class="text-sm font-extrabold text-slate-800 tracking-tight">{{ tool.upi }}</span>
-                            <span :class="['inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider', tool.state === 2 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100']">
-                              {{ tool.state === 2 ? 'Active / Linked' : 'Unlinked / Inactive' }}
-                            </span>
-                          </div>
-                          
-                          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
-                            <span>Phone: <span class="text-slate-700 font-bold">{{ tool.account || 'N/A' }}</span></span>
-                            <span>Verified Name: <span class="text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/80 inline-flex items-center gap-1"><i class="fa-solid fa-circle-check text-emerald-500 text-[10px]"></i>{{ tool.pnname || tool.verified_name || tool.verification_name || 'Verified Partner' }}</span></span>
-                            <span class="col-span-2 mt-0.5">
-                              Selling State: 
-                              <span :class="['font-bold', tool.inSell === 1 ? 'text-emerald-600' : 'text-slate-400']">
-                                {{ tool.inSell === 1 ? 'SELLING ENABLED' : 'SELLING DISABLED' }}
-                              </span>
-                            </span>
-                          </div>
-                        </div>
-
-                        <!-- Action Toggles -->
-                        <div class="flex flex-row sm:flex-col gap-2 shrink-0">
-                          <button @click="toggleCollectionToolInSell(tool)" 
-                            :class="['px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition shadow-xs text-center border', tool.inSell === 1 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100']">
-                            {{ tool.inSell === 1 ? 'Disable Selling' : 'Enable Selling' }}
-                          </button>
-                          
-                          <button @click="toggleCollectionToolState(tool)" 
-                            :class="['px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition shadow-xs text-center border', tool.state === 2 ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100']">
-                            {{ tool.state === 2 ? 'Unlink UPI' : 'Activate/Link' }}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Active Devices & Sessions (New Feature) -->
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                  <div class="flex items-center justify-between pb-4 border-b border-slate-50">
-                    <div class="flex items-center gap-2">
-                      <i class="fa-solid fa-mobile-screen-button purple-text text-lg"></i>
-                      <h3 class="text-base font-bold text-slate-800">Active Sessions &amp; Logged-in Devices</h3>
-                    </div>
-                    <span class="text-xs bg-indigo-50 text-indigo-700 font-extrabold px-3 py-1 rounded-full">
-                      {{ selectedUser.sessions ? selectedUser.sessions.length : 0 }} Active
-                    </span>
-                  </div>
-
-                  <div class="space-y-4">
-                    <div v-if="!selectedUser.sessions || selectedUser.sessions.length === 0" class="py-6 text-center text-slate-400">
-                      <div class="flex flex-col items-center justify-center max-w-xs mx-auto">
-                        <i class="fa-solid fa-shield text-2xl text-slate-200 mb-2"></i>
-                        <h4 class="text-xs font-bold text-slate-600">No active sessions tracked</h4>
-                        <p class="text-[11px] text-slate-400 mt-0.5">This user has no current active sessions registered.</p>
-                      </div>
-                    </div>
-
-                    <div v-else class="space-y-4">
-                      <div v-for="sess in selectedUser.sessions" :key="sess.token" class="p-4 bg-slate-50 rounded-xl border border-slate-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div class="space-y-1.5 flex-1">
-                          <div class="flex items-center gap-2 flex-wrap">
-                            <span class="text-sm font-extrabold text-slate-800 tracking-tight flex items-center gap-1.5">
-                              <i v-if="sess.device && sess.device.toLowerCase().includes('phone')" class="fa-solid fa-mobile-screen text-indigo-500"></i>
-                              <i v-else-if="sess.device && sess.device.toLowerCase().includes('tablet')" class="fa-solid fa-tablet-screen-button text-indigo-500"></i>
-                              <i v-else class="fa-solid fa-laptop text-indigo-500"></i>
-                              {{ sess.device || 'Unknown Device' }}
-                            </span>
-                            <span class="text-xs bg-slate-200/60 text-slate-600 px-2 py-0.5 rounded-lg font-bold">
-                              {{ sess.browser || 'Browser' }}
-                            </span>
-                          </div>
-                          
-                          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 font-semibold">
-                            <span>IP Address: <span class="text-slate-700 font-bold font-mono">{{ sess.ip || 'N/A' }}</span></span>
-                            <span>Location: <span class="text-slate-700 font-bold">{{ sess.location || 'N/A' }}</span></span>
-                            <span>Logged In: <span class="text-slate-700 font-bold">{{ formatDate(sess.loginTime) }}</span></span>
-                            <span>Last Active: <span class="text-indigo-600 font-extrabold">{{ formatDate(sess.lastActive) }}</span></span>
-                          </div>
-                        </div>
-
-                        <!-- Terminate Action -->
-                        <div class="shrink-0">
-                          <button @click="terminateUserSession(sess.token)" 
-                            class="w-full sm:w-auto px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs">
-                            <i class="fa-solid fa-arrow-right-from-bracket"></i> Terminate Session
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
+            <!-- 5 TABS NAVIGATION BAR FOR TAKE ACTION -->
+            <div class="bg-white p-2.5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-2 overflow-x-auto">
+              <button @click="takeActionTab = 'info'" :class="['px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition whitespace-nowrap', takeActionTab === 'info' ? 'bg-gradient-to-r from-[#b66dff] to-[#7c4dff] text-white shadow-md' : 'text-slate-600 hover:bg-slate-50']">
+                <i class="fa-solid fa-user-check text-sm"></i> 1. User Info
+              </button>
+              <button @click="takeActionTab = 'inverter'" :class="['px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition whitespace-nowrap', takeActionTab === 'inverter' ? 'bg-gradient-to-r from-[#b66dff] to-[#7c4dff] text-white shadow-md' : 'text-slate-600 hover:bg-slate-50']">
+                <i class="fa-solid fa-microchip text-sm"></i> 2. Inverter / Investor Details
+              </button>
+              <button @click="takeActionTab = 'transactions'" :class="['px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition whitespace-nowrap', takeActionTab === 'transactions' ? 'bg-gradient-to-r from-[#b66dff] to-[#7c4dff] text-white shadow-md' : 'text-slate-600 hover:bg-slate-50']">
+                <i class="fa-solid fa-clock-rotate-left text-sm"></i> 3. History (Buy / Sell / Transfer)
+              </button>
+              <button @click="takeActionTab = 'kycupi'" :class="['px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition whitespace-nowrap', takeActionTab === 'kycupi' ? 'bg-gradient-to-r from-[#b66dff] to-[#7c4dff] text-white shadow-md' : 'text-slate-600 hover:bg-slate-50']">
+                <i class="fa-solid fa-id-card text-sm"></i> 4. User KYC / UPI Info
+              </button>
+              <button @click="takeActionTab = 'sessions'" :class="['px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition whitespace-nowrap', takeActionTab === 'sessions' ? 'bg-gradient-to-r from-[#b66dff] to-[#7c4dff] text-white shadow-md' : 'text-slate-600 hover:bg-slate-50']">
+                <i class="fa-solid fa-shield-halved text-sm"></i> 5. Login Session
+              </button>
             </div>
 
-            <!-- New Section: Notification & SMS Take Action Options -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-2">
-              
-              <!-- Option 1: User Notifications Panel -->
-              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                <div class="flex items-center justify-between pb-4 border-b border-slate-50">
-                  <div class="flex items-center gap-2">
-                    <div class="h-9 w-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-base">
-                      <i class="fa-solid fa-bell"></i>
+            <!-- TAB 1: USER INFO -->
+            <div v-if="takeActionTab === 'info'" class="space-y-6">
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Account Credentials Card -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                  <div class="flex items-center gap-2 pb-3 border-b border-slate-100">
+                    <i class="fa-solid fa-id-badge purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">Account Credentials &amp; Identifiers</h3>
+                  </div>
+                  <div class="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <span class="block text-slate-400 font-bold uppercase">Numeric UID</span>
+                      <span class="text-slate-800 font-bold font-mono">{{ selectedUser._id }}</span>
                     </div>
                     <div>
-                      <h3 class="text-base font-bold text-slate-800">User Notifications</h3>
-                      <p class="text-xs text-slate-400">Send push notices &amp; view user inbox history</p>
+                      <span class="block text-slate-400 font-bold uppercase">App ID / Provider ID</span>
+                      <span class="text-slate-800 font-bold font-mono">{{ selectedUser.providerId || selectedUser.teamWorkId || '—' }}</span>
+                    </div>
+                    <div>
+                      <span class="block text-slate-400 font-bold uppercase">Registered Phone</span>
+                      <span class="text-slate-800 font-bold font-mono">{{ selectedUser.phone }}</span>
+                    </div>
+                    <div>
+                      <span class="block text-slate-400 font-bold uppercase">Registration Date</span>
+                      <span class="text-slate-800 font-medium">{{ formatDate(selectedUser.ctime || selectedUser.createdAt) }}</span>
+                    </div>
+                    <div>
+                      <span class="block text-slate-400 font-bold uppercase">KYC Status</span>
+                      <span :class="['font-bold', selectedUser.kycStatus === 1 ? 'text-emerald-600' : 'text-amber-600']">
+                        {{ selectedUser.kycStatus === 1 ? 'Verified' : 'Pending Verification' }}
+                      </span>
+                    </div>
+                    <div>
+                      <span class="block text-slate-400 font-bold uppercase">VIP Level</span>
+                      <span class="text-purple-700 font-bold">Tier VIP-{{ selectedUser.vipLevel || 1 }}</span>
                     </div>
                   </div>
+                </div>
+
+                <!-- Connection Telemetry Card -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                  <div class="flex items-center gap-2 pb-3 border-b border-slate-100">
+                    <i class="fa-solid fa-network-wired purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">Connection &amp; Device Telemetry</h3>
+                  </div>
+                  <div class="space-y-2.5 text-xs">
+                    <div class="flex justify-between items-center py-1.5 border-b border-slate-50">
+                      <span class="text-slate-400 font-bold">Client IP Address:</span>
+                      <span class="text-slate-800 font-mono font-bold">{{ selectedTelemetry.ip || 'N/A' }}</span>
+                    </div>
+                    <div class="flex justify-between items-center py-1.5 border-b border-slate-50">
+                      <span class="text-slate-400 font-bold">Network Connection:</span>
+                      <span class="text-slate-800 font-bold">{{ selectedTelemetry.net || 'WiFi/Cellular' }}</span>
+                    </div>
+                    <div class="flex justify-between items-center py-1.5">
+                      <span class="text-slate-400 font-bold">Device User-Agent:</span>
+                      <span class="text-slate-700 font-mono text-[11px] max-w-[280px] truncate" :title="selectedTelemetry.deviceType">{{ selectedTelemetry.deviceType || 'N/A' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Direct Balance Management -->
+              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-scale-balanced purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">Direct Balance Management</h3>
+                  </div>
                   <span class="text-xs bg-purple-50 text-purple-700 font-extrabold px-3 py-1 rounded-full">
-                    {{ userNotifications ? userNotifications.length : 0 }} Messages
+                    Current Balance: ₹{{ formatCurrency(selectedUser.balance) }}
                   </span>
                 </div>
 
-                <!-- Send Notification Form -->
-                <form @submit.prevent="sendUserNotification" class="p-4 bg-slate-50/70 rounded-xl border border-slate-100 space-y-3">
-                  <div class="font-bold text-xs text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
-                    <i class="fa-solid fa-paper-plane text-purple-500"></i> Send New Push Notification
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div class="sm:col-span-2">
-                      <input type="text" v-model="notifForm.title" placeholder="Title (e.g. Account Alert / Reward)"
-                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#b66dff]">
+                <div class="space-y-4">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Amount (₹)</label>
+                      <input type="number" step="0.01" v-model="balanceActionAmount" placeholder="e.g. 500"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-bold">
                     </div>
                     <div>
-                      <select v-model="notifForm.type"
-                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#b66dff]">
-                        <option value="info">Info / General</option>
-                        <option value="alert">Important Alert</option>
-                        <option value="system">System Notice</option>
-                        <option value="promo">Bonus / Promo</option>
-                      </select>
+                      <label class="block text-xs font-bold text-slate-400 uppercase">Adjustment Reason / Notes</label>
+                      <input type="text" v-model="balanceActionReason" placeholder="e.g. Manual credit reward"
+                        class="mt-1 block w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#b66dff] text-sm font-medium">
                     </div>
                   </div>
-                  <div>
-                    <textarea rows="2" v-model="notifForm.message" placeholder="Type notification message text here..."
-                      class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#b66dff]"></textarea>
-                  </div>
-                  <button type="submit" :disabled="sendNotifLoading"
-                    class="px-4 py-2.5 purple-btn text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50">
-                    <span v-if="sendNotifLoading"><i class="fa-solid fa-spinner animate-spin"></i> Sending...</span>
-                    <span v-else><i class="fa-solid fa-bell-concierge"></i> Dispatch Notification</span>
-                  </button>
-                </form>
 
-                <!-- Notification List -->
-                <div class="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                  <div v-if="!userNotifications || userNotifications.length === 0" class="py-8 text-center text-slate-400">
-                    <i class="fa-solid fa-bell-slash text-2xl text-slate-200 mb-2"></i>
-                    <p class="text-xs font-medium">No notifications sent or stored for this user.</p>
-                  </div>
-                  <div v-for="notif in userNotifications" :key="notif._id"
-                    class="p-3.5 bg-slate-50/80 rounded-xl border border-slate-100 flex items-start justify-between gap-3 text-xs">
-                    <div class="space-y-1 flex-1">
-                      <div class="flex items-center gap-2">
-                        <span class="font-extrabold text-slate-800">{{ notif.title }}</span>
-                        <span :class="['px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider', 
-                          notif.type === 'alert' ? 'bg-rose-100 text-rose-700' : 
-                          notif.type === 'promo' ? 'bg-amber-100 text-amber-800' : 
-                          notif.type === 'system' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700']">
-                          {{ notif.type }}
-                        </span>
-                        <span class="text-[10px] text-slate-400 ml-auto">{{ formatDate(notif.createdAt) }}</span>
-                      </div>
-                      <p class="text-slate-600 leading-relaxed font-medium">{{ notif.message }}</p>
-                    </div>
-                    <button @click="deleteUserNotification(notif._id)" class="text-slate-300 hover:text-rose-500 transition p-1" title="Delete notification">
-                      <i class="fa-solid fa-trash-can"></i>
+                  <div class="grid grid-cols-3 gap-3 pt-2">
+                    <button @click="handleBalanceAction('add')" :disabled="balanceActionLoading"
+                      class="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                      <i class="fa-solid fa-plus text-[10px]"></i> Deposit (+)
+                    </button>
+                    <button @click="handleBalanceAction('subtract')" :disabled="balanceActionLoading"
+                      class="py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                      <i class="fa-solid fa-minus text-[10px]"></i> Deduct (-)
+                    </button>
+                    <button @click="handleBalanceAction('set')" :disabled="balanceActionLoading"
+                      class="py-3 bg-slate-950 hover:bg-slate-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50">
+                      <i class="fa-solid fa-equals text-[10px]"></i> Set Balance (=)
                     </button>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <!-- Option 2: SMS Logs & Intercepted Messages Panel -->
+            <!-- TAB 2: INVERTER / INVESTOR DETAILS -->
+            <div v-if="takeActionTab === 'inverter'" class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-50 gap-3">
-                  <div class="flex items-center gap-2">
-                    <div class="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-base">
-                      <i class="fa-solid fa-comment-sms"></i>
-                    </div>
-                    <div>
-                      <h3 class="text-base font-bold text-slate-800">SMS Logs &amp; Messages</h3>
-                      <p class="text-xs text-slate-400">Captured device SMS &amp; OTP verification history</p>
-                    </div>
+                <div class="flex items-center gap-2 pb-4 border-b border-slate-100">
+                  <i class="fa-solid fa-chart-line purple-text text-lg"></i>
+                  <h3 class="text-base font-bold text-slate-800">Inverter / Investor Details (Read-Only)</h3>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span class="block text-xs font-bold text-slate-400 uppercase">Wallet Balance (₹)</span>
+                    <span class="text-lg font-extrabold text-slate-800 mt-1 block">₹{{ formatCurrency(selectedUser.balance) }}</span>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <div class="relative">
-                      <input type="text" v-model="smsSearchQuery" placeholder="Search SMS / OTP..."
-                        class="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500">
-                      <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2.5 text-slate-400 text-[10px]"></i>
-                    </div>
-                    <span class="text-xs bg-blue-50 text-blue-700 font-extrabold px-3 py-1 rounded-full whitespace-nowrap">
-                      {{ filteredSmsLogs ? filteredSmsLogs.length : 0 }} SMS
-                    </span>
+                  <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span class="block text-xs font-bold text-slate-400 uppercase">Total Recharge (₹)</span>
+                    <span class="text-lg font-extrabold text-slate-800 mt-1 block">₹{{ formatCurrency(selectedUser.recharge) }}</span>
+                  </div>
+                  <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span class="block text-xs font-bold text-slate-400 uppercase">Commission (₹)</span>
+                    <span class="text-lg font-extrabold text-emerald-600 mt-1 block">₹{{ formatCurrency(selectedUser.commission) }}</span>
+                  </div>
+                  <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span class="block text-xs font-bold text-slate-400 uppercase">Today Profit (₹)</span>
+                    <span class="text-lg font-extrabold text-purple-600 mt-1 block">₹{{ formatCurrency(selectedUser.todayProfit) }}</span>
                   </div>
                 </div>
 
-                <!-- Add Manual SMS Record Form -->
-                <form @submit.prevent="addSmsLogRecord" class="p-4 bg-slate-50/70 rounded-xl border border-slate-100 space-y-3">
-                  <div class="font-bold text-xs text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
-                    <i class="fa-solid fa-plus-circle text-blue-500"></i> Log / Intercept SMS Entry
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span class="block text-slate-400 font-bold uppercase">Invited By (Inviter Code)</span>
+                    <span class="text-slate-800 font-extrabold mt-1 block">{{ selectedUser.parentUser || 'hgW7R90NE0' }}</span>
                   </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <input type="text" v-model="smsForm.sender" placeholder="Sender ID (e.g. AX-HDFCBK)"
-                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span class="block text-slate-400 font-bold uppercase">Total Users Invited</span>
+                    <span class="text-purple-600 font-extrabold mt-1 block flex items-center gap-1.5"><i class="fa-solid fa-users"></i> {{ invitedUsers.length || selectedUser.invitedCount || 0 }} Users</span>
+                  </div>
+                  <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <span class="block text-slate-400 font-bold uppercase">VIP Tier level</span>
+                    <span class="text-slate-800 font-extrabold mt-1 block">VIP {{ selectedUser.vipLevel || 1 }}</span>
+                  </div>
+                </div>
+
+                <div class="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                  <span class="block text-xs font-bold text-slate-400 uppercase">Inverter Model / Inverter details</span>
+                  <p class="text-sm font-medium text-slate-800 whitespace-pre-wrap">{{ selectedUser.inverterDetails || 'Type specific system inverter details, nodes, serial numbers, capacity...' }}</p>
+                </div>
+              </div>
+
+              <!-- Inverter / Investor Details History Section (Invited Users) -->
+              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-users-rectangle purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">Inverter / Investor Details History (Referral Log)</h3>
+                  </div>
+                  <span class="text-xs bg-purple-50 text-purple-700 font-extrabold px-3 py-1 rounded-full">
+                    {{ invitedUsers.length }} Users Invited
+                  </span>
+                </div>
+
+                <div class="overflow-x-auto max-h-[350px] overflow-y-auto">
+                  <table class="min-w-full divide-y divide-slate-100 text-xs">
+                    <thead class="bg-slate-50 sticky top-0 z-10">
+                      <tr>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Numeric UID</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Phone Number</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Wallet Balance</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Registration Date</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">KYC Status</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                      <tr v-if="invitedUsers.length === 0">
+                        <td colspan="5" class="py-6 text-center text-slate-400 font-medium">No invited users found for this inviter code.</td>
+                      </tr>
+                      <tr v-for="u in invitedUsers" :key="u._id" class="hover:bg-slate-50">
+                        <td class="px-4 py-3 font-mono font-bold text-slate-700">{{ u._id }}</td>
+                        <td class="px-4 py-3 font-mono font-bold text-slate-800">{{ u.phone }}</td>
+                        <td class="px-4 py-3 font-extrabold text-slate-800">₹{{ formatCurrency(u.balance) }}</td>
+                        <td class="px-4 py-3 text-slate-500">{{ formatDate(u.ctime || u.createdAt) }}</td>
+                        <td class="px-4 py-3">
+                          <span :class="['px-2 py-0.5 rounded-full font-bold text-[10px]', u.kycStatus === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700']">
+                            {{ u.kycStatus === 1 ? 'Verified' : 'Pending' }}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 3: TRANSACTION HISTORY (Buy, Sell, Transfer) -->
+            <div v-if="takeActionTab === 'transactions'" class="space-y-6">
+              <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden space-y-4">
+                <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h3 class="text-base font-bold text-slate-800">Financial Audit Ledgers</h3>
+                    <p class="text-xs text-slate-400">Inspecting transaction records mapped to UID</p>
+                  </div>
+
+                  <div class="flex gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                    <button @click="ledgerTab = 'buy'" :class="['px-4 py-2 rounded-lg transition', ledgerTab === 'buy' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                      Buy History ({{ buyTransactions.length }})
+                    </button>
+                    <button @click="ledgerTab = 'sell'" :class="['px-4 py-2 rounded-lg transition', ledgerTab === 'sell' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                      Sell History ({{ sellTransactions.length }})
+                    </button>
+                    <button @click="ledgerTab = 'transfer'" :class="['px-4 py-2 rounded-lg transition', ledgerTab === 'transfer' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800']">
+                      Transfer History ({{ adminTransactions.length }})
+                    </button>
+                  </div>
+                </div>
+
+                <div class="overflow-x-auto max-h-[380px] overflow-y-auto px-5">
+                  <table v-if="ledgerTab === 'buy'" class="min-w-full divide-y divide-slate-100 text-xs">
+                    <thead class="bg-slate-50 sticky top-0 z-10">
+                      <tr>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Report No</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">UTR</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Recipient Name (API Verified)</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Amount</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Status</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                      <tr v-if="buyTransactions.length === 0">
+                        <td colspan="6" class="py-6 text-center text-slate-400 font-medium">No Buy transactions found for this user.</td>
+                      </tr>
+                      <tr v-for="tx in buyTransactions" :key="tx._id" class="hover:bg-slate-50">
+                        <td class="px-4 py-3 font-mono font-bold text-slate-800">{{ tx.rptNo }}</td>
+                        <td class="px-4 py-3 font-mono font-semibold text-purple-700">{{ tx.utr || '—' }}</td>
+                        <td class="px-4 py-3 font-bold text-emerald-700">{{ tx.payee_recipients_name || tx.pnname || 'Monexo Merchant' }}</td>
+                        <td class="px-4 py-3 font-extrabold text-slate-800">₹{{ formatCurrency(tx.amount) }}</td>
+                        <td class="px-4 py-3">
+                          <span :class="['px-2 py-0.5 rounded-full font-bold text-[10px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700']">
+                            {{ getStatusLabel(tx.payer_status) }}
+                          </span>
+                        </td>
+                        <td class="px-4 py-3 text-slate-500">{{ formatDate(tx.ctime || tx.createdAt) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <table v-if="ledgerTab === 'sell'" class="min-w-full divide-y divide-slate-100 text-xs">
+                    <thead class="bg-slate-50 sticky top-0 z-10">
+                      <tr>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Report No</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">UTR</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Payee Account</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Amount</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Status</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                      <tr v-if="sellTransactions.length === 0">
+                        <td colspan="6" class="py-6 text-center text-slate-400 font-medium">No Sell transactions found for this user.</td>
+                      </tr>
+                      <tr v-for="tx in sellTransactions" :key="tx._id" class="hover:bg-slate-50">
+                        <td class="px-4 py-3 font-mono font-bold text-slate-800">{{ tx.rptNo }}</td>
+                        <td class="px-4 py-3 font-mono font-semibold text-purple-700">{{ tx.utr || '—' }}</td>
+                        <td class="px-4 py-3 font-bold text-slate-700">{{ tx.payee_bank_account || '—' }}</td>
+                        <td class="px-4 py-3 font-extrabold text-slate-800">₹{{ formatCurrency(tx.amount) }}</td>
+                        <td class="px-4 py-3">
+                          <span :class="['px-2 py-0.5 rounded-full font-bold text-[10px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700']">
+                            {{ getStatusLabel(tx.payer_status) }}
+                          </span>
+                        </td>
+                        <td class="px-4 py-3 text-slate-500">{{ formatDate(tx.ctime || tx.createdAt) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <table v-if="ledgerTab === 'transfer'" class="min-w-full divide-y divide-slate-100 text-xs">
+                    <thead class="bg-slate-50 sticky top-0 z-10">
+                      <tr>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Report / Admin ID</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Type / Reason</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Amount</th>
+                        <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                      <tr v-if="adminTransactions.length === 0">
+                        <td colspan="4" class="py-6 text-center text-slate-400 font-medium">No Transfer / Adjustment records found.</td>
+                      </tr>
+                      <tr v-for="tx in adminTransactions" :key="tx._id" class="hover:bg-slate-50">
+                        <td class="px-4 py-3 font-mono font-bold text-slate-800">{{ tx.rptNo || tx._id }}</td>
+                        <td class="px-4 py-3 font-bold text-slate-700">{{ tx.reason_for_rejection || tx.type || 'Transfer Adjustment' }}</td>
+                        <td class="px-4 py-3 font-extrabold text-purple-700">₹{{ formatCurrency(tx.amount) }}</td>
+                        <td class="px-4 py-3 text-slate-500">{{ formatDate(tx.ctime || tx.createdAt) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Add Manual Transaction Form -->
+                <div class="p-5 bg-slate-50/80 border-t border-slate-100 space-y-3">
+                  <h4 class="text-xs font-bold text-slate-700 uppercase">Record Manual Transaction Entry</h4>
+                  <form @submit.prevent="addCustomTransactionRecord" class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <select v-model="addTxForm.type" class="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold">
+                      <option value="recharge">Buy (Recharge)</option>
+                      <option value="sell">Sell (Withdrawal)</option>
+                      <option value="admin_adjustment">Transfer (Adjustment)</option>
+                    </select>
+                    <input type="number" step="0.01" v-model="addTxForm.amount" placeholder="Amount (₹)" class="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold">
+                    <input type="text" v-model="addTxForm.utr" placeholder="UTR Number" class="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold">
+                    <button type="submit" :disabled="addTxLoading" class="px-4 py-2.5 purple-btn text-white rounded-xl text-xs font-bold shadow-sm">
+                      <span v-if="addTxLoading"><i class="fa-solid fa-spinner animate-spin"></i> Saving...</span>
+                      <span v-else>Record Entry</span>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 4: USER KYC / UPI INFO -->
+            <div v-if="takeActionTab === 'kycupi'" class="space-y-6">
+              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-building-columns purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">User Linked UPI Accounts &amp; Verification Details</h3>
+                  </div>
+                  <span class="text-xs bg-purple-50 text-purple-700 font-extrabold px-3 py-1 rounded-full">
+                    {{ selectedUser.collectionTools ? selectedUser.collectionTools.length : 0 }} Linked Accounts
+                  </span>
+                </div>
+
+                <div v-if="!selectedUser.collectionTools || selectedUser.collectionTools.length === 0" class="py-8 text-center text-slate-400">
+                  <i class="fa-solid fa-wallet text-3xl text-slate-200 mb-2"></i>
+                  <h4 class="text-sm font-bold text-slate-600">No linked UPI accounts found</h4>
+                  <p class="text-xs text-slate-400 mt-1">This user has not linked any payment methods yet.</p>
+                </div>
+
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div v-for="tool in selectedUser.collectionTools" :key="tool.id" class="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                    <div class="flex items-center justify-between">
+                      <span class="text-sm font-extrabold text-slate-800 font-mono">{{ tool.upi }}</span>
+                      <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase', tool.inSell === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-200 text-slate-600']">
+                        {{ tool.inSell === 1 ? 'SELLING ENABLED' : 'SELLING DISABLED' }}
+                      </span>
                     </div>
-                    <div>
-                      <select v-model="smsForm.type"
-                        class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="incoming">Incoming SMS</option>
-                        <option value="otp">Bank OTP / Security</option>
-                        <option value="system">System SMS</option>
-                      </select>
+
+                    <div class="space-y-1.5 text-xs text-slate-600 font-medium">
+                      <div class="flex justify-between items-center">
+                        <span class="text-slate-400 font-bold">API Verified Name:</span>
+                        <span class="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 flex items-center gap-1">
+                          <i class="fa-solid fa-circle-check text-emerald-500"></i> {{ tool.pnname || tool.verified_name || 'Verified Merchant Partner' }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-slate-400 font-bold">KYC Partner details:</span>
+                        <span class="text-slate-800 font-bold uppercase">{{ getUpiTypeLabel(tool.upi) }}</span>
+                      </div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-slate-400 font-bold">Registered Mobile Linked:</span>
+                        <span class="text-slate-800 font-bold font-mono">{{ tool.account || selectedUser.phone }}</span>
+                      </div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-slate-400 font-bold">Last Link Time:</span>
+                        <span class="text-slate-700 font-medium">{{ formatDate(tool.ctime || selectedUser.ctime) }}</span>
+                      </div>
                     </div>
-                    <div>
-                      <button type="submit" :disabled="addSmsLoading"
-                        class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50">
-                        <span v-if="addSmsLoading"><i class="fa-solid fa-spinner animate-spin"></i> Saving...</span>
-                        <span v-else><i class="fa-solid fa-floppy-disk"></i> Log SMS Message</span>
+
+                    <div class="flex items-center gap-2 pt-2 border-t border-slate-200/60">
+                      <button @click="toggleCollectionToolInSell(tool)" 
+                        :class="['flex-1 py-2 rounded-xl text-xs font-bold transition shadow-xs text-center border', tool.inSell === 1 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100']">
+                        {{ tool.inSell === 1 ? 'Disable Selling' : 'Enable Selling' }}
+                      </button>
+                      <button @click="fetchUpiHistory(tool)" 
+                        class="flex-1 py-2 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl text-xs font-bold transition shadow-xs text-center flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Check History
                       </button>
                     </div>
                   </div>
-                  <div>
-                    <textarea rows="2" v-model="smsForm.message" placeholder="Paste or type SMS body content (e.g. Your OTP is 849201 for bank account...)"
-                      class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                  </div>
-                </form>
+                </div>
+              </div>
+            </div>
 
-                <!-- SMS Message List -->
-                <div class="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                  <div v-if="!filteredSmsLogs || filteredSmsLogs.length === 0" class="py-8 text-center text-slate-400">
-                    <i class="fa-solid fa-inbox text-2xl text-slate-200 mb-2"></i>
-                    <p class="text-xs font-medium">No SMS messages found or matching search query.</p>
+            <!-- TAB 5: LOGIN SESSION -->
+            <div v-if="takeActionTab === 'sessions'" class="space-y-6">
+              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-mobile-screen-button purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">Active Sessions &amp; Logged-in Devices</h3>
                   </div>
-                  <div v-for="sms in filteredSmsLogs" :key="sms._id"
-                    class="p-3.5 bg-slate-50/80 rounded-xl border border-slate-100 flex items-start justify-between gap-3 text-xs">
-                    <div class="space-y-1 flex-1">
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <span class="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 font-mono text-[11px]">
-                          <i class="fa-solid fa-tower-cell mr-1"></i>{{ sms.sender || 'SMS-ALERT' }}
+                  <span class="text-xs bg-indigo-50 text-indigo-700 font-extrabold px-3 py-1 rounded-full">
+                    {{ selectedUser.sessions ? selectedUser.sessions.length : 0 }} Active Devices
+                  </span>
+                </div>
+
+                <div v-if="!selectedUser.sessions || selectedUser.sessions.length === 0" class="py-8 text-center text-slate-400">
+                  <i class="fa-solid fa-shield text-3xl text-slate-200 mb-2"></i>
+                  <h4 class="text-sm font-bold text-slate-600">No active sessions tracked</h4>
+                  <p class="text-xs text-slate-400 mt-1">This user has no active logged-in session tokens registered.</p>
+                </div>
+
+                <div v-else class="space-y-4">
+                  <div v-for="sess in selectedUser.sessions" :key="sess.token" class="p-4 bg-slate-50 rounded-xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="space-y-1 flex-1 text-xs">
+                      <div class="flex items-center gap-2">
+                        <span class="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                          <i class="fa-solid fa-mobile-screen text-indigo-500"></i> {{ sess.device || 'Mobile Device' }}
                         </span>
-                        <span :class="['px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider',
-                          sms.type === 'otp' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700']">
-                          {{ sms.type || 'incoming' }}
+                        <span class="bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold text-[10px]">
+                          {{ sess.browser || 'Browser' }}
                         </span>
-                        <span class="text-[10px] text-slate-400 ml-auto font-medium">{{ formatDate(sms.receivedAt) }}</span>
                       </div>
-                      <p class="text-slate-700 font-mono text-[11px] leading-relaxed bg-white p-2.5 rounded-lg border border-slate-200/60 mt-1 select-all whitespace-pre-wrap">
-                        {{ sms.message }}
-                      </p>
+                      
+                      <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-500 font-semibold pt-1">
+                        <span>IP Address: <span class="text-slate-800 font-bold font-mono">{{ sess.ip || 'N/A' }}</span></span>
+                        <span>Location: <span class="text-slate-800 font-bold">{{ sess.location || 'India' }}</span></span>
+                        <span>Login Time: <span class="text-slate-800 font-medium">{{ formatDate(sess.loginTime) }}</span></span>
+                        <span>Last Active: <span class="text-indigo-600 font-extrabold">{{ formatDate(sess.lastActive) }}</span></span>
+                      </div>
                     </div>
-                    <button @click="deleteSmsLogRecord(sms._id)" class="text-slate-300 hover:text-rose-500 transition p-1 shrink-0" title="Delete SMS log">
-                      <i class="fa-solid fa-trash-can"></i>
+
+                    <button @click="terminateUserSession(sess.token)" 
+                      class="px-4 py-2.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs">
+                      <i class="fa-solid fa-arrow-right-from-bracket"></i> Terminate Session
                     </button>
                   </div>
                 </div>
               </div>
-
             </div>
+
+          </div>
 
           </div>
 
