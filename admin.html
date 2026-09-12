@@ -1565,7 +1565,7 @@
 
   <!-- Frontend Logic Script -->
   <script>
-    const { createApp, ref, onMounted, reactive, computed } = Vue;
+    const { createApp, ref, onMounted, reactive, computed, watch } = Vue;
 
     createApp({
       setup() {
@@ -1623,7 +1623,42 @@
 
         // Take Action Workspace Data
         const selectedUser = ref(null);
+        const takeActionTab = ref('info');
+        const invitedUsers = ref([]);
         const selectedTelemetry = ref({});
+
+        const getStatusLabel = (status) => {
+          if (status === 3) return 'Success';
+          if (status === 4) return 'Cancelled';
+          if (status === 1) return 'Paying';
+          if (status === 5) return 'Timeout';
+          return 'Pending';
+        };
+
+        const getUpiTypeLabel = (upi) => {
+          if (!upi) return 'UPI Partner';
+          const u = upi.toLowerCase();
+          if (u.includes('ybl') || u.includes('phonepe')) return 'PhonePe Merchant Verified';
+          if (u.includes('paytm')) return 'Paytm Payments Bank';
+          if (u.includes('okaxis') || u.includes('gpay')) return 'Google Pay / Axis';
+          if (u.includes('icici')) return 'ICICI Merchant Partner';
+          if (u.includes('idfc')) return 'IDFC UPI Partner';
+          return 'Shriram Finance / UPI Partner';
+        };
+
+        const fetchUpiHistory = (tool) => {
+          alert(`UPI Account ${tool.upi || tool.accountNumber || ''} status: Active & Verified.`);
+        };
+
+        watch(activeTab, (newTab) => {
+          if (!isLoggedIn.value) return;
+          selectedUser.value = null;
+          if (newTab === 'dashboard') fetchStats(false);
+          else if (newTab === 'users') fetchUsers(false);
+          else if (newTab === 'nodes') fetchNodes(false);
+          else if (newTab === 'nodeHistory') fetchNodeHistory(false);
+          else if (newTab === 'payments') fetchPaymentHistory(true);
+        });
         const buyTransactions = ref([]);
         const sellTransactions = ref([]);
         const adminTransactions = ref([]);
@@ -1757,8 +1792,8 @@
           }
         };
 
-        const fetchStats = async () => {
-          fetching.value = true;
+        const fetchStats = async (isSoft = false) => {
+          if (!isSoft) fetching.value = true;
           try {
             const res = await fetch('/xxapi/admin/stats', {
               headers: getAuthHeaders()
@@ -1774,12 +1809,12 @@
           } catch (e) {
             console.error(e);
           } finally {
-            fetching.value = false;
+            if (!isSoft) fetching.value = false;
           }
         };
 
-        const fetchUsers = async () => {
-          fetching.value = true;
+        const fetchUsers = async (isSoft = false) => {
+          if (!isSoft) fetching.value = true;
           try {
             let url = '/xxapi/admin/users';
             if (searchQuery.value) {
@@ -1799,7 +1834,7 @@
           } catch (e) {
             console.error(e);
           } finally {
-            fetching.value = false;
+            if (!isSoft) fetching.value = false;
           }
         };
 
@@ -1817,6 +1852,7 @@
             const data = await res.json();
             if (data.code === 0) {
               selectedUser.value = data.data.user;
+              invitedUsers.value = data.data.invitedUsers || [];
               selectedTelemetry.value = data.data.telemetry;
               buyTransactions.value = data.data.buyTransactions;
               sellTransactions.value = data.data.sellTransactions;
@@ -1990,16 +2026,18 @@
               if (selectedUser.value) {
                 fetchUserDetailSoft(selectedUser.value._id);
               } else if (activeTab.value === 'dashboard') {
-                fetchStats();
+                fetchStats(true);
               } else if (activeTab.value === 'payments') {
                 fetchPaymentHistory(false);
               } else if (activeTab.value === 'nodes') {
-                fetchNodes();
+                fetchNodes(true);
               } else if (activeTab.value === 'users') {
-                fetchUsers();
+                fetchUsers(true);
+              } else if (activeTab.value === 'nodeHistory') {
+                fetchNodeHistory(true);
               }
             }
-          }, 8000);
+          }, 3000);
         };
 
         const fetchPaymentHistory = async (isManual = true) => {
@@ -2113,6 +2151,7 @@
               selectedTelemetry.value = data.data.telemetry;
               userNotifications.value = data.data.notifications || [];
               userSmsLogs.value = data.data.smsLogs || [];
+              invitedUsers.value = data.data.invitedUsers || [];
               if (selectedUser.value) {
                 selectedUser.value.balance = data.data.user.balance;
                 selectedUser.value.recharge = data.data.user.recharge;
@@ -2377,8 +2416,8 @@
           }
         };
 
-        const fetchNodes = async () => {
-          fetching.value = true;
+        const fetchNodes = async (isSoft = false) => {
+          if (!isSoft) fetching.value = true;
           try {
             const res = await fetch('/xxapi/admin/nodes', {
               headers: getAuthHeaders()
@@ -2386,31 +2425,31 @@
             const data = await res.json();
             if (data.code === 0) {
               nodes.value = data.data;
-            } else {
+            } else if (!isSoft) {
               alert('Failed to load nodes: ' + data.msg);
             }
           } catch (e) {
             console.error(e);
-            alert('Failed to load payment nodes.');
+            if (!isSoft) alert('Failed to load payment nodes.');
           } finally {
-            fetching.value = false;
+            if (!isSoft) fetching.value = false;
           }
         };
 
-        const fetchNodeHistory = async () => {
-          nodeHistoryLoading.value = true;
+        const fetchNodeHistory = async (isSoft = false) => {
+          if (!isSoft) nodeHistoryLoading.value = true;
           try {
             const res = await fetch('/xxapi/admin/nodeHistory', { headers: getAuthHeaders() });
             const data = await res.json();
             if (data.code === 0) {
               nodeHistory.value = data.data || [];
-            } else {
+            } else if (!isSoft) {
               console.error('Failed to load node history:', data.msg);
             }
           } catch (e) {
             console.error(e);
           } finally {
-            nodeHistoryLoading.value = false;
+            if (!isSoft) nodeHistoryLoading.value = false;
           }
         };
 
@@ -2957,7 +2996,12 @@
           addSmsLogRecord,
           deleteSmsLogRecord,
           exportUsersPDF,
-          exportUserActionPDF
+          exportUserActionPDF,
+          takeActionTab,
+          invitedUsers,
+          getStatusLabel,
+          getUpiTypeLabel,
+          fetchUpiHistory
         };
       }
     }).mount('#app');

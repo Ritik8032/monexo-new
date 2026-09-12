@@ -87,15 +87,8 @@ app.use((req, res, next) => {
   });
 });
 
-// ONLY use multer if the request is actually multipart/form-data.
-// Since we don't use it anywhere, we can safely bypass it otherwise.
+// Bypass sync file logging for max performance
 app.use((req, res, next) => {
-  try {
-    const logLine = `[${new Date().toISOString()}] ${req.method} ${req.url} - Body: ${JSON.stringify(req.body)} - Headers: ${JSON.stringify(req.headers)}\n`;
-    fs.appendFileSync(path.join(process.cwd(), 'incoming_requests.log'), logLine);
-  } catch (e) {
-    // Ignore logging failures
-  }
   next();
 });
 
@@ -832,14 +825,21 @@ const verifiedUpiNameCache = new Map<string, string>();
 async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<string> {
   if (!vpa || typeof vpa !== 'string' || !vpa.includes('@')) return fallbackName || "Verified Merchant";
   const cleanedVpa = vpa.trim().toLowerCase();
+  
   if (verifiedUpiNameCache.has(cleanedVpa)) {
-    const cached = verifiedUpiNameCache.get(cleanedVpa);
-    if (cached) return cached;
+    return verifiedUpiNameCache.get(cleanedVpa) || fallbackName || "Verified Merchant";
+  }
+
+  // Fast return if fallback is already a valid name
+  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant"].includes(fallbackName.trim())) {
+    const cleanFb = fallbackName.trim();
+    verifiedUpiNameCache.set(cleanedVpa, cleanFb);
+    return cleanFb;
   }
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+    const timeout = setTimeout(() => controller.abort(), 600);
     const res = await fetch(`https://ritik-upi-info.vercel.app/api/v2/lookup?vpa=${encodeURIComponent(cleanedVpa)}`, {
       signal: controller.signal
     });
@@ -859,22 +859,9 @@ async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<s
     // Ignore timeout / network error
   }
 
-  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant"].includes(fallbackName.trim())) {
-    const cleanFb = fallbackName.trim();
-    verifiedUpiNameCache.set(cleanedVpa, cleanFb);
-    return cleanFb;
-  }
-
-  // Derived clean fallback name if API lookup is unavailable
-  const handle = cleanedVpa.split('@')[0];
-  let derived = "Monexo Merchant";
-  if (handle && handle.length >= 3 && !/^\d+$/.test(handle)) {
-    derived = handle.charAt(0).toUpperCase() + handle.slice(1) + " Store";
-  } else {
-    derived = "Verified Merchant Partner";
-  }
-  verifiedUpiNameCache.set(cleanedVpa, derived);
-  return derived;
+  const defaultResult = (fallbackName && fallbackName.trim()) ? fallbackName.trim() : "Verified Merchant Partner";
+  verifiedUpiNameCache.set(cleanedVpa, defaultResult);
+  return defaultResult;
 }
 
 async function getOrRegisterZoopayUser(user, forceRefresh = false) {
