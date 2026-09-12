@@ -1303,27 +1303,37 @@ function buildPhoneQuery(inputPhone: string) {
   return { $or: conditions };
 }
 
+const phoneDeviceIds: Record<string, string> = {};
+
 async function callExternalGetOtp(phone: string) {
   try {
-    const { cleanPhone, formattedPhone } = getCleanPhone(phone);
+    const { cleanPhone } = getCleanPhone(phone);
     if (!cleanPhone) return null;
 
     const now = Date.now();
-    // 30 seconds cooldown per phone number to prevent duplicate OTP requests
-    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 30000) {
-      console.log(`[callExternalGetOtp] Suppressed duplicate OTP request for phone: ${cleanPhone} (${now - lastOtpSentTimes[cleanPhone]}ms since last request)`);
-      return { code: 200, msg: 'OTP already requested recently' };
+    // 5 seconds cooldown per phone number to prevent duplicate OTP requests
+    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 5000) {
+      console.log(`[callExternalGetOtp] Suppressed duplicate OTP request for phone: ${cleanPhone}`);
+      return { code: 200, msg: 'OTP already requested recently', deviceId: phoneDeviceIds[cleanPhone] };
     }
 
     lastOtpSentTimes[cleanPhone] = now;
-    console.log(`[callExternalGetOtp] Requesting OTP from monexo worker for phone: ${cleanPhone}`);
-    const response = await fetch('https://monexo.guruarning.workers.dev/get-otp', {
+    console.log(`[callExternalGetOtp] Requesting OTP from new worker for phone: ${cleanPhone}`);
+    
+    const response = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: cleanPhone })
     });
     const resData = await response.json().catch(() => null);
-    console.log('[callExternalGetOtp] Response:', resData);
+    console.log('[callExternalGetOtp] New Worker Response:', resData);
+
+    const deviceId = resData?.deviceId || resData?.data?.deviceId || resData?.data?.data?.deviceId || resData?.meta?.deviceId;
+    if (deviceId) {
+      phoneDeviceIds[cleanPhone] = deviceId;
+      console.log(`[callExternalGetOtp] Saved deviceId for ${cleanPhone}: ${deviceId}`);
+    }
+
     return resData;
   } catch (err) {
     console.error('[callExternalGetOtp] Failed:', err);
@@ -1331,17 +1341,36 @@ async function callExternalGetOtp(phone: string) {
   }
 }
 
-async function callExternalVerifyOtp(phone: string, otp: string) {
+async function callExternalVerifyOtp(phone: string, otp: string, deviceIdParam?: string) {
   try {
     const { cleanPhone } = getCleanPhone(phone);
-    console.log(`[callExternalVerifyOtp] Verifying OTP with monexo worker for phone: ${cleanPhone}, otp: ${otp}`);
-    const response = await fetch('https://monexo.guruarning.workers.dev/verify-reset', {
+    const cleanOtp = String(otp).trim();
+    const deviceId = deviceIdParam || phoneDeviceIds[cleanPhone] || '';
+
+    console.log(`[callExternalVerifyOtp] Verifying OTP with worker for phone: ${cleanPhone}, otp: ${cleanOtp}, deviceId: ${deviceId}`);
+    
+    const response = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/verify-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: cleanPhone, otp: String(otp).trim() })
+      body: JSON.stringify({
+        phone: cleanPhone,
+        otp: cleanOtp,
+        deviceId: deviceId
+      })
     });
     const resData = await response.json().catch(() => null);
-    console.log('[callExternalVerifyOtp] Response:', resData);
+    console.log('[callExternalVerifyOtp] New Worker Response:', resData);
+
+    if (!resData) {
+      console.log('[callExternalVerifyOtp] Primary worker returned null, trying fallback endpoint...');
+      const fallbackResp = await fetch('https://monexo.guruarning.workers.dev/verify-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone, otp: cleanOtp })
+      });
+      return await fallbackResp.json().catch(() => null);
+    }
+
     return resData;
   } catch (err) {
     console.error('[callExternalVerifyOtp] Failed:', err);
@@ -1358,17 +1387,40 @@ function checkWorkerOtpResult(verifyRes: any, cleanDigits: string, sessionPendin
     return false;
   }
 
-  const resetRes = verifyRes.resetResponse || verifyRes.data || verifyRes;
-  const msg = String(resetRes.msg || resetRes.message || verifyRes.msg || verifyRes.message || '').toLowerCase();
-  const code = resetRes.code !== undefined ? resetRes.code : verifyRes.code;
+  // 1. Check nested data structure returned by new worker
+  const innerData = verifyRes.data;
+  if (innerData) {
+    if (innerData.success === true) {
+      const subData = innerData.data;
+      if (subData) {
+        if (subData.verified === true || subData.accessToken || subData.isNewUser !== undefined || subData.message?.toLowerCase().includes('success')) {
+          return true;
+        }
+      }
+      if (innerData.verified === true || !innerData.error) {
+        return true;
+      }
+    }
+    if (innerData.success === false || innerData.error) {
+      console.log(`[checkWorkerOtpResult] Verification rejected by worker inner data:`, innerData.error || innerData);
+      return false;
+    }
+  }
 
-  // 1. Success code 200 or status success
-  if (code === 200 || code === '200' || verifyRes.status === 'success' || resetRes.status === 'success') {
+  // 2. Direct top-level checks
+  if (verifyRes.success === true && (verifyRes.verified === true || verifyRes.data?.verified === true)) {
     return true;
   }
 
-  // 2. Exception: If message indicates old password cannot be same as new password,
-  // worker successfully verified the OTP!
+  // 3. Status and code checks for legacy or alternative formats
+  const code = verifyRes.code !== undefined ? verifyRes.code : (innerData?.code);
+  const status = verifyRes.status || innerData?.status;
+  const msg = String(verifyRes.msg || verifyRes.message || innerData?.msg || innerData?.message || '').toLowerCase();
+
+  if (code === 0 || code === 200 || code === '200' || status === 'success' || status === true) {
+    return true;
+  }
+
   const isSamePasswordError = msg.includes('old password') ||
                               msg.includes('same as') ||
                               msg.includes('same password') ||
@@ -1381,8 +1433,7 @@ function checkWorkerOtpResult(verifyRes: any, cleanDigits: string, sessionPendin
     return true;
   }
 
-  // 3. Invalid / incorrect / expired OTP
-  console.log(`[checkWorkerOtpResult] OTP verification failed: msg="${msg}", code=${code}`);
+  console.log(`[checkWorkerOtpResult] OTP verification failed for digits="${cleanDigits}". Response:`, JSON.stringify(verifyRes));
   return false;
 }
 
@@ -1591,7 +1642,7 @@ app.post('/xxapi/register', async (req, res) => {
     }
     const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
     if (!isOtpValid) {
-      return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 6-digit OTP.' });
+      return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP.' });
     }
 
     const uniqueToken = `token-${cleanPhone}-${crypto.randomBytes(8).toString('hex')}`;
@@ -1692,7 +1743,7 @@ app.post('/xxapi/resetpassword', async (req, res) => {
     const isOtpValid = await verifyOtpCode(phone, smscode);
 
     if (!isOtpValid) {
-      return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 6-digit OTP code.' });
+      return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP code.' });
     }
 
     // Check if old password and new password are the same
@@ -1799,7 +1850,7 @@ app.post('/xxapi/login', async (req, res) => {
     if (smscode) {
       const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
       if (!isOtpValid) {
-        return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 6-digit OTP.' });
+        return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP.' });
       }
     }
 
@@ -2236,12 +2287,13 @@ app.get('/xxapi/config', async (req, res) => {
         usdt_buy_dividend: { name: "usdt_buy_dividend", fixed: 0, ratio: 0, minCondi: 100, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.001, \"3\": 0.0}" }
       },
       bannerSrcs: [
-        "tokenbg.jpg",
-        "Login_Logo.png",
-        "logo.png"
+        "https://ik.imagekit.io/Monexo/IMG_20260912_101706_979.jpg",
+        "https://ik.imagekit.io/Monexo/IMG_20260912_101703_329.jpg",
+        "https://ik.imagekit.io/Monexo/IMG_20260912_101705_433.jpg",
+        "https://ik.imagekit.io/Monexo/IMG_20260912_101701_804.jpg"
       ],
       newsList: [
-        { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="/static/images/5172295577775.png" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
+        { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="https://ik.imagekit.io/Monexo/5172295577775.png?updatedAt=1786268547822" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
       ],
       pinFlag: false,
       ctTypes: [1, 2, 3, 9, 13, 14, 16, 17, 18, 33],
@@ -8054,9 +8106,9 @@ async function handleTgMessage(msg: any) {
 
       const resendMsg = `🔄 <b>Real OTP Resent Successfully!</b>
 
-Aapke mobile number <code>${session.phone || 'registered phone'}</code> par naya 6-digit Verification OTP bhej diya gaya hai.
+Aapke mobile number <code>${session.phone || 'registered phone'}</code> par naya 4-digit Verification OTP bhej diya gaya hai.
 
-Order ID: <code>${pendingId}</code> cancel karne ke liye kripya SMS se aaya naya <b>6-digit OTP code</b> enter karein:`;
+Order ID: <code>${pendingId}</code> cancel karne ke liye kripya SMS se aaya naya <b>4-digit OTP code</b> enter karein:`;
 
       const keyboard = {
         inline_keyboard: [
@@ -8088,8 +8140,8 @@ Order ID: <code>${pendingId}</code> cancel karne ke liye kripya SMS se aaya naya
         return;
       }
 
-      if (cleanDigits && cleanDigits.length === 6) {
-        // Try verifying with external monexo worker endpoint verify-reset
+      if (cleanDigits && cleanDigits.length >= 4) {
+        // Try verifying with external worker endpoint verify-otp
         const verifyRes = session.phone ? await callExternalVerifyOtp(session.phone, cleanDigits) : null;
         console.log('[Tg Bot Worker Verify Response]', verifyRes);
 
@@ -8124,7 +8176,7 @@ Kripya confirm karne ke liye <b>YES</b> ya <b>NO</b> reply karein ya neeche butt
       } else {
         const wrongOtpMsg = `❌ <b>Incorrect / Wrong Verification OTP!</b>
 
-Aapka enter kiya gaya OTP code galat hai. Order ID: <code>${pendingId}</code> cancel karne ke liye kripya aapke mobile number <code>${session.phone || ''}</code> par aaya sahi 6-digit OTP code enter karein.
+Aapka enter kiya gaya OTP code galat hai. Order ID: <code>${pendingId}</code> cancel karne ke liye kripya aapke mobile number <code>${session.phone || ''}</code> par aaya sahi 4-digit OTP code enter karein.
 
 <i>Naya OTP paane ke liye <b>Resend OTP</b> button dabaayein.</i>`;
 
@@ -8365,9 +8417,9 @@ Kripya confirm karne ke liye <b>YES</b> ya <b>NO</b> reply karein:`;
 
       const otpMsg = `🔑 <b>Monexo Real Security Verification OTP</b>
 
-Aapke mobile number <code>${session.phone || 'registered number'}</code> par real SMS 6-digit Verification OTP code bhej diya gaya hai.
+Aapke mobile number <code>${session.phone || 'registered number'}</code> par real SMS 4-digit Verification OTP code bhej diya gaya hai.
 
-Order ID: <code>${targetOrder.orderId}</code> (Amount: ₹${targetOrder.amount}, Type: ${targetOrder.type}) ko cancel karne ke liye pehle SMS se aaya <b>6-digit OTP code</b> enter karein:`;
+Order ID: <code>${targetOrder.orderId}</code> (Amount: ₹${targetOrder.amount}, Type: ${targetOrder.type}) ko cancel karne ke liye pehle SMS se aaya <b>4-digit OTP code</b> enter karein:`;
 
       const keyboard = {
         inline_keyboard: [
