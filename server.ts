@@ -833,16 +833,9 @@ async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<s
     if (cached) return cached;
   }
 
-  // Fast return if fallbackName is already a valid human name (not placeholder)
-  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant", "Verified Merchant Partner"].includes(fallbackName.trim())) {
-    const cleanFb = fallbackName.trim();
-    verifiedUpiNameCache.set(cleanedVpa, cleanFb);
-    return cleanFb;
-  }
-
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 300); // Super fast 300ms timeout to avoid API thread blocking
+    const timeout = setTimeout(() => controller.abort(), 4000); // 4 seconds timeout for Vercel lookup API
     const res = await fetch(`https://ritik-upi-info.vercel.app/api/v2/lookup?vpa=${encodeURIComponent(cleanedVpa)}`, {
       signal: controller.signal
     });
@@ -850,19 +843,22 @@ async function getVerifiedUpiName(vpa: string, fallbackName?: string): Promise<s
 
     if (res.ok) {
       const json: any = await res.json();
-      const verifiedName = json?.data?.name || json?.data?.accountHolderName || json?.data?.payeeName || json?.data?.beneficiaryName || json?.name || (typeof json?.data === 'string' && json?.data ? json.data : null);
-      if (verifiedName && typeof verifiedName === 'string' && verifiedName.trim()) {
+      // Extract name strictly from json.data.name based on response format: {"status":true,"data":{"name":"Ritik Raushan Kumar"...}}
+      const verifiedName = json?.data?.name || (typeof json?.data === 'string' && json?.data ? json.data : null) || json?.name || json?.data?.accountHolderName || json?.data?.payeeName || json?.data?.beneficiaryName;
+      
+      if (verifiedName && typeof verifiedName === 'string' && verifiedName.trim() && verifiedName.trim().toLowerCase() !== 'unknown') {
         const cleanName = verifiedName.trim();
         verifiedUpiNameCache.set(cleanedVpa, cleanName);
+        console.log(`[UPI Lookup Verified Success] ${cleanedVpa} => ${cleanName}`);
         return cleanName;
       }
     }
   } catch (err: any) {
-    // Timeout or network error
+    console.error(`[UPI Lookup API Error for ${cleanedVpa}]:`, err?.message);
   }
 
-  // Fallback if API lookup is unavailable or returned no data
-  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant"].includes(fallbackName.trim())) {
+  // Fallback if API lookup fails or returned no name
+  if (fallbackName && fallbackName.trim() && !["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "Merchant Partner", "Monexo Merchant", "Verified Merchant Partner"].includes(fallbackName.trim())) {
     const cleanFb = fallbackName.trim();
     verifiedUpiNameCache.set(cleanedVpa, cleanFb);
     return cleanFb;
@@ -2216,7 +2212,43 @@ app.post('/xxapi/authupi', async (req, res) => {
 });
 
 app.get('/xxapi/upidetail/:id', async (req, res) => {
-  return res.json({ code: 0, msg: 'success', data: {} });
+  const upi = String(req.params.id || req.query.vpa || req.query.upi || '').trim();
+  if (upi && upi.includes('@')) {
+    const name = await getVerifiedUpiName(upi);
+    return res.json({
+      code: 0,
+      msg: "success",
+      data: {
+        upi,
+        pnname: name,
+        verified_name: name,
+        name: name
+      }
+    });
+  }
+  return res.json({ code: 0, msg: "success", data: {} });
+});
+
+// Real-time API VPA lookup endpoint
+app.get('/xxapi/lookup-upi', async (req, res) => {
+  const vpa = String(req.query.vpa || req.query.upi || '').trim();
+  if (!vpa || !vpa.includes('@')) {
+    return res.json({ code: 400, status: false, msg: 'Valid VPA required (e.g. 9060873927@upi)' });
+  }
+  try {
+    const verifiedName = await getVerifiedUpiName(vpa);
+    return res.json({
+      code: 0,
+      status: true,
+      data: {
+        name: verifiedName,
+        vpa: vpa,
+        bank: 'UPI Partner'
+      }
+    });
+  } catch (e: any) {
+    return res.json({ code: 500, status: false, msg: e.message });
+  }
 });
 
 // 6. SAFETY CODE ENDPOINT
@@ -2754,6 +2786,20 @@ app.get('/xxapi/tgbotbindtoken', async (req, res) => {
 });
 
 app.get('/xxapi/upidetail/:upi', async (req, res) => {
+  const upi = String(req.params.upi || req.query.vpa || req.query.upi || '').trim();
+  if (upi && upi.includes('@')) {
+    const name = await getVerifiedUpiName(upi);
+    return res.json({
+      code: 0,
+      msg: "success",
+      data: {
+        upi,
+        pnname: name,
+        verified_name: name,
+        name: name
+      }
+    });
+  }
   return res.json({ code: 0, msg: "success", data: {} });
 });
 
@@ -7100,8 +7146,8 @@ app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
       await tx.save();
 
       // AUTO SYNC BALANCES FOR BUYER & SELLER IN DB
-      // 1. Buyer Balance Credit & Recharge sync
       if (previousStatus !== 3) {
+        // 1. Buyer Balance Credit & Recharge sync
         const buyer = await User.findOne({
           $or: [
             { _id: tx.userId },
@@ -7118,7 +7164,18 @@ app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
           console.log(`[Admin Manual Approval] Credited Buyer ${buyer.phone} +₹${tx.amount}. New Balance: ₹${buyer.balance}`);
         }
 
-        // 2. Seller Balance Debit & Sell Transaction record if P2P
+        // 2. Sync linked transaction (if this is buy, sync sell; if this is sell, sync buy)
+        const isSellTx = tx.type === 'sell' || String(tx.rptNo).startsWith('SELL_');
+        const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, '') : `SELL_${tx.rptNo}`;
+        let counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
+        if (counterpartTx) {
+          counterpartTx.payer_status = 3;
+          if (utr) counterpartTx.utr = String(utr).trim();
+          counterpartTx.adminReason = adminReason || 'Synced with order approval';
+          await counterpartTx.save();
+        }
+
+        // Also update seller balance if P2P
         if (tx.sellerId || tx.sellerPhone) {
           const seller = await User.findOne({
             $or: [
@@ -7131,34 +7188,24 @@ app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
           if (seller) {
             seller.balance = Math.max(0, (seller.balance || 0) - (tx.amount || 0));
             await seller.save();
-
-            const sellRptNo = `SELL_${tx.rptNo}`;
-            let sellTx = await Transaction.findOne({ rptNo: sellRptNo });
-            if (!sellTx) {
-              sellTx = new Transaction({
-                userId: seller._id,
-                phone: seller.phone,
-                rptNo: sellRptNo,
-                amount: tx.amount,
-                payer_status: 3,
-                type: 'sell',
-                payee_bank_account: tx.payee_bank_account,
-                payee_recipients_name: tx.payee_recipients_name,
-                adminReason: 'Synced with buyer order approval',
-                ctime: Math.floor(Date.now() / 1000)
-              });
-            } else {
-              sellTx.payer_status = 3;
-            }
-            await sellTx.save();
           }
         }
       }
     } else if (action === 'reject' || action === 'failed' || action === 'cancel') {
-      tx.payer_status = 4; // Rejected
+      tx.payer_status = 4; // Rejected / Failed
       tx.adminReason = adminReason || 'Order rejected by admin';
       tx.adminActionAt = new Date();
       await tx.save();
+
+      // Sync counterpart transaction (buy/sell pair)
+      const isSellTx = tx.type === 'sell' || String(tx.rptNo).startsWith('SELL_');
+      const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, '') : `SELL_${tx.rptNo}`;
+      let counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
+      if (counterpartTx) {
+        counterpartTx.payer_status = 4;
+        counterpartTx.adminReason = adminReason || 'Order rejected by admin';
+        await counterpartTx.save();
+      }
 
       // AUTO SYNC BALANCES IF WAS PREVIOUSLY APPROVED
       if (previousStatus === 3) {

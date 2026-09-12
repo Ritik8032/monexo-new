@@ -1335,11 +1335,12 @@
                         <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Amount</th>
                         <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Status</th>
                         <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Date</th>
+                        <th class="px-4 py-3 text-right font-bold text-slate-400 uppercase">Update Status</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 bg-white">
                       <tr v-if="buyTransactions.length === 0">
-                        <td colspan="6" class="py-6 text-center text-slate-400 font-medium">No Buy transactions found for this user.</td>
+                        <td colspan="7" class="py-6 text-center text-slate-400 font-medium">No Buy transactions found for this user.</td>
                       </tr>
                       <tr v-for="tx in buyTransactions" :key="tx._id" class="hover:bg-slate-50">
                         <td class="px-4 py-3 font-mono font-bold text-slate-800">{{ tx.rptNo }}</td>
@@ -1347,11 +1348,21 @@
                         <td class="px-4 py-3 font-bold text-emerald-700">{{ tx.payee_recipients_name || tx.pnname || 'Monexo Merchant' }}</td>
                         <td class="px-4 py-3 font-extrabold text-slate-800">₹{{ formatCurrency(tx.amount) }}</td>
                         <td class="px-4 py-3">
-                          <span :class="['px-2 py-0.5 rounded-full font-bold text-[10px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700']">
+                          <span :class="['px-2 py-0.5 rounded-full font-bold text-[10px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700')]">
                             {{ getStatusLabel(tx.payer_status) }}
                           </span>
                         </td>
                         <td class="px-4 py-3 text-slate-500">{{ formatDate(tx.ctime || tx.createdAt) }}</td>
+                        <td class="px-4 py-3 text-right whitespace-nowrap">
+                          <div class="flex items-center justify-end gap-1.5">
+                            <button @click="openApproveModal(tx)" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] shadow-2xs flex items-center gap-1 active:scale-95 transition" title="Mark order as Success / Completed">
+                              <i class="fa-solid fa-check"></i> Success
+                            </button>
+                            <button @click="openRejectModal(tx)" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[10px] shadow-2xs flex items-center gap-1 active:scale-95 transition" title="Reject / Mark Failed">
+                              <i class="fa-solid fa-xmark"></i> Reject
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -1365,11 +1376,12 @@
                         <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Amount</th>
                         <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Status</th>
                         <th class="px-4 py-3 text-left font-bold text-slate-400 uppercase">Date</th>
+                        <th class="px-4 py-3 text-right font-bold text-slate-400 uppercase">Update Status</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 bg-white">
                       <tr v-if="sellTransactions.length === 0">
-                        <td colspan="6" class="py-6 text-center text-slate-400 font-medium">No Sell transactions found for this user.</td>
+                        <td colspan="7" class="py-6 text-center text-slate-400 font-medium">No Sell transactions found for this user.</td>
                       </tr>
                       <tr v-for="tx in sellTransactions" :key="tx._id" class="hover:bg-slate-50">
                         <td class="px-4 py-3 font-mono font-bold text-slate-800">{{ tx.rptNo }}</td>
@@ -1377,11 +1389,21 @@
                         <td class="px-4 py-3 font-bold text-slate-700">{{ tx.payee_bank_account || '—' }}</td>
                         <td class="px-4 py-3 font-extrabold text-slate-800">₹{{ formatCurrency(tx.amount) }}</td>
                         <td class="px-4 py-3">
-                          <span :class="['px-2 py-0.5 rounded-full font-bold text-[10px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700']">
+                          <span :class="['px-2 py-0.5 rounded-full font-bold text-[10px]', tx.payer_status === 3 ? 'bg-emerald-50 text-emerald-700' : (tx.payer_status === 4 ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700')]">
                             {{ getStatusLabel(tx.payer_status) }}
                           </span>
                         </td>
                         <td class="px-4 py-3 text-slate-500">{{ formatDate(tx.ctime || tx.createdAt) }}</td>
+                        <td class="px-4 py-3 text-right whitespace-nowrap">
+                          <div class="flex items-center justify-end gap-1.5">
+                            <button @click="openApproveModal(tx)" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] shadow-2xs flex items-center gap-1 active:scale-95 transition" title="Mark order as Success / Completed">
+                              <i class="fa-solid fa-check"></i> Success
+                            </button>
+                            <button @click="openRejectModal(tx)" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[10px] shadow-2xs flex items-center gap-1 active:scale-95 transition" title="Reject / Mark Failed">
+                              <i class="fa-solid fa-xmark"></i> Reject
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -2105,25 +2127,30 @@
         const openApproveModal = (order) => {
           selectedOrderForAction.value = order;
           actionUtrInput.value = order.utr || '';
-          actionReasonInput.value = '';
+          actionReasonInput.value = order.adminReason || '';
           approveModalOpen.value = true;
         };
 
         const openRejectModal = (order) => {
           selectedOrderForAction.value = order;
-          actionReasonInput.value = '';
+          actionReasonInput.value = order.adminReason || '';
           rejectModalOpen.value = true;
         };
 
         const submitApproveOrder = async () => {
           if (!selectedOrderForAction.value) return;
+          const targetId = selectedOrderForAction.value.orderId || selectedOrderForAction.value.rptNo || selectedOrderForAction.value._id;
+          if (!targetId) {
+            alert('Invalid Order ID');
+            return;
+          }
           actionSubmitting.value = true;
           try {
             const res = await fetch('/xxapi/admin/updateOrderStatus', {
               method: 'POST',
               headers: getAuthHeaders(),
               body: JSON.stringify({
-                orderId: selectedOrderForAction.value.orderId,
+                orderId: targetId,
                 action: 'success',
                 utr: actionUtrInput.value,
                 adminReason: actionReasonInput.value
@@ -2133,7 +2160,12 @@
             if (data.code === 0) {
               alert('Order successfully marked as COMPLETED / SUCCESS!');
               approveModalOpen.value = false;
-              fetchPaymentHistory();
+              if (selectedUser.value && selectedUser.value._id) {
+                fetchUserDetail(selectedUser.value._id, true);
+              }
+              if (activeTab.value === 'payments') {
+                fetchPaymentHistory();
+              }
             } else {
               alert('Error updating order: ' + data.msg);
             }
@@ -2150,13 +2182,18 @@
             alert('Please enter a rejection reason.');
             return;
           }
+          const targetId = selectedOrderForAction.value.orderId || selectedOrderForAction.value.rptNo || selectedOrderForAction.value._id;
+          if (!targetId) {
+            alert('Invalid Order ID');
+            return;
+          }
           actionSubmitting.value = true;
           try {
             const res = await fetch('/xxapi/admin/updateOrderStatus', {
               method: 'POST',
               headers: getAuthHeaders(),
               body: JSON.stringify({
-                orderId: selectedOrderForAction.value.orderId,
+                orderId: targetId,
                 action: 'reject',
                 adminReason: actionReasonInput.value
               })
@@ -2165,7 +2202,12 @@
             if (data.code === 0) {
               alert('Order successfully REJECTED.');
               rejectModalOpen.value = false;
-              fetchPaymentHistory();
+              if (selectedUser.value && selectedUser.value._id) {
+                fetchUserDetail(selectedUser.value._id, true);
+              }
+              if (activeTab.value === 'payments') {
+                fetchPaymentHistory();
+              }
             } else {
               alert('Error rejecting order: ' + data.msg);
             }
