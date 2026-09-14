@@ -2405,8 +2405,8 @@ const buildNewbieRules = (params: any, totalBought: number = 0) => [
   { id: 1, name: 'Subscribe to Official Channel', activityCode: 'newbie_tg_channel', title: 'Subscribe to Official Channel', reward: 40, status: params.newbie_tg_channel ? 'done' : 'undone', frontd_url: 'https://t.me/monexoofficial', frontUrl: 'https://t.me/monexoofficial' },
   { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: params.newbie_tg_customer ? 'done' : 'undone', frontd_url: 'https://t.me/monexoofficial', frontUrl: 'https://t.me/monexoofficial' },
   { id: 3, name: 'Watch Beginner Tutorial', activityCode: 'newbie_watch_video', title: 'Watch Beginner Tutorial', reward: 40, status: params.newbie_watch_video ? 'done' : 'undone', frontd_url: '/newbie_watch_video', frontUrl: '/newbie_watch_video' },
-  { id: 4, name: 'Link Amazon', activityCode: 'newbie_newct', title: 'Link Amazon', reward: 40, status: params.newbie_newct ? 'done' : 'undone', frontd_url: '/bankadd', frontUrl: '/bankadd' },
-  { id: 5, name: 'Purchase 1000 iToken', activityCode: 'newbie_buyitoken', title: 'Purchase 1000 iToken (Get ₹200 Reward)', reward: 200, status: (totalBought >= 1000 || params.newbie_buyitoken) ? 'done' : 'undone', frontd_url: '/buy', frontUrl: '/buy' }
+  { id: 4, name: 'Add UPI reward', activityCode: 'newbie_newct', title: 'Add UPI reward', reward: 40, status: params.newbie_newct ? 'done' : 'undone', frontd_url: '/bankadd', frontUrl: '/bankadd' },
+  { id: 5, name: 'Purchase 3000 IToken', activityCode: 'newbie_buyitoken', title: 'Purchase 3000 IToken', reward: 200, status: (totalBought >= 1000 || params.newbie_buyitoken) ? 'done' : 'undone', frontd_url: '/buy', frontUrl: '/buy' }
 ];
 
 const getNewbieUserData = async (req: any) => {
@@ -2449,7 +2449,7 @@ app.get('/xxapi/newbieDayStep/init', async (req, res) => {
       activityRules: rules,
       guides: rules,
       allDone: isDone === 1,
-      buyToken: String(totalBought)
+      buyToken: String(Math.min(1000, totalBought))
     }
   });
 });
@@ -2466,7 +2466,7 @@ app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
       guides: rules,
       tgGroup: "https://t.me/monexoofficial",
       newbieReward: 200,
-      buyToken: String(totalBought),
+      buyToken: String(Math.min(1000, totalBought)),
       allDone: isDone === 1,
       finishNewbie: isDone
     }
@@ -3446,8 +3446,23 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
       ctName: ctNameVal,
       ct_name: ctNameVal,
       channel: channelName,
-      countdown: tx ? (tx.countdown || 1800) : 1800,
-      ctime: tx ? (tx.ctime * 1000) : (slipData ? slipData.ctime * 1000 : Date.now()),
+      countdown: (function() {
+        const orderCtimeRaw = tx && tx.ctime ? tx.ctime : (slipData && slipData.ctime ? slipData.ctime : Math.floor(Date.now() / 1000));
+        const orderCtimeSec = orderCtimeRaw > 10000000000 ? Math.floor(orderCtimeRaw / 1000) : orderCtimeRaw;
+        const elapsedSec = Math.max(0, Math.floor(Date.now() / 1000) - orderCtimeSec);
+        return Math.max(0, 1800 - elapsedSec);
+      })(),
+      secLimit: (function() {
+        const orderCtimeRaw = tx && tx.ctime ? tx.ctime : (slipData && slipData.ctime ? slipData.ctime : Math.floor(Date.now() / 1000));
+        const orderCtimeSec = orderCtimeRaw > 10000000000 ? Math.floor(orderCtimeRaw / 1000) : orderCtimeRaw;
+        const elapsedSec = Math.max(0, Math.floor(Date.now() / 1000) - orderCtimeSec);
+        return Math.max(0, 1800 - elapsedSec);
+      })(),
+      ctime: (function() {
+        const orderCtimeRaw = tx && tx.ctime ? tx.ctime : (slipData && slipData.ctime ? slipData.ctime : Math.floor(Date.now() / 1000));
+        const orderCtimeSec = orderCtimeRaw > 10000000000 ? Math.floor(orderCtimeRaw / 1000) : orderCtimeRaw;
+        return orderCtimeSec * 1000;
+      })(),
       walletDomain: ""
     }
   });
@@ -3464,6 +3479,9 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
 
   const ctime = Math.floor(Date.now() / 1000);
   const slipData = orderSlipMap.get(order_id);
+  if (slipData && !slipData.ctime) {
+    slipData.ctime = ctime;
+  }
 
   let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 200);
   let payee_recipients_name = slipData ? slipData.pnname : "Monexo Merchant";
@@ -3611,7 +3629,9 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     if (tx.payer_status !== 4 && tx.payer_status !== 5) {
       tx.payer_status = (slipData && slipData.payer_status) ? slipData.payer_status : 1; // active / paying
     }
-    tx.ctime = ctime;
+    if (!tx.ctime) {
+      tx.ctime = (slipData && slipData.ctime) ? slipData.ctime : ctime;
+    }
     tx.amount = amount;
     tx.payee_recipients_name = payee_recipients_name;
     tx.payee_bank_account = payee_bank_account;
@@ -3892,13 +3912,46 @@ app.get('/xxapi/inviteFriends/init', async (req, res) => {
       ]
     });
 
-    const validFriends = directMembers.filter(m => (m.sessions && m.sessions.length > 0) || m.token || m.phone || m.mobileNo);
-    const validCount = validFriends.length;
-
     const paramsObj: Record<string, string> = {};
-    validFriends.forEach((f, idx) => {
-      paramsObj[f.phone || f.mobileNo || f.providerId || `user_${idx}`] = "1";
-    });
+    let completedNewbieCount = 0;
+
+    for (let idx = 0; idx < directMembers.length; idx++) {
+      const f: any = directMembers[idx];
+      const friendKey = f.phone || f.mobileNo || f.providerId || `user_${idx}`;
+
+      let isFriendComplete = Boolean(f.newbieDone);
+      if (!isFriendComplete) {
+        let userParams: any = {};
+        if (f.newbieParams) {
+          try { userParams = JSON.parse(f.newbieParams); } catch (e) {}
+        }
+        const boughtTxs = await Transaction.find({
+          $or: [{ userId: f._id }, { phone: f.phone }, ...(f.mobileNo ? [{ phone: f.mobileNo }] : [])],
+          payer_status: 3,
+          type: { $ne: 'sell' }
+        });
+        const totalBought = boughtTxs.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+        const hasNewbieTx = await Transaction.findOne({
+          $or: [{ userId: f._id }, { phone: f.phone }],
+          $or: [
+            { reason_for_rejection: { $regex: /Newbie Reward/i } },
+            { description: { $regex: /Newbie Reward/i } }
+          ]
+        });
+        if (hasNewbieTx || (totalBought >= 1000 && userParams.newbie_newct && userParams.newbie_watch_video)) {
+          isFriendComplete = true;
+          f.newbieDone = true;
+          await f.save().catch(() => {});
+        }
+      }
+
+      if (isFriendComplete) {
+        completedNewbieCount++;
+        paramsObj[friendKey] = "1";
+      } else {
+        paramsObj[friendKey] = "0";
+      }
+    }
 
     const ruleObj = { "1": 10, "3": 30, "5": 50, "10": 100 };
     const ruleStr = JSON.stringify(ruleObj);
@@ -3916,9 +3969,9 @@ app.get('/xxapi/inviteFriends/init', async (req, res) => {
         activityRecord: {
           rewardAmt: totalRewardPool,
           params: JSON.stringify(paramsObj),
-          condition: validCount,
+          condition: completedNewbieCount,
           settleAmt: claimedAmt,
-          countDown: Date.now() + 864000000
+          countDown: 0
         }
       }
     });
@@ -3943,8 +3996,35 @@ app.post('/xxapi/inviteFriends/reward', async (req, res) => {
       ]
     });
 
-    const validFriends = directMembers.filter(m => (m.sessions && m.sessions.length > 0) || m.token || m.phone || m.mobileNo);
-    const validCount = validFriends.length;
+    let completedNewbieCount = 0;
+    for (const f of directMembers) {
+      let isFriendComplete = Boolean((f as any).newbieDone);
+      if (!isFriendComplete) {
+        let userParams: any = {};
+        if ((f as any).newbieParams) {
+          try { userParams = JSON.parse((f as any).newbieParams); } catch (e) {}
+        }
+        const boughtTxs = await Transaction.find({
+          $or: [{ userId: f._id }, { phone: f.phone }, ...(f.mobileNo ? [{ phone: f.mobileNo }] : [])],
+          payer_status: 3,
+          type: { $ne: 'sell' }
+        });
+        const totalBought = boughtTxs.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
+        const hasNewbieTx = await Transaction.findOne({
+          $or: [{ userId: f._id }, { phone: f.phone }],
+          $or: [
+            { reason_for_rejection: { $regex: /Newbie Reward/i } },
+            { description: { $regex: /Newbie Reward/i } }
+          ]
+        });
+        if (hasNewbieTx || (totalBought >= 1000 && userParams.newbie_newct && userParams.newbie_watch_video)) {
+          isFriendComplete = true;
+          (f as any).newbieDone = true;
+          await f.save().catch(() => {});
+        }
+      }
+      if (isFriendComplete) completedNewbieCount++;
+    }
 
     const ruleObj: Record<string, number> = { "1": 10, "3": 30, "5": 50, "10": 100 };
     let currentSum = 0;
@@ -3954,7 +4034,7 @@ app.post('/xxapi/inviteFriends/reward', async (req, res) => {
       const reqCount = parseInt(keyStr, 10);
       const rewardVal = ruleObj[keyStr];
       currentSum += rewardVal;
-      if (validCount >= reqCount) {
+      if (completedNewbieCount >= reqCount) {
         eligibleSum = currentSum;
       }
     }
@@ -3973,13 +4053,13 @@ app.post('/xxapi/inviteFriends/reward', async (req, res) => {
         type: 'reward',
         amount: rewardToGive,
         status: 'SUCCESS',
-        description: 'Invite Friends Reward',
+        description: `Invite Friends Reward (${completedNewbieCount} qualified members)`,
         timestamp: new Date()
       });
 
       return res.json({ code: 0, msg: `Successfully claimed ₹${rewardToGive} reward!` });
     } else {
-      return res.json({ code: 400, msg: "No claimable reward available or tier requirement not met." });
+      return res.json({ code: 400, msg: "Requirement not met. Invited members must complete all newbie tasks and claim newbie reward." });
     }
   } catch (e: any) {
     return res.json({ code: 500, msg: e.message });
@@ -4546,6 +4626,15 @@ app.get('/xxapi/availablect', async (req, res) => {
       package_name: d.pkg,
       download_url: p(d.pkg)
     }));
+  }
+
+  // If specifically requested for Buy or coming from buy page, filter to Paytm, MobiKwik, PhonePe only
+  const isBuyRequest = req.query.for === 'buy' || (!req.query.purpose && (req.headers.referer || '').includes('/buy'));
+  if (isBuyRequest) {
+    tools = tools.filter((t: any) => {
+      const typeNum = Number(t.ctType || t.ct_type || t.type);
+      return typeNum === 1 || typeNum === 4 || typeNum === 8 || typeNum === 9 || typeNum === 16;
+    });
   }
 
   return res.json({ code: 0, msg: 'success', data: tools });
