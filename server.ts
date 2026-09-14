@@ -2020,6 +2020,62 @@ app.post('/xxapi/logout', async (req, res) => {
   }
 });
 
+async function getUserSellerTransactions(user: any): Promise<any[]> {
+  if (!user) return [];
+  const userIds = [user._id, user.id, (user as any).userId, (user as any).providerId].filter(Boolean);
+  const phones = [user.phone, (user as any).mobileNo].filter(Boolean);
+  const allUserIds = Array.from(new Set([...userIds, ...userIds.map(String)]));
+
+  const upiAccounts: string[] = [];
+  if (user.collectionTools && Array.isArray(user.collectionTools)) {
+    user.collectionTools.forEach((ct: any) => {
+      if (ct && ct.account) upiAccounts.push(ct.account);
+      if (ct && ct.upi) upiAccounts.push(ct.upi);
+    });
+  }
+  if (user.bankDetails && Array.isArray(user.bankDetails)) {
+    user.bankDetails.forEach((b: any) => {
+      if (b) {
+        if (b.accountNo) upiAccounts.push(b.accountNo);
+        if (b.payAccount) upiAccounts.push(b.payAccount);
+      }
+    });
+  }
+  if (user.upiDetails && Array.isArray(user.upiDetails)) {
+    user.upiDetails.forEach((u: any) => {
+      if (u && u.upi) upiAccounts.push(u.upi);
+      else if (typeof u === 'string') upiAccounts.push(u);
+    });
+  }
+  const cleanUpis = Array.from(new Set(upiAccounts.map(a => String(a).trim()).filter(Boolean)));
+
+  const sellerOrConditions: any[] = [
+    { sellerId: { $in: allUserIds } },
+    { 'sellerId': { $in: userIds.map(String) } },
+    { sellerPhone: { $in: phones } },
+    { seller_phone: { $in: phones } },
+    { userId: { $in: allUserIds }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
+    { phone: { $in: phones }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
+    { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
+  ];
+
+  if (cleanUpis.length > 0) {
+    sellerOrConditions.push({ payee_bank_account: { $in: cleanUpis } });
+  }
+
+  const allSellerTxs = await Transaction.find({ $or: sellerOrConditions }).sort({ ctime: -1, _id: -1 });
+
+  const seenOrders = new Set<string>();
+  const uniqueTxs: any[] = [];
+  for (const tx of allSellerTxs) {
+    const rootNo = String(tx.rptNo || tx.id || tx._id).replace(/^SELL_/i, '');
+    if (seenOrders.has(rootNo)) continue;
+    seenOrders.add(rootNo);
+    uniqueTxs.push(tx);
+  }
+  return uniqueTxs;
+}
+
 // 3. USERINFO ENDPOINT
 app.get('/xxapi/userinfo', async (req, res) => {
   try {
@@ -2047,11 +2103,25 @@ app.get('/xxapi/userinfo', async (req, res) => {
       await user.save();
     }
 
-    const sellTxs = await Transaction.find({ userId: user._id, type: 'sell' });
-    const inTransation = sellTxs.filter(tx => tx.payer_status === 1 || tx.payer_status === 2).length;
-    const todaySuccess = sellTxs.filter(tx => tx.payer_status === 3).length;
-    const todayDeal = sellTxs.length;
-    const todayTimes = sellTxs.length;
+    const sellerTxs = await getUserSellerTransactions(user);
+    let inTransation = 0;
+    let inSellAmount = 0;
+    let todaySuccess = 0;
+    let todayDeal = sellerTxs.length;
+    let todayTimes = sellerTxs.length;
+
+    for (const tx of sellerTxs) {
+      if (tx.payer_status === 1 || tx.payer_status === 2) {
+        inTransation++;
+        inSellAmount += Number(tx.amount) || 0;
+      } else if (tx.payer_status === 3) {
+        todaySuccess++;
+      }
+    }
+
+    const currentTotalBalance = Number(user.balance ?? 10000);
+    const frozenItoken = inSellAmount;
+    const availableIToken = Math.max(0, currentTotalBalance - frozenItoken);
 
     const myInviteCode = user.ownInviteCode || user.referralCode || '';
     const userPhone = user.phone || user.mobileNo || '';
@@ -2070,9 +2140,9 @@ app.get('/xxapi/userinfo', async (req, res) => {
         referral_code: myInviteCode,
         inviteCode: myInviteCode,
         invitercode: user.invitercode || '',
-        balance: user.balance ?? 10000,
+        balance: currentTotalBalance,
         commission: user.commission ?? 120,
-        withdrawable: user.balance ?? 10000,
+        withdrawable: availableIToken,
         recharge: user.recharge ?? 0,
         vipLevel: user.vipLevel ?? 1,
         safetyCodeSet: !!user.safetyCode,
@@ -2087,8 +2157,8 @@ app.get('/xxapi/userinfo', async (req, res) => {
         net: user.net || '',
         pageSize: user.pageSize || 10,
         totalTransferValue: user.totalTransferValue || 0,
-        itoken: user.balance ?? 10000,
-        frozenItoken: 0,
+        itoken: availableIToken,
+        frozenItoken: frozenItoken,
         receiveToday: {
           inTransation,
           todayDeal,
@@ -3690,6 +3760,36 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       type: 'recharge'
     });
     await tx.save();
+  }
+
+  // Also ensure counterpart sell transaction exists for seller so it registers in In-Sell immediately
+  if (sellerUserId || sellerPhoneVal) {
+    try {
+      const sellerSellRptNo = `SELL_${order_id}`;
+      let sellerTx = await Transaction.findOne({ rptNo: sellerSellRptNo });
+      if (!sellerTx) {
+        sellerTx = new Transaction({
+          userId: sellerUserId || user._id,
+          sellerId: sellerUserId || user._id,
+          sellerPhone: sellerPhoneVal || '',
+          phone: sellerPhoneVal || '',
+          buyerPhone: user.phone || '',
+          buyerUserId: user._id,
+          rptNo: sellerSellRptNo,
+          amount: amount,
+          payer_status: (slipData && slipData.payer_status) ? slipData.payer_status : 1, // active / in process
+          type: 'sell',
+          orderType: 'sell',
+          payee_bank_account: payee_bank_account,
+          payee_recipients_name: payee_recipients_name,
+          ctime: ctime,
+          secLimit: 1200
+        });
+        await sellerTx.save();
+      }
+    } catch (sellTxErr) {
+      console.error('Error creating seller counterpart tx:', sellTxErr);
+    }
   }
 
   if (slipData) {
@@ -5326,7 +5426,21 @@ async function cancelTransactionHandler(req: any, res: any) {
       tx.payer_status = 4; // Cancelled
       if (user && !tx.userId) tx.userId = user._id;
       await tx.save();
+
+      // Sync cancellation to counterpart transaction
+      const isSellTx = tx.type === 'sell' || String(tx.rptNo).startsWith('SELL_');
+      const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, '') : `SELL_${tx.rptNo}`;
+      const counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
+      if (counterpartTx) {
+        counterpartTx.payer_status = 4;
+        await counterpartTx.save();
+      }
     } else {
+      const sellCounterpart = await Transaction.findOne({ rptNo: `SELL_${rptStr}` });
+      if (sellCounterpart) {
+        sellCounterpart.payer_status = 4;
+        await sellCounterpart.save();
+      }
       await Transaction.create({
         userId: user ? user._id : undefined,
         phone: user ? user.phone : (slipData ? slipData.sellerPhone : undefined),
