@@ -3144,8 +3144,29 @@ app.get('/xxapi/buyitoken/waitconfirm', async (req, res) => {
       return res.json({ code: 0, msg: 'success', data: { waitconfirm: [] } });
     }
 
-    const selectedUpi = (activeTx as any).ct_account || (activeTx as any).payer_upi || (user.phone ? `${user.phone}@ybl` : "");
+    const phone = user.phone || activeTx.phone || "";
+    const ctTypeVal = (activeTx as any).ctType || (activeTx as any).ct_type || 1;
+    const methodNameStr = mapCtTypeToName(ctTypeVal) || "PhonePe";
+    const methodLower = methodNameStr.toLowerCase();
+
+    let selectedUpi = (activeTx as any).ct_account || (activeTx as any).payer_upi || (activeTx as any).selected_upi || "";
+    if (!selectedUpi || !selectedUpi.includes('@')) {
+      if (methodLower.includes('freecharge') || ctTypeVal === 2 || ctTypeVal === 3) {
+        selectedUpi = `${phone}@freecharge`;
+      } else if (methodLower.includes('paytm') || ctTypeVal === 8 || ctTypeVal === 9) {
+        selectedUpi = `${phone}@paytm`;
+      } else if (methodLower.includes('mobikwik') || ctTypeVal === 4) {
+        selectedUpi = `${phone}@ikwik`;
+      } else if (methodLower.includes('navi') || ctTypeVal === 13) {
+        selectedUpi = `${phone}@navi`;
+      } else {
+        selectedUpi = `${phone}@ybl`;
+      }
+    }
+
     const payeeUpi = activeTx.payee_bank_account || "monexo@paytm";
+    const ctAccountVal = phone || (selectedUpi ? selectedUpi.split('@')[0] : "");
+    const payAccountVal = selectedUpi || payeeUpi;
 
     return res.json({
       code: 0,
@@ -3153,14 +3174,17 @@ app.get('/xxapi/buyitoken/waitconfirm', async (req, res) => {
       data: {
         waitconfirm: [{
           amount: activeTx.amount,
+          realAmount: 0,
           rptNo: activeTx.rptNo,
           orderid: activeTx.rptNo,
           order_id: activeTx.rptNo,
-          ctAccount: selectedUpi,
-          payAccount: payeeUpi,
+          ctAccount: ctAccountVal,
+          payAccount: payAccountVal,
           unlinkFlag: true,
-          method: activeTx.payment_method || 1,
-          ctType: (activeTx as any).ctType || 1,
+          method: activeTx.payment_method || ctTypeVal || 1,
+          ctType: ctTypeVal,
+          payType: ctTypeVal,
+          methodName: methodNameStr,
           ctime: activeTx.ctime || Math.floor(Date.now() / 1000)
         }]
       }
