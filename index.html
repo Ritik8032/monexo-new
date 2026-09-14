@@ -331,8 +331,8 @@
                 { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="https://ik.imagekit.io/Monexo/5172295577775.png?updatedAt=1786268547822" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
               ],
               pinFlag: false,
-              ctTypes: [1, 9, 2, 3, 6, 20, 21],
-              ctTypesPayType: { "1": 2, "2": 2, "3": 2, "6": 2, "9": 2, "20": 2, "21": 2 },
+              ctTypes: [1, 2, 3, 4, 6, 8, 9, 13, 14, 16, 17, 18, 20, 21, 33],
+              ctTypesPayType: { "1": 2, "2": 2, "3": 2, "4": 2, "6": 2, "8": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "20": 2, "21": 2, "33": 2 },
               ifFinishNewbieActivity: 0,
               rptPaymentMode: 1,
               webLicenseId: "19711455",
@@ -353,6 +353,17 @@
     </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // SPA Hash-Router safeguard: Convert direct path access like /buyinrdetail/... to /#/buyinrdetail/...
+      (function() {
+        const p = window.location.pathname;
+        if (p.startsWith('/buyinr') || p.startsWith('/rechargeToken') || p.startsWith('/buyitokeninr')) {
+          if (!window.location.hash || window.location.hash === '#/' || window.location.hash === '#') {
+            window.location.replace(window.location.origin + '/#' + p + window.location.search);
+            return;
+          }
+        }
+      })();
+
       // Support route handler: Prevent legacy app login redirects and handle public support chat
       (function() {
         const path = window.location.pathname.toLowerCase();

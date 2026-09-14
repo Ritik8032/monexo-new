@@ -291,6 +291,10 @@ const transactionSchema = new mongoose.Schema({
   isUsdt: { type: Boolean, default: false },
   ctType: { type: Number, default: 1 },
   ct_type: { type: Number, default: 1 },
+  ct_id: { type: String, default: '' },
+  ct_account: { type: String, default: '' },
+  payer_upi: { type: String, default: '' },
+  payer_tool: { type: String, default: '' },
   ctime: { type: Number, default: () => Math.floor(Date.now() / 1000) },
   type: { type: String, default: 'recharge' } // 'recharge' or 'sell'
 });
@@ -2350,8 +2354,8 @@ app.get('/xxapi/config', async (req, res) => {
       bannerSrcs: bannerSrcs,
       newsList: newsList,
       pinFlag: false,
-      ctTypes: [1, 2, 3, 9, 13, 14, 16, 17, 18, 21, 33],
-      ctTypesPayType: { "1": 2, "2": 2, "3": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "21": 2, "33": 2 },
+      ctTypes: [1, 2, 3, 4, 8, 9, 13, 14, 16, 17, 18, 20, 21, 33],
+      ctTypesPayType: { "1": 2, "2": 2, "3": 2, "4": 2, "8": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "20": 2, "21": 2, "33": 2 },
       ifFinishNewbieActivity: 0,
       rptPaymentMode: 1,
       webLicenseId: "19711455",
@@ -3257,10 +3261,73 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
     }
   }
 
-  // Determine selected ctType (1 for PhonePe / Standard UPI, 2 for MobiKwik, 9/16 for Paytm)
+  // Determine selected ctType (1 for PhonePe / Standard UPI, 2 for MobiKwik, 8/9/16 for Paytm)
   let ctTypeVal = tx ? ((tx as any).ctType || (tx as any).ct_type) : (slipData ? slipData.ctType : 1);
+  if (ctTypeVal === 9) ctTypeVal = 8;
+  if (ctTypeVal === 3) ctTypeVal = 2;
+  if (ctTypeVal === 33) ctTypeVal = -10;
   if (!ctTypeVal || Number(ctTypeVal) === 7) {
     ctTypeVal = 1; // Default to 1 (PhonePe / standard UPI) so Vue renders buyinrdetail without IndusPay redirect
+  }
+
+  // Resolve user's selected UPI to pay from
+  let selectedPayerUpi = "";
+  let selectedPayerTool = "";
+  if (tx) {
+    selectedPayerUpi = (tx as any).ct_account || (tx as any).payer_upi || (tx as any).selected_upi || "";
+    selectedPayerTool = (tx as any).payer_tool || "";
+  }
+  if (!selectedPayerUpi && slipData) {
+    selectedPayerUpi = slipData.ct_account || slipData.payer_upi || "";
+    selectedPayerTool = slipData.payer_tool || "";
+  }
+  
+  const currentUser = await getUserByToken(req).catch(() => null);
+  const userObj = currentUser || (tx && tx.userId ? await User.findById(tx.userId).catch(() => null) : null);
+  
+  if (!selectedPayerUpi && userObj) {
+    const txCtId = tx ? (tx as any).ct_id : (slipData ? slipData.ctId : null);
+    if (txCtId && userObj.collectionTools && userObj.collectionTools.length > 0) {
+      const matchedTool = userObj.collectionTools.find((t: any) => 
+        String(t.id) === String(txCtId) || 
+        String(t._id) === String(txCtId) || 
+        t.upi === txCtId || 
+        t.account === txCtId
+      );
+      if (matchedTool) {
+        selectedPayerUpi = matchedTool.upi || matchedTool.account || "";
+      }
+    }
+    
+    if (!selectedPayerUpi) {
+      const phone = userObj.phone || 'user';
+      if (ctTypeVal === 8 || ctTypeVal === 9 || ctTypeVal === 16) {
+        selectedPayerUpi = `${phone}@paytm`;
+      } else if (ctTypeVal === 4) {
+        selectedPayerUpi = `${phone}@ikwik`;
+      } else if (ctTypeVal === 2 || ctTypeVal === 3) {
+        selectedPayerUpi = `${phone}@freecharge`;
+      } else if (ctTypeVal === 13) {
+        selectedPayerUpi = `${phone}@navi`;
+      } else if (ctTypeVal === 14) {
+        selectedPayerUpi = `${phone}@ybl`;
+      } else if (ctTypeVal === 17) {
+        selectedPayerUpi = `${phone}@supermoney`;
+      } else if (ctTypeVal === 18) {
+        selectedPayerUpi = `${phone}@bharatpe`;
+      } else if (ctTypeVal === -10 || ctTypeVal === 33) {
+        selectedPayerUpi = `${phone}@apl`;
+      } else {
+        selectedPayerUpi = `${phone}@ybl`;
+      }
+    }
+  }
+
+  if (!selectedPayerUpi) {
+    selectedPayerUpi = 'user@ybl';
+  }
+  if (!selectedPayerTool) {
+    selectedPayerTool = mapCtTypeToName(ctTypeVal);
   }
 
   // Auto-create / persist Transaction if not found in DB so order is never missing or expired
@@ -3281,6 +3348,9 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
       currency: 3,
       ctType: ctTypeVal,
       ct_type: ctTypeVal,
+      ct_account: selectedPayerUpi,
+      payer_upi: selectedPayerUpi,
+      payer_tool: selectedPayerTool,
       ctime: Math.floor(Date.now() / 1000),
       type: 'recharge'
     });
@@ -3289,12 +3359,17 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
     // If tx exists, ensure active status (1) while user is on the detail screen
     if (tx.payer_status === 4 || tx.payer_status === 5) {
       tx.payer_status = 1;
-      await tx.save().catch(() => {});
     }
+    if (!(tx as any).ct_account) {
+      (tx as any).ct_account = selectedPayerUpi;
+      (tx as any).payer_upi = selectedPayerUpi;
+      (tx as any).payer_tool = selectedPayerTool;
+    }
+    await tx.save().catch(() => {});
   }
 
   const channelName = mapCtTypeToUpiType(ctTypeVal);
-  const ctNameVal = mapCtTypeToName(ctTypeVal);
+  const ctNameVal = selectedPayerTool || mapCtTypeToName(ctTypeVal);
 
   const currentPayerStatus = tx ? tx.payer_status : (slipData && slipData.payer_status ? slipData.payer_status : 1);
   const methodNum = isUpi ? 1 : 2;
@@ -3327,11 +3402,9 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
       verified_name: payee_recipients_name,
       pnname_verified: payee_recipients_name,
 
-      // All account / UPI alias keys so none evaluates to undefined
+      // Recipient account (the seller UPI or bank account to pay to)
       payee_bank_account: payee_bank_account,
       account: payee_bank_account,
-      ctAccount: payee_bank_account,
-      ct_account: payee_bank_account,
       pnaccount: payee_bank_account,
       accountNumber: payee_bank_account,
       account_no: payee_bank_account,
@@ -3341,6 +3414,14 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
       payAccount: payee_bank_account,
       acctNo: payee_bank_account,
       number: payee_bank_account,
+
+      // Payer's selected tool & UPI account (The user's selected UPI ID to pay from)
+      ctAccount: selectedPayerUpi,
+      ct_account: selectedPayerUpi,
+      payer_upi: selectedPayerUpi,
+      payerUpi: selectedPayerUpi,
+      payer_tool: selectedPayerTool,
+      selected_upi: selectedPayerUpi,
 
       // Bank & IFSC fields (empty for UPI)
       payee_ifsc: isUpi ? "" : payee_ifsc,
@@ -3438,8 +3519,74 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     }
   }
 
-  const parsedCtType = Number(ctType || ct_type || (slipData ? slipData.ctType : 1) || 1);
-  const chosenCtType = (!parsedCtType || parsedCtType === 7) ? 1 : parsedCtType;
+  let parsedCtType = Number(ctType || ct_type || (slipData ? slipData.ctType : 1) || 1);
+  if (parsedCtType === 9) parsedCtType = 8;
+  if (parsedCtType === 3) parsedCtType = 2;
+  if (parsedCtType === 33) parsedCtType = -10;
+  let chosenCtType = (!parsedCtType || parsedCtType === 7) ? 1 : parsedCtType;
+
+  // Resolve buyer's selected UPI ID to pay from
+  const bodyUpi = req.body.upi || req.body.ct_account || req.body.account;
+  let selectedUpi = "";
+  if (bodyUpi && String(bodyUpi).includes('@')) {
+    selectedUpi = String(bodyUpi).trim();
+  }
+
+  // Check user.collectionTools
+  if (!selectedUpi && user.collectionTools && user.collectionTools.length > 0) {
+    const matched = user.collectionTools.find((t: any) => 
+      String(t.id) === String(ct_id) || 
+      String(t._id) === String(ct_id) || 
+      t.upi === ct_id || 
+      t.account === ct_id
+    );
+    if (matched) {
+      selectedUpi = matched.upi || matched.account || '';
+      let mType = (matched.ctType && Number(matched.ctType) !== 7) ? Number(matched.ctType) : (matched.type || chosenCtType);
+      if (mType === 9) mType = 8;
+      if (mType === 3) mType = 2;
+      if (mType === 33) mType = -10;
+      chosenCtType = mType;
+    }
+  }
+
+  // If still not found, resolve from ct_id or chosenCtType
+  const phone = user.phone || 'user';
+  if (!selectedUpi) {
+    const toolIdStr = String(ct_id || '');
+    if (toolIdStr.includes('paytm') || chosenCtType === 8 || chosenCtType === 9 || chosenCtType === 16) {
+      selectedUpi = `${phone}@paytm`;
+      chosenCtType = 8;
+    } else if (toolIdStr.includes('mobikwik') || chosenCtType === 4) {
+      selectedUpi = `${phone}@ikwik`;
+      chosenCtType = 4;
+    } else if (toolIdStr.includes('freecharge') || chosenCtType === 2 || chosenCtType === 3) {
+      selectedUpi = `${phone}@freecharge`;
+      chosenCtType = 2;
+    } else if (toolIdStr.includes('navi') || chosenCtType === 13) {
+      selectedUpi = `${phone}@navi`;
+      chosenCtType = 13;
+    } else if (toolIdStr.includes('phonepebusiness') || chosenCtType === 14) {
+      selectedUpi = `${phone}@ybl`;
+      chosenCtType = 14;
+    } else if (toolIdStr.includes('supermoney') || chosenCtType === 17) {
+      selectedUpi = `${phone}@supermoney`;
+      chosenCtType = 17;
+    } else if (toolIdStr.includes('bharatpe') || chosenCtType === 18) {
+      selectedUpi = `${phone}@bharatpe`;
+      chosenCtType = 18;
+    } else if (toolIdStr.includes('amazon') || chosenCtType === -10 || chosenCtType === 33) {
+      selectedUpi = `${phone}@apl`;
+      chosenCtType = -10;
+    } else if (toolIdStr.includes('@')) {
+      selectedUpi = toolIdStr;
+    } else {
+      selectedUpi = `${phone}@ybl`;
+      chosenCtType = 1;
+    }
+  }
+
+  const selectedToolName = mapCtTypeToName(chosenCtType);
 
   if (payment_method === 1) {
     payee_ifsc = "";
@@ -3474,6 +3621,13 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     tx.confirm_mode = Number(confirm_mode || 0);
     (tx as any).ctType = chosenCtType;
     (tx as any).ct_type = chosenCtType;
+    (tx as any).ct_id = String(ct_id || '');
+    (tx as any).ct_account = selectedUpi;
+    (tx as any).payer_upi = selectedUpi;
+    (tx as any).ctAccount = selectedUpi;
+    (tx as any).selected_upi = selectedUpi;
+    (tx as any).payerUpi = selectedUpi;
+    (tx as any).payer_tool = selectedToolName;
     if (sellerUserId) (tx as any).sellerId = sellerUserId;
     if (sellerPhoneVal) (tx as any).sellerPhone = sellerPhoneVal;
     await tx.save();
@@ -3495,10 +3649,24 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       currency: 3,
       ctType: chosenCtType,
       ct_type: chosenCtType,
+      ct_id: String(ct_id || ''),
+      ct_account: selectedUpi,
+      payer_upi: selectedUpi,
+      payer_tool: selectedToolName,
       ctime: ctime,
       type: 'recharge'
     });
     await tx.save();
+  }
+
+  if (slipData) {
+    slipData.ctType = chosenCtType;
+    slipData.ct_type = chosenCtType;
+    slipData.ctId = String(ct_id || '');
+    slipData.ct_account = selectedUpi;
+    slipData.ctAccount = selectedUpi;
+    slipData.payer_upi = selectedUpi;
+    slipData.payer_tool = selectedToolName;
   }
 
   const resolvedCtId = ct_id || (slipData ? slipData.ctId : '1') || '1';
@@ -3512,10 +3680,10 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       order_id: order_id,
       ctime: ctime,
       walletDomain: redirectUrl,
+
+      // Recipient seller account
       payee_bank_account: payee_bank_account,
       account: payee_bank_account,
-      ctAccount: payee_bank_account,
-      ct_account: payee_bank_account,
       pnaccount: payee_bank_account,
       accountNumber: payee_bank_account,
       payAccount: payee_bank_account,
@@ -3526,8 +3694,20 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       name: payee_recipients_name,
       payment_method: payment_method,
       method: payment_method,
+
+      // Buyer selected tool and UPI
+      ctAccount: selectedUpi,
+      ct_account: selectedUpi,
+      payer_upi: selectedUpi,
+      payerUpi: selectedUpi,
+      payer_tool: selectedToolName,
+      selected_upi: selectedUpi,
       ctType: chosenCtType,
       ct_type: chosenCtType,
+      ctName: selectedToolName,
+      ct_name: selectedToolName,
+      ct_id: String(ct_id || ''),
+
       status: tx.payer_status
     }
   });
@@ -3536,19 +3716,105 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
 app.post('/xxapi/buyitoken/changecttype', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  const { order_id, ct_id } = req.body;
+  const { order_id, ct_id, ctType, ct_type } = req.body;
+
+  let chosenType = Number(ctType || ct_type || ct_id || 1);
+  if (chosenType === 9) chosenType = 8;
+  if (chosenType === 3) chosenType = 2;
+  if (chosenType === 33) chosenType = -10;
+  if (!chosenType || chosenType === 7) chosenType = 1;
+
+  let newUpi = "";
+  if (user && user.collectionTools && user.collectionTools.length > 0) {
+    const t = user.collectionTools.find((x: any) => 
+      String(x.id) === String(ct_id) || 
+      String(x._id) === String(ct_id) || 
+      x.upi === ct_id || 
+      x.account === ct_id
+    );
+    if (t) {
+      newUpi = t.upi || t.account || "";
+      let tType = (t.ctType && Number(t.ctType) !== 7) ? Number(t.ctType) : (t.type || chosenType);
+      if (tType === 9) tType = 8;
+      if (tType === 3) tType = 2;
+      if (tType === 33) tType = -10;
+      chosenType = tType;
+    }
+  }
+
+  const phone = user.phone || 'user';
+  if (!newUpi) {
+    const toolIdStr = String(ct_id || '');
+    if (toolIdStr.includes('paytm') || chosenType === 8 || chosenType === 16) {
+      newUpi = `${phone}@paytm`;
+      chosenType = 8;
+    } else if (toolIdStr.includes('mobikwik') || chosenType === 4) {
+      newUpi = `${phone}@ikwik`;
+      chosenType = 4;
+    } else if (toolIdStr.includes('freecharge') || chosenType === 2) {
+      newUpi = `${phone}@freecharge`;
+      chosenType = 2;
+    } else if (toolIdStr.includes('navi') || chosenType === 13) {
+      newUpi = `${phone}@navi`;
+      chosenType = 13;
+    } else if (toolIdStr.includes('phonepebusiness') || chosenType === 14) {
+      newUpi = `${phone}@ybl`;
+      chosenType = 14;
+    } else if (toolIdStr.includes('supermoney') || chosenType === 17) {
+      newUpi = `${phone}@supermoney`;
+      chosenType = 17;
+    } else if (toolIdStr.includes('bharatpe') || chosenType === 18) {
+      newUpi = `${phone}@bharatpe`;
+      chosenType = 18;
+    } else if (toolIdStr.includes('amazon') || chosenType === -10) {
+      newUpi = `${phone}@apl`;
+      chosenType = -10;
+    } else if (toolIdStr.includes('@')) {
+      newUpi = toolIdStr;
+    } else {
+      newUpi = `${phone}@ybl`;
+      chosenType = 1;
+    }
+  }
+
+  const toolName = mapCtTypeToName(chosenType);
   const tx = await Transaction.findOne({ rptNo: order_id });
   if (tx) {
-    tx.ctType = Number(ct_id) || 7;
-    tx.ct_type = Number(ct_id) || 7;
+    tx.ctType = chosenType;
+    tx.ct_type = chosenType;
+    tx.ct_id = String(ct_id || '');
+    tx.ct_account = newUpi;
+    tx.payer_upi = newUpi;
+    (tx as any).ctAccount = newUpi;
+    (tx as any).selected_upi = newUpi;
+    (tx as any).payerUpi = newUpi;
+    (tx as any).payer_tool = toolName;
     await tx.save();
   }
+
+  const slipData = orderSlipMap.get(order_id);
+  if (slipData) {
+    slipData.ctType = chosenType;
+    slipData.ct_type = chosenType;
+    slipData.ctId = String(ct_id || '');
+    slipData.ct_account = newUpi;
+    slipData.ctAccount = newUpi;
+    slipData.payer_upi = newUpi;
+    slipData.payer_tool = toolName;
+  }
+
   return res.json({
     code: 0,
     msg: "success",
     data: {
       ct_id: ct_id || "1",
-      ct_type: Number(ct_id) || 7,
+      ct_type: chosenType,
+      ctType: chosenType,
+      ct_account: newUpi,
+      ctAccount: newUpi,
+      payer_upi: newUpi,
+      payerUpi: newUpi,
+      payer_tool: toolName,
       order_id: order_id
     }
   });
@@ -3905,14 +4171,122 @@ app.get('/xxapi/collectiontool', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const { id } = req.query;
-  if (id && user.collectionTools) {
-    const specificTool = user.collectionTools.find((t: any) => t.id === id);
+  const toolId = String(id || '');
+
+  if (toolId && user.collectionTools && user.collectionTools.length > 0) {
+    const specificTool = user.collectionTools.find((t: any) => 
+      String(t.id) === toolId || 
+      String(t._id) === toolId || 
+      t.upi === toolId || 
+      t.account === toolId
+    );
     if (specificTool) {
-      return res.json({ code: 0, msg: 'success', data: specificTool });
+      let resolvedType = (specificTool.ctType && Number(specificTool.ctType) !== 7) ? Number(specificTool.ctType) : (specificTool.type || 1);
+      if (resolvedType === 9) resolvedType = 8;
+      if (resolvedType === 3) resolvedType = 2;
+      if (resolvedType === 33) resolvedType = -10;
+      const resolvedAccount = specificTool.upi || specificTool.account || `${user.phone || 'user'}@ybl`;
+      return res.json({
+        code: 0,
+        msg: 'success',
+        data: {
+          ...specificTool,
+          account: resolvedAccount,
+          upi: resolvedAccount,
+          ctAccount: resolvedAccount,
+          ct_account: resolvedAccount,
+          ctType: resolvedType,
+          ct_type: resolvedType,
+          type: resolvedType,
+          text: specificTool.text || mapCtTypeToName(resolvedType)
+        }
+      });
     }
   }
+
   const cleanTools = await healAndGetCleanTools(user);
-  return res.json({ code: 0, msg: 'success', data: cleanTools[0] || null });
+  if (cleanTools && cleanTools.length > 0 && !toolId.startsWith('tool-')) {
+    const firstTool = cleanTools[0];
+    let resolvedType = (firstTool.ctType && Number(firstTool.ctType) !== 7) ? Number(firstTool.ctType) : (firstTool.type || 1);
+    if (resolvedType === 9) resolvedType = 8;
+    if (resolvedType === 3) resolvedType = 2;
+    if (resolvedType === 33) resolvedType = -10;
+    const resolvedAccount = firstTool.upi || firstTool.account || `${user.phone || 'user'}@ybl`;
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        ...firstTool,
+        account: resolvedAccount,
+        upi: resolvedAccount,
+        ctAccount: resolvedAccount,
+        ct_account: resolvedAccount,
+        ctType: resolvedType,
+        ct_type: resolvedType,
+        type: resolvedType,
+        text: firstTool.text || mapCtTypeToName(resolvedType)
+      }
+    });
+  }
+
+  // Synthesize matching tool
+  const phone = user.phone || 'user';
+  let synCtType = 1;
+  let synUpi = `${phone}@ybl`;
+  let synName = 'PhonePe';
+
+  if (toolId.includes('paytm') || toolId === '8' || toolId === '9' || toolId === '16') {
+    synCtType = 8;
+    synUpi = `${phone}@paytm`;
+    synName = 'Paytm';
+  } else if (toolId.includes('mobikwik') || toolId === '4') {
+    synCtType = 4;
+    synUpi = `${phone}@ikwik`;
+    synName = 'MobiKwik';
+  } else if (toolId.includes('freecharge') || toolId === '2' || toolId === '3') {
+    synCtType = 2;
+    synUpi = `${phone}@freecharge`;
+    synName = 'Freecharge';
+  } else if (toolId.includes('navi') || toolId === '13') {
+    synCtType = 13;
+    synUpi = `${phone}@navi`;
+    synName = 'Navi';
+  } else if (toolId.includes('phonepebusiness') || toolId === '14') {
+    synCtType = 14;
+    synUpi = `${phone}@ybl`;
+    synName = 'PhonePeBusiness';
+  } else if (toolId.includes('supermoney') || toolId === '17') {
+    synCtType = 17;
+    synUpi = `${phone}@supermoney`;
+    synName = 'SuperMoney';
+  } else if (toolId.includes('bharatpe') || toolId === '18') {
+    synCtType = 18;
+    synUpi = `${phone}@bharatpe`;
+    synName = 'BharatPeBusiness';
+  } else if (toolId.includes('amazon') || toolId === '-10' || toolId === '33') {
+    synCtType = -10;
+    synUpi = `${phone}@apl`;
+    synName = 'Amazon Pay';
+  }
+
+  const synthesized = {
+    id: toolId || 'tool-phonepe-default',
+    _id: toolId || 'tool-phonepe-default',
+    ctType: synCtType,
+    ct_type: synCtType,
+    type: synCtType,
+    account: synUpi,
+    upi: synUpi,
+    ctAccount: synUpi,
+    ct_account: synUpi,
+    text: synName,
+    name: synName,
+    status: 1,
+    state: 2,
+    confirm_mode: 0
+  };
+
+  return res.json({ code: 0, msg: 'success', data: synthesized });
 });
 
 // Edit or Update collection tool details
@@ -4125,28 +4499,52 @@ app.get('/xxapi/availablect', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 0, msg: 'success', data: [] });
   const cleanTools = await healAndGetCleanTools(user);
-  let tools = (cleanTools || []).map((t: any) => ({
-    ...t,
-    ctType: (t.ctType && Number(t.ctType) !== 7) ? Number(t.ctType) : (t.type || 1),
-    ct_type: (t.ct_type && Number(t.ct_type) !== 7) ? Number(t.ct_type) : (t.type || 1)
-  }));
+  let tools = (cleanTools || []).map((t: any) => {
+    let resolvedType = (t.ctType && Number(t.ctType) !== 7) ? Number(t.ctType) : (t.type || 1);
+    if (resolvedType === 9) resolvedType = 8;
+    if (resolvedType === 3) resolvedType = 2;
+    if (resolvedType === 33) resolvedType = -10;
+    const resolvedUpi = t.upi || t.account || `${user.phone || 'user'}@ybl`;
+    return {
+      ...t,
+      upi: resolvedUpi,
+      account: resolvedUpi,
+      ctAccount: resolvedUpi,
+      ct_account: resolvedUpi,
+      text: t.text || mapCtTypeToName(resolvedType),
+      ctType: resolvedType,
+      ct_type: resolvedType
+    };
+  });
 
   if (tools.length === 0) {
     const p = (pkg: string) => `https://play.google.com/store/apps/details?id=${pkg}`;
     const defaultDefs = [
       { id: 'tool-phonepe-default', upi: `${user.phone || 'user'}@ybl`, text: 'PhonePe', t: 1, pkg: 'com.phonepe.app' },
-      { id: 'tool-mobikwik-default', upi: `${user.phone || 'user'}@ikwik`, text: 'MobiKwik', t: 2, pkg: 'com.mobikwik' },
-      { id: 'tool-freecharge-default', upi: `${user.phone || 'user'}@freecharge`, text: 'Freecharge', t: 3, pkg: 'com.freecharge.android' },
-      { id: 'tool-paytm-default', upi: `${user.phone || 'user'}@paytm`, text: 'Paytm', t: 9, pkg: 'net.one97.paytm' },
+      { id: 'tool-mobikwik-default', upi: `${user.phone || 'user'}@ikwik`, text: 'MobiKwik', t: 4, pkg: 'com.mobikwik' },
+      { id: 'tool-freecharge-default', upi: `${user.phone || 'user'}@freecharge`, text: 'Freecharge', t: 2, pkg: 'com.freecharge.android' },
+      { id: 'tool-paytm-default', upi: `${user.phone || 'user'}@paytm`, text: 'Paytm', t: 8, pkg: 'net.one97.paytm' },
       { id: 'tool-navi-default', upi: `${user.phone || 'user'}@navi`, text: 'Navi', t: 13, pkg: 'com.navi.android' },
       { id: 'tool-phonepebusiness-default', upi: `${user.phone || 'user'}@ybl`, text: 'PhonePeBusiness', t: 14, pkg: 'com.phonepe.app.business' },
       { id: 'tool-paytmbusiness-default', upi: `${user.phone || 'user'}@paytm`, text: 'PaytmBusiness', t: 16, pkg: 'com.paytm.business' },
       { id: 'tool-supermoney-default', upi: `${user.phone || 'user'}@supermoney`, text: 'SuperMoney', t: 17, pkg: 'com.supermoney.app' },
       { id: 'tool-bharatpebusiness-default', upi: `${user.phone || 'user'}@bharatpe`, text: 'BharatPeBusiness', t: 18, pkg: 'com.bharatpe.app' },
-      { id: 'tool-amazonpay-default', upi: `${user.phone || 'user'}@apl`, text: 'Amazon Pay', t: 33, pkg: 'in.amazon.mShop.android.shopping' }
+      { id: 'tool-amazonpay-default', upi: `${user.phone || 'user'}@apl`, text: 'Amazon Pay', t: -10, pkg: 'in.amazon.mShop.android.shopping' }
     ];
     tools = defaultDefs.map(d => ({
-      id: d.id, upi: d.upi, text: d.text, ctType: d.t, ct_type: d.t, status: 1, state: 2, confirm_mode: 0, package_name: d.pkg, download_url: p(d.pkg)
+      id: d.id,
+      upi: d.upi,
+      account: d.upi,
+      ctAccount: d.upi,
+      ct_account: d.upi,
+      text: d.text,
+      ctType: d.t,
+      ct_type: d.t,
+      status: 1,
+      state: 2,
+      confirm_mode: 0,
+      package_name: d.pkg,
+      download_url: p(d.pkg)
     }));
   }
 
@@ -4909,7 +5307,9 @@ async function getRechargeHistory(req: any, res: any) {
       channel: mapCtTypeToUpiType(ctTypeVal),
       upi: tx.payee_bank_account || "",
       account: tx.payee_bank_account || "",
-      ctAccount: tx.payee_bank_account || "",
+      ctAccount: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
+      ct_account: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
+      payer_upi: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
       acctNo: tx.payee_bank_account || "",
       payAccount: tx.payee_bank_account || "",
       payee_bank_account: tx.payee_bank_account || "",
@@ -5141,7 +5541,9 @@ async function getSellHistory(req: any, res: any) {
       channel: mapCtTypeToUpiType(ctTypeVal),
       upi: tx.payee_bank_account || "",
       account: tx.payee_bank_account || "",
-      ctAccount: tx.payee_bank_account || "",
+      ctAccount: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
+      ct_account: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
+      payer_upi: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
       acctNo: tx.payee_bank_account || "",
       payAccount: tx.payee_bank_account || "",
       payee_recipients_name: tx.payee_recipients_name || "Merchant Partner",
