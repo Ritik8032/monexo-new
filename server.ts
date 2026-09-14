@@ -269,8 +269,8 @@ const logSchema = new mongoose.Schema({
 });
 
 const transactionSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  userId: { type: mongoose.Schema.Types.Mixed },
+  sellerId: { type: mongoose.Schema.Types.Mixed },
   sellerPhone: String,
   phone: String,
   rptNo: { type: String, unique: true },
@@ -300,7 +300,7 @@ const transactionSchema = new mongoose.Schema({
 });
 
 const notificationSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  userId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
   phone: { type: String, index: true },
   title: { type: String, required: true },
   message: { type: String, required: true },
@@ -315,7 +315,7 @@ const notificationSchema = new mongoose.Schema({
 });
 
 const smsLogSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  userId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
   phone: { type: String, index: true },
   sender: { type: String, default: 'SMS-ALERT' },
   message: { type: String, required: true },
@@ -329,9 +329,9 @@ const smsLogSchema = new mongoose.Schema({
 });
 
 const adminActionLogSchema = new mongoose.Schema({
-  adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  adminId: { type: mongoose.Schema.Types.Mixed },
   adminPhone: { type: String, default: '7870873927' },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  userId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
   userPhone: String,
   action: { type: String, required: true }, // 'APPROVE', 'REVIEW', 'FLAG', 'REJECT', 'SEND_NOTIF'
   targetType: { type: String, default: 'USER_WORKFLOW' }, // 'USER_WORKFLOW', 'SMS_LOG', 'NOTIFICATION', 'TRANSACTION'
@@ -2077,13 +2077,50 @@ async function getUserSellerTransactions(user: any): Promise<any[]> {
 }
 
 // 3. USERINFO ENDPOINT
-app.get('/xxapi/userinfo', async (req, res) => {
+app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
   try {
     const user = await getUserByToken(req);
     if (!user) {
       return res.json({
         code: 403,
-        msg: 'Unauthorized'
+        msg: 'Unauthorized',
+        data: {
+          uid: '',
+          id: '',
+          username: '',
+          phone: '',
+          teamWorkId: '',
+          ownInviteCode: '',
+          referralCode: '',
+          referral_code: '',
+          inviteCode: '',
+          invitercode: '',
+          balance: 0,
+          commission: 0,
+          withdrawable: 0,
+          recharge: 0,
+          vipLevel: 1,
+          safetyCodeSet: false,
+          bankCount: 0,
+          upiCount: 0,
+          kycStatus: 0,
+          realName: '',
+          parentUser: '',
+          todayProfit: 0,
+          sysOpenPay: 1,
+          trc20Address: '',
+          net: '',
+          pageSize: 10,
+          totalTransferValue: 0,
+          itoken: 0,
+          frozenItoken: 0,
+          receiveToday: {
+            inTransation: 0,
+            todayDeal: 0,
+            todaySuccess: 0,
+            todayTimes: 0
+          }
+        }
       });
     }
 
@@ -2124,7 +2161,7 @@ app.get('/xxapi/userinfo', async (req, res) => {
     const availableIToken = Math.max(0, currentTotalBalance - frozenItoken);
 
     const myInviteCode = user.ownInviteCode || user.referralCode || '';
-    const userPhone = user.phone || user.mobileNo || '';
+    const userPhone = user.phone || user.mobileNo || user.username || '';
 
     return res.json({
       code: 0,
@@ -2169,7 +2206,47 @@ app.get('/xxapi/userinfo', async (req, res) => {
     });
   } catch (err) {
     console.error('Userinfo Error:', err);
-    return res.json({ code: 500, msg: 'Internal server error' });
+    return res.json({
+      code: 500,
+      msg: 'Internal server error',
+      data: {
+        uid: '',
+        id: '',
+        username: '',
+        phone: '',
+        teamWorkId: '',
+        ownInviteCode: '',
+        referralCode: '',
+        referral_code: '',
+        inviteCode: '',
+        invitercode: '',
+        balance: 0,
+        commission: 0,
+        withdrawable: 0,
+        recharge: 0,
+        vipLevel: 1,
+        safetyCodeSet: false,
+        bankCount: 0,
+        upiCount: 0,
+        kycStatus: 0,
+        realName: '',
+        parentUser: '',
+        todayProfit: 0,
+        sysOpenPay: 1,
+        trc20Address: '',
+        net: '',
+        pageSize: 10,
+        totalTransferValue: 0,
+        itoken: 0,
+        frozenItoken: 0,
+        receiveToday: {
+          inTransation: 0,
+          todayDeal: 0,
+          todaySuccess: 0,
+          todayTimes: 0
+        }
+      }
+    });
   }
 });
 
@@ -2980,14 +3057,118 @@ app.get('/xxapi/checkTgBindStatus', async (req, res) => {
   return res.json({ code: 0, msg: "success", data: { bound: false } });
 });
 
-app.get('/xxapi/buyitoken/waitconfirm', async (req, res) => {
-  return res.json({
-    code: 0,
-    msg: 'success',
-    data: {
-      waitconfirm: []
+function buildPaymentUrls(amount: number, payeeUpi: string, payeeName: string, ctType: number) {
+  const am = amount || 1;
+  const pa = payeeUpi || "gpay-11230242024@okbizaxis";
+  const pn = payeeName || "Payment";
+
+  const mobikwikUrl = `mobikwik://upi/pay?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent(pn)}&am=${am}&cu=INR`;
+
+  const phonepeDataObj = {
+    contact: {
+      cbsName: "",
+      nickName: "",
+      vpa: pa,
+      type: "VPA"
+    },
+    p2pPaymentCheckoutParams: {
+      note: "",
+      isDefaultKnownContact: true,
+      enableSpeechToText: false,
+      allowAmountEdit: false,
+      showQrCodeOption: false,
+      disableViewHistory: true,
+      shouldShowUnsavedContactBanner: false,
+      isRecurring: false,
+      checkoutType: "DEFAULT",
+      transactionContext: "p2p",
+      initialAmount: Math.round(am * 100),
+      disableNotesEdit: true,
+      showKeyboard: true,
+      currency: "INR",
+      shouldShowMaskedNumber: true
     }
-  });
+  };
+  const phonepeB64 = Buffer.from(JSON.stringify(phonepeDataObj)).toString('base64');
+  const phonepeUrl = `phonepe://native?data=${phonepeB64}&id=p2ppayment`;
+
+  const paytmUrl = `paytmmp://cash_wallet?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent(pn)}&am=${am}&cu=INR&featuretype=money_transfer`;
+
+  let primaryUrl = mobikwikUrl;
+  if (ctType === 8 || ctType === 9 || ctType === 16) {
+    primaryUrl = paytmUrl;
+  } else if (ctType === 1 || ctType === 14) {
+    primaryUrl = phonepeUrl;
+  }
+
+  return {
+    mobikwikUrl,
+    mobikwik_url: mobikwikUrl,
+    MOBIKWIK_URL: mobikwikUrl,
+
+    phonepeUrl,
+    phonepe_url: phonepeUrl,
+    PHONEPE_URL: phonepeUrl,
+
+    paytmUrl,
+    paytm_url: paytmUrl,
+    PAYTM_URL: paytmUrl,
+
+    primaryUrl,
+    walletDomain: primaryUrl,
+    payUrl: primaryUrl,
+    pay_url: primaryUrl
+  };
+}
+
+app.get('/xxapi/buyitoken/waitconfirm', async (req, res) => {
+  try {
+    const user = await getUserByToken(req).catch(() => null);
+    if (!user) {
+      return res.json({ code: 0, msg: 'success', data: { waitconfirm: [] } });
+    }
+
+    const userIds = [user._id, user._id ? user._id.toString() : ''].filter(Boolean);
+    const phones = [user.phone, user.mobileNo].filter(Boolean);
+
+    const activeTx = await Transaction.findOne({
+      $or: [
+        { userId: { $in: userIds } },
+        { phone: { $in: phones } }
+      ],
+      type: 'recharge',
+      payer_status: { $in: [1, 2] }
+    }).sort({ ctime: -1 });
+
+    if (!activeTx) {
+      return res.json({ code: 0, msg: 'success', data: { waitconfirm: [] } });
+    }
+
+    const selectedUpi = (activeTx as any).ct_account || (activeTx as any).payer_upi || (user.phone ? `${user.phone}@ybl` : "");
+    const payeeUpi = activeTx.payee_bank_account || "monexo@paytm";
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        waitconfirm: [{
+          amount: activeTx.amount,
+          rptNo: activeTx.rptNo,
+          orderid: activeTx.rptNo,
+          order_id: activeTx.rptNo,
+          ctAccount: selectedUpi,
+          payAccount: payeeUpi,
+          unlinkFlag: true,
+          method: activeTx.payment_method || 1,
+          ctType: (activeTx as any).ctType || 1,
+          ctime: activeTx.ctime || Math.floor(Date.now() / 1000)
+        }]
+      }
+    });
+  } catch (err) {
+    console.error('Error in waitconfirm:', err);
+    return res.json({ code: 0, msg: 'success', data: { waitconfirm: [] } });
+  }
 });
 
 app.get('/xxapi/buyitoken/history', async (req, res) => {
@@ -3805,6 +3986,8 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
   const resolvedCtId = ct_id || (slipData ? slipData.ctId : '1') || '1';
   const redirectUrl = `/buyinrdetail/${order_id}/${resolvedCtId}/0/${ctime}/1`;
 
+  const payUrls = buildPaymentUrls(amount, payee_bank_account, payee_recipients_name, chosenCtType);
+
   return res.json({
     code: 0,
     msg: 'success',
@@ -3813,6 +3996,7 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       order_id: order_id,
       ctime: ctime,
       walletDomain: redirectUrl,
+      ...payUrls,
 
       // Recipient seller account
       payee_bank_account: payee_bank_account,
@@ -5761,11 +5945,11 @@ async function getSellHistory(req: any, res: any) {
     if (tx.payer_status === 1) orderState = 1; // paying/dispatched
     else if (tx.payer_status === 2) orderState = 2; // pending audit
     else if (tx.payer_status === 3) orderState = 3; // success
-    else if (tx.payer_status === 4) orderState = 4; // offline/cancel
-    else if (tx.payer_status === 5) orderState = 5; // timeout
+    else if (tx.payer_status === 4 || tx.payer_status === 5) orderState = 5; // timeout for sell history view
 
     const obj = tx.toObject ? tx.toObject() : { ...tx };
-    
+    const cancelReason = (tx as any).cancelRemark || (tx as any).cancel_remark || (tx as any).rejectionReason || (tx as any).reason || (tx as any).adminReason || "Order timed out";
+
     // Find seller KYC Partner / CT Type: PhonePe=1, MobiKwik=4, Paytm=8
     let sellerCtType = (tx as any).sellerCtType;
     if (!sellerCtType && user && user.collectionTools && Array.isArray(user.collectionTools)) {
@@ -5788,6 +5972,8 @@ async function getSellHistory(req: any, res: any) {
 
     const sellerReceiveUpi = tx.payee_bank_account || tx.upi || "";
 
+    const userPayerStatus = (tx.payer_status === 4 || tx.payer_status === 5) ? 5 : tx.payer_status;
+
     return {
       ...obj,
       id: tx._id ? tx._id.toString() : tx.rptNo,
@@ -5799,8 +5985,14 @@ async function getSellHistory(req: any, res: any) {
       orderState: orderState,
       order_state: orderState,
       state: orderState,
-      payer_status: tx.payer_status,
-      status: tx.payer_status,
+      payer_status: userPayerStatus,
+      status: userPayerStatus,
+      real_payer_status: tx.payer_status,
+      cancel_remark: cancelReason,
+      cancelRemark: cancelReason,
+      rejectionReason: cancelReason,
+      reason: cancelReason,
+      adminReason: (tx as any).adminReason || cancelReason,
       payment_method: isUpi ? 1 : 2,
       method: isUpi ? 1 : 2,
       payType: sellerCtType,
