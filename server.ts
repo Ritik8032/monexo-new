@@ -2866,16 +2866,29 @@ app.get('/xxapi/bank/history', async (req, res) => {
     else if (tx.payer_status === 5) orderState = 5; // sell_status_timeout
 
     const obj = tx.toObject ? tx.toObject() : { ...tx };
+    const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1000);
+    const dealTimeSec = (tx as any).dealTime || (tx as any).utime || (tx.payer_status >= 2 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : debitTimeSec);
+    const finishTimeSec = (tx as any).finishTime || (tx as any).fnsDate || (tx.payer_status >= 3 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : 0);
+    const sellerReceiveUpi = tx.payee_bank_account || tx.upi || "";
+
     return {
       ...obj,
       id: tx._id.toString(),
+      orderNo: tx.rptNo || "",
+      rptNo: tx.rptNo || "",
+      order_id: tx.rptNo || "",
       orderState: orderState,
-      uptDate: tx.ctime * 1000,
-      crtDate: tx.ctime * 1000,
-      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
+      order_state: orderState,
+      state: orderState,
+      status: tx.payer_status,
+      payer_status: tx.payer_status,
+      uptDate: dealTimeSec * 1000,
+      crtDate: debitTimeSec * 1000,
+      fnsDate: finishTimeSec ? finishTimeSec * 1000 : 0,
       secLimit: tx.countdown || 1800,
-      acctNo: tx.payee_bank_account || "",
-      payAccount: tx.payee_bank_account || ""
+      receiveAccount: sellerReceiveUpi,
+      acctNo: sellerReceiveUpi,
+      payAccount: sellerReceiveUpi
     };
   });
 
@@ -3848,6 +3861,10 @@ app.post('/xxapi/buyitoken/processpaymentslips', async (req, res) => {
   if (tx) {
     if (processType === 'finish') {
       tx.payer_status = 2; // pending audit
+      const nowSec = Math.floor(Date.now() / 1000);
+      (tx as any).dealTime = nowSec;
+      (tx as any).utime = nowSec;
+      if (req.body && req.body.utr) tx.utr = String(req.body.utr).trim();
       if (proof_payment) tx.paymentProof = proof_payment;
 
       // Set BUYER's UPI/collection tools unlinked (state 5) until buyer manually relinks!
@@ -3861,6 +3878,9 @@ app.post('/xxapi/buyitoken/processpaymentslips', async (req, res) => {
       }
     } else if (processType === 'cancel' || processType === 'Cancel') {
       tx.payer_status = 4; // cancelled
+      const nowSec = Math.floor(Date.now() / 1000);
+      (tx as any).finishTime = nowSec;
+      (tx as any).fnsDate = nowSec;
       if (cancel_remark) tx.cancelRemark = cancel_remark;
     }
     await tx.save();
@@ -5372,12 +5392,24 @@ async function getRechargeHistory(req: any, res: any) {
     else if (tx.payer_status === 5) orderState = 5; // fail/timeout
 
     const obj = tx.toObject ? tx.toObject() : { ...tx };
-    const ctTypeVal = (tx as any).ctType || (tx as any).ct_type || 1;
+    const ctTypeVal = (tx as any).ctType || (tx as any).ct_type || (tx as any).payer_tool_type || 1;
     const isUpi = tx.payment_method === 1;
+
+    const buyerSelectedUpi = (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (tx as any).selected_upi || (user && user.phone ? `${user.phone}@ybl` : "");
+    const payeeUpi = tx.payee_bank_account || tx.upi || "";
+
+    const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1000);
+    const dealTimeSec = (tx as any).dealTime || (tx as any).utime || (tx.payer_status >= 2 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : debitTimeSec);
+    const finishTimeSec = (tx as any).finishTime || (tx as any).fnsDate || (tx.payer_status >= 3 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : 0);
 
     return {
       ...obj,
-      id: tx._id.toString(),
+      id: tx._id ? tx._id.toString() : tx.rptNo,
+      rptNo: tx.rptNo || "",
+      orderNo: tx.rptNo || "",
+      order_id: tx.rptNo || "",
+      amount: tx.amount,
+      realAmount: tx.amount,
       orderState: orderState,
       order_state: orderState,
       state: orderState,
@@ -5385,7 +5417,7 @@ async function getRechargeHistory(req: any, res: any) {
       status: tx.payer_status,
       payment_method: isUpi ? 1 : 2,
       method: isUpi ? 1 : 2,
-      payType: isUpi ? 9 : 2,
+      payType: isUpi ? ctTypeVal : 2,
       isBank: !isUpi,
       currency: tx.currency || (isUsdtRequest ? 1 : 3),
       reward: (tx as any).reward || 0,
@@ -5394,22 +5426,23 @@ async function getRechargeHistory(req: any, res: any) {
       ctName: mapCtTypeToName(ctTypeVal),
       ct_name: mapCtTypeToName(ctTypeVal),
       channel: mapCtTypeToUpiType(ctTypeVal),
-      upi: tx.payee_bank_account || "",
-      account: tx.payee_bank_account || "",
-      ctAccount: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
-      ct_account: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
-      payer_upi: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
-      acctNo: tx.payee_bank_account || "",
-      payAccount: tx.payee_bank_account || "",
-      payee_bank_account: tx.payee_bank_account || "",
+      upi: payeeUpi,
+      account: payeeUpi,
+      acctNo: payeeUpi,
+      payee_bank_account: payeeUpi,
+      payAccount: buyerSelectedUpi,
+      payer_upi: buyerSelectedUpi,
+      ctAccount: buyerSelectedUpi,
+      ct_account: buyerSelectedUpi,
+      utr: tx.utr || (tx as any).ref_no || "",
       payee_recipients_name: tx.payee_recipients_name || "Monexo Merchant",
       pnname: tx.payee_recipients_name || "Monexo Merchant",
       name: tx.payee_recipients_name || "Monexo Merchant",
       payee_ifsc: isUpi ? "" : (tx.payee_ifsc || ""),
       payee_bankname: isUpi ? "" : (tx.payee_bankname || ""),
-      crtDate: tx.ctime * 1000,
-      uptDate: tx.ctime * 1000,
-      fnsDate: tx.payer_status >= 3 ? tx.ctime * 1000 : 0,
+      crtDate: debitTimeSec * 1000,
+      uptDate: dealTimeSec * 1000,
+      fnsDate: finishTimeSec ? finishTimeSec * 1000 : 0,
       secLimit: tx.countdown || 1800
     };
   });
@@ -5530,9 +5563,20 @@ async function getSellHistory(req: any, res: any) {
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
 
   const userIds = [user._id, user._id ? user._id.toString() : ''].filter(Boolean);
+  const userObjIds = userIds.map(id => {
+    try { return new mongoose.Types.ObjectId(id); } catch (e) { return null; }
+  }).filter(Boolean);
+  const allUserIds = [...userIds, ...userObjIds];
   const phones = [user.phone, user.mobileNo].filter(Boolean);
 
   const upiAccounts: string[] = [];
+  if (user.upi) upiAccounts.push(user.upi);
+  if (user.upiId) upiAccounts.push(user.upiId);
+  if (user.upi_id) upiAccounts.push(user.upi_id);
+  if (user.phone) {
+    upiAccounts.push(`${user.phone}@ybl`);
+    upiAccounts.push(`${user.phone}@paytm`);
+  }
   if (user.collectionTools && Array.isArray(user.collectionTools)) {
     user.collectionTools.forEach((t: any) => {
       if (t) {
@@ -5558,11 +5602,13 @@ async function getSellHistory(req: any, res: any) {
   const cleanUpis = Array.from(new Set(upiAccounts.map(a => String(a).trim()).filter(Boolean)));
 
   const sellerOrConditions: any[] = [
-    { sellerId: { $in: userIds } },
+    { sellerId: { $in: allUserIds } },
+    { 'sellerId': { $in: userIds.map(String) } },
     { sellerPhone: { $in: phones } },
-    { userId: { $in: userIds }, type: 'sell' },
-    { phone: { $in: phones }, type: 'sell' },
-    { rptNo: /^SELL_/i, $or: [{ userId: { $in: userIds } }, { phone: { $in: phones } }] }
+    { seller_phone: { $in: phones } },
+    { userId: { $in: allUserIds }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
+    { phone: { $in: phones }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
+    { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
   ];
 
   if (cleanUpis.length > 0) {
@@ -5605,15 +5651,37 @@ async function getSellHistory(req: any, res: any) {
     else if (tx.payer_status === 5) orderState = 5; // timeout
 
     const obj = tx.toObject ? tx.toObject() : { ...tx };
-    const ctTypeVal = (tx as any).ctType || (tx as any).ct_type || 1;
+    
+    // Find seller KYC Partner / CT Type: PhonePe=1, MobiKwik=4, Paytm=8
+    let sellerCtType = (tx as any).sellerCtType;
+    if (!sellerCtType && user && user.collectionTools && Array.isArray(user.collectionTools)) {
+      const matched = user.collectionTools.find((t: any) => 
+        t && (t.account === tx.payee_bank_account || t.upi === tx.payee_bank_account)
+      );
+      if (matched && matched.ctType) {
+        sellerCtType = matched.ctType;
+      }
+    }
+    if (!sellerCtType) {
+      sellerCtType = (tx as any).ctType || (tx as any).ct_type || 1;
+    }
+
     const isUpi = tx.payment_method === 1 || String(tx.payee_bankname || '').toLowerCase().includes('upi') || !tx.payee_ifsc;
+
+    const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1000);
+    const dealTimeSec = (tx as any).dealTime || (tx as any).utime || (tx.payer_status >= 2 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : debitTimeSec);
+    const finishTimeSec = (tx as any).finishTime || (tx as any).fnsDate || (tx.payer_status >= 3 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : 0);
+
+    const sellerReceiveUpi = tx.payee_bank_account || tx.upi || "";
 
     return {
       ...obj,
       id: tx._id ? tx._id.toString() : tx.rptNo,
-      rptNo: tx.rptNo,
-      order_id: tx.rptNo,
+      rptNo: tx.rptNo || "",
+      orderNo: tx.rptNo || "",
+      order_id: tx.rptNo || "",
       amount: tx.amount,
+      realAmount: tx.amount,
       orderState: orderState,
       order_state: orderState,
       state: orderState,
@@ -5621,26 +5689,28 @@ async function getSellHistory(req: any, res: any) {
       status: tx.payer_status,
       payment_method: isUpi ? 1 : 2,
       method: isUpi ? 1 : 2,
-      payType: isUpi ? 9 : 2,
+      payType: sellerCtType,
       isBank: !isUpi,
-      ctType: ctTypeVal,
-      ct_type: ctTypeVal,
-      ctName: mapCtTypeToName(ctTypeVal),
-      ct_name: mapCtTypeToName(ctTypeVal),
-      channel: mapCtTypeToUpiType(ctTypeVal),
-      upi: tx.payee_bank_account || "",
-      account: tx.payee_bank_account || "",
-      ctAccount: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
-      ct_account: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
-      payer_upi: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (user && user.phone ? `${user.phone}@ybl` : "") || "",
-      acctNo: tx.payee_bank_account || "",
-      payAccount: tx.payee_bank_account || "",
+      ctType: sellerCtType,
+      ct_type: sellerCtType,
+      ctName: mapCtTypeToName(sellerCtType),
+      ct_name: mapCtTypeToName(sellerCtType),
+      channel: mapCtTypeToUpiType(sellerCtType),
+      receiveAccount: sellerReceiveUpi,
+      upi: sellerReceiveUpi,
+      account: sellerReceiveUpi,
+      acctNo: sellerReceiveUpi,
+      payAccount: sellerReceiveUpi,
+      payer_upi: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || "",
+      ctAccount: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || "",
+      ct_account: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || "",
+      utr: tx.utr || (tx as any).ref_no || "",
       payee_recipients_name: tx.payee_recipients_name || "Merchant Partner",
       pnname: tx.payee_recipients_name || "Merchant Partner",
       name: tx.payee_recipients_name || "Merchant Partner",
-      uptDate: (tx.ctime || Math.floor(Date.now() / 1000)) * 1000,
-      crtDate: (tx.ctime || Math.floor(Date.now() / 1000)) * 1000,
-      fnsDate: tx.payer_status >= 3 ? (tx.ctime || Math.floor(Date.now() / 1000)) * 1000 : 0,
+      crtDate: debitTimeSec * 1000,
+      uptDate: dealTimeSec * 1000,
+      fnsDate: finishTimeSec ? finishTimeSec * 1000 : 0,
       secLimit: tx.countdown || 1800
     };
   });
