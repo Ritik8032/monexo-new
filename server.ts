@@ -4926,16 +4926,27 @@ async function healAndGetCleanTools(user) {
     t => t && t.id && !t.id.startsWith('tool-paytm-business') && !t.id.startsWith('tool-phonepe-business') && !t.id.startsWith('tool-amazon')
   );
 
-  // 2. Deduplicate tools by type / id / account
+  // 2. Deduplicate tools strictly by partner type (ctType / type) so user NEVER gets duplicate/cloned tools
   const uniqueToolMap = new Map();
   for (const t of rawTools) {
-    const key = t.id || `${t.type || t.ctType || 16}_${t.account || ''}`;
-    if (!uniqueToolMap.has(key)) {
-      uniqueToolMap.set(key, t);
+    let partnerType = t.type !== undefined ? t.type : (t.ctType !== undefined ? t.ctType : 16);
+    if (partnerType === 9) partnerType = 8;
+    if (partnerType === 3) partnerType = 2;
+    if (partnerType === 33) partnerType = -10;
+
+    if (!uniqueToolMap.has(partnerType)) {
+      uniqueToolMap.set(partnerType, t);
     } else {
-      const existing = uniqueToolMap.get(key);
-      if ((existing.upi === 'Pending verification' || existing.state === 7 || existing.state === 5) && (t.upi && t.upi.includes('@') && t.state !== 7 && t.state !== 5)) {
-        uniqueToolMap.set(key, t);
+      const existing = uniqueToolMap.get(partnerType);
+      const existingVerified = existing.state === 2 && existing.upi && existing.upi.includes('@') && existing.upi !== 'Pending verification';
+      const currentVerified = t.state === 2 && t.upi && t.upi.includes('@') && t.upi !== 'Pending verification';
+
+      if (!existingVerified && currentVerified) {
+        uniqueToolMap.set(partnerType, t);
+      } else if (existingVerified && currentVerified) {
+        if ((t.verifiedAt || 0) > (existing.verifiedAt || 0)) {
+          uniqueToolMap.set(partnerType, t);
+        }
       }
       modified = true;
     }
@@ -4949,59 +4960,30 @@ async function healAndGetCleanTools(user) {
   const cleanTools: any[] = [];
   
   for (const t of deduplicatedTools) {
-    const typeVal = t.type !== undefined ? t.type : (t.ctType !== undefined ? t.ctType : 16);
-    let upiVal = t.upi;
-    
-    // Find first available verified UPI ID ONLY from THIS tool's backup_upi
-    let verifiedUpi = '';
-    if (t.backup_upi && Array.isArray(t.backup_upi) && t.backup_upi.length > 0) {
-      const found = t.backup_upi.find((u: string) => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification' && u !== 'Pending' && u !== 'undefined');
-      if (found) verifiedUpi = found;
-    }
-    
-    // If upi is empty or "Pending verification", auto-heal it ONLY if verifiedUpi exists on THIS tool
-    if ((!upiVal || upiVal === 'Pending verification' || upiVal === 'Pending' || upiVal === 'undefined' || !upiVal.includes('@')) && verifiedUpi) {
-      upiVal = verifiedUpi;
-      t.upi = verifiedUpi;
-      modified = true;
-    }
+    let typeVal = t.type !== undefined ? t.type : (t.ctType !== undefined ? t.ctType : 16);
+    if (typeVal === 9) typeVal = 8;
+    if (typeVal === 3) typeVal = 2;
+    if (typeVal === 33) typeVal = -10;
 
-    // STRICT REQUIREMENT: Only OTP-verified UPIs should be shown in the app as active tools!
-    if (!upiVal || upiVal === 'Pending verification' || upiVal === 'Pending' || upiVal === 'undefined' || !upiVal.includes('@')) {
-      console.log(`[Collection Tool Healing] Omitting unverified tool without OTP-verified UPI: id=${t.id}, upi=${t.upi}`);
+    // STRICT REQUIREMENT: Only OTP-verified tools with a real VPA returned by automation server are shown!
+    const isVerified = t.state === 2 && t.upi && typeof t.upi === 'string' && t.upi.includes('@') && t.upi !== 'Pending verification' && t.backup_upi && Array.isArray(t.backup_upi) && t.backup_upi.length > 0;
+
+    if (!isVerified) {
+      console.log(`[Collection Tool Healing] Omitting unverified/pending tool: id=${t.id}, type=${typeVal}, upi=${t.upi}, state=${t.state}`);
       continue;
     }
-    
-    // HEAL STATE: Ensure state is 2 for active verified tools
-    if (t.state === 7 || t.state === undefined || t.state === null) {
-      t.state = 2;
-      modified = true;
-    }
-    
-    if (t.status === undefined) {
-      t.status = 1;
-      modified = true;
-    }
-    if (t.ctType === undefined || t.ct_type === undefined) {
-      t.ctType = typeVal;
-      t.ct_type = typeVal;
-      modified = true;
-    }
-    if (t.onlyPaymentFlag === undefined) {
-      t.onlyPaymentFlag = 3;
-      modified = true;
-    }
-    
+
     cleanTools.push({
       ...t,
-      status: t.status !== undefined ? t.status : 1,
-      state: t.state,
-      inSell: t.inSell !== undefined ? t.inSell : 1,
-      onlyPaymentFlag: t.onlyPaymentFlag !== undefined ? t.onlyPaymentFlag : 3,
-      upi: upiVal,
-      account: t.linkedPhone || t.account || upiVal,
-      ctType: t.ctType !== undefined ? t.ctType : typeVal,
-      ct_type: t.ct_type !== undefined ? t.ct_type : typeVal
+      status: 1,
+      state: 2,
+      inSell: 1,
+      onlyPaymentFlag: 3,
+      upi: t.upi,
+      account: t.linkedPhone || t.account || t.upi,
+      ctType: typeVal,
+      ct_type: typeVal,
+      type: typeVal
     });
   }
   
@@ -5112,18 +5094,9 @@ app.post('/xxapi/collectiontool', async (req, res) => {
   }
 
   try {
-    let targetUpi = (upi && upi !== 'Pending verification') ? String(upi).trim() : '';
-    if (!targetUpi) {
-      if (user.zoopayUpis && user.zoopayUpis.length > 0) {
-        targetUpi = user.zoopayUpis[0];
-      } else if (tool.upi && tool.upi !== 'Pending verification') {
-        targetUpi = tool.upi;
-      }
-    }
-    if (!targetUpi) {
-      const targetPhone = account || tool.account || user.phone;
-      const typeStr = mapCtTypeToUpiType(tool.type || tool.ctType);
-      targetUpi = `${targetPhone}@${typeStr || 'paytm'}`;
+    let targetUpi = (upi && upi !== 'Pending verification') ? String(upi).trim() : (tool.upi && tool.upi !== 'Pending verification' ? tool.upi : '');
+    if (!targetUpi || !targetUpi.includes('@')) {
+      return res.json({ code: 400, msg: 'Valid OTP-verified UPI ID required' });
     }
 
     let zoopayToolId = `zoopay-tool-${Date.now()}`;
@@ -5429,10 +5402,10 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
     user.markModified('zoopayPhone');
     user.markModified('zoopayUpis');
 
-    // Create or locate the tool
+    // Create or locate the tool strictly for this partner type (typeNum)
     let tool;
-    const toolId = ct_id || `tool-user-${Date.now()}`;
-    tool = user.collectionTools.find(t => t.id === toolId);
+    const toolId = ct_id || `tool-${typeNum}-${Date.now()}`;
+    tool = user.collectionTools.find(t => t.id === toolId || t.type === typeNum || t.ctType === typeNum || t.ct_type === typeNum);
 
     if (!tool) {
       tool = {
@@ -5458,6 +5431,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       };
       user.collectionTools.push(tool);
     } else {
+      tool.id = toolId;
       tool.account = targetPhone;
       tool.phone = targetPhone;
       tool.type = typeNum;
@@ -5726,10 +5700,10 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
       tool = user.collectionTools.find(t => t.id === ct_id);
     }
     if (!tool && account) {
-      tool = user.collectionTools.find(t => t.account === account && (t.type === typeNum || t.ctType === typeNum));
+      tool = user.collectionTools.find(t => t.account === account && (t.type === typeNum || t.ctType === typeNum || t.ct_type === typeNum));
     }
     if (!tool) {
-      tool = user.collectionTools.find(t => (t.type === typeNum || t.ctType === typeNum) && t.state === 2 && t.upi && t.upi.includes('@'));
+      tool = user.collectionTools.find(t => (t.type === typeNum || t.ctType === typeNum || t.ct_type === typeNum));
     }
   }
 
