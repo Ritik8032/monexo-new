@@ -4856,6 +4856,7 @@ function extractUpisFromResponse(json: any, phone: string, ctType: any): string[
   if (json) {
     const searchObj = (obj: any) => {
       if (!obj || typeof obj !== 'object') return;
+
       if (Array.isArray(obj)) {
         obj.forEach(item => {
           if (typeof item === 'string' && item.includes('@') && !item.includes('Pending')) {
@@ -4865,6 +4866,27 @@ function extractUpisFromResponse(json: any, phone: string, ctType: any): string[
           }
         });
         return;
+      }
+
+      // Explicit key checks including upiAccount, vpa, upi, etc.
+      const targetKeys = ['upiAccount', 'upi_account', 'vpa', 'vpas', 'upi', 'upis', 'upiList', 'vpaList', 'upi_list', 'vpa_list', 'upi_id', 'payAccount', 'handles', 'handle', 'account', 'vpa_account'];
+      for (const k of targetKeys) {
+        if (obj[k]) {
+          const val = obj[k];
+          if (Array.isArray(val)) {
+            val.forEach((item: any) => {
+              if (typeof item === 'string') {
+                found.push(item.trim());
+              } else if (item && typeof item === 'object') {
+                searchObj(item);
+              }
+            });
+          } else if (typeof val === 'string') {
+            found.push(val.trim());
+          } else if (typeof val === 'object') {
+            searchObj(val);
+          }
+        }
       }
 
       for (const key of Object.keys(obj)) {
@@ -4880,7 +4902,7 @@ function extractUpisFromResponse(json: any, phone: string, ctType: any): string[
     searchObj(json);
   }
 
-  const uniqueUpis = Array.from(new Set(found.filter(u => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification')));
+  const uniqueUpis = Array.from(new Set(found.map(u => String(u).trim()).filter(u => u && u.includes('@') && u !== 'Pending verification')));
   if (uniqueUpis.length > 0) {
     return uniqueUpis;
   }
@@ -5563,6 +5585,21 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
 
   const { pk, ct_type, account, login_params } = req.body;
+  const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
+
+  let tool: any = null;
+  if (user.collectionTools) {
+    if (pk) {
+      tool = user.collectionTools.find((t: any) => t.id === pk || t._id === pk);
+    }
+    if (!tool && account) {
+      tool = user.collectionTools.find((t: any) => t.account === account && (t.type === typeNum || t.ctType === typeNum));
+    }
+    if (!tool) {
+      tool = user.collectionTools.find((t: any) => (t.type === typeNum || t.ctType === typeNum) && (t.state === 7 || t.upi === 'Pending verification'));
+    }
+  }
+
   let otp = '';
   try {
     if (login_params) {
