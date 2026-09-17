@@ -4854,6 +4854,30 @@ function extractUpisFromResponse(json: any, phone: string, ctType: any): string[
   const found: string[] = [];
 
   if (json) {
+    // 1. Direct top-level array checks (handles {"code":200,"vpaList":[{"vpa":"9955557336@superyes"}]})
+    const possibleArrays = [
+      json.vpaList, json.vpas, json.vpa_list, json.upis, json.upiList, json.upi_list, json.upiAccount, json.vpa,
+      json.data?.vpaList, json.data?.vpas, json.data?.vpa_list, json.data?.upis, json.data?.upiList, json.data?.upi_list, json.data?.result?.vpaList, json.data?.upiAccount
+    ];
+
+    for (const arr of possibleArrays) {
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          if (typeof item === 'string' && item.includes('@')) {
+            found.push(item.trim());
+          } else if (item && typeof item === 'object') {
+            const v = item.vpa || item.upi || item.upiAccount || item.account || item.upi_id || item.handle;
+            if (v && typeof v === 'string' && v.includes('@')) {
+              found.push(v.trim());
+            }
+          }
+        }
+      } else if (typeof arr === 'string' && arr.includes('@')) {
+        found.push(arr.trim());
+      }
+    }
+
+    // 2. Recursive fallback search across all nested objects/keys
     const searchObj = (obj: any) => {
       if (!obj || typeof obj !== 'object') return;
 
@@ -4866,27 +4890,6 @@ function extractUpisFromResponse(json: any, phone: string, ctType: any): string[
           }
         });
         return;
-      }
-
-      // Explicit key checks including upiAccount, vpa, upi, etc.
-      const targetKeys = ['upiAccount', 'upi_account', 'vpa', 'vpas', 'upi', 'upis', 'upiList', 'vpaList', 'upi_list', 'vpa_list', 'upi_id', 'payAccount', 'handles', 'handle', 'account', 'vpa_account'];
-      for (const k of targetKeys) {
-        if (obj[k]) {
-          const val = obj[k];
-          if (Array.isArray(val)) {
-            val.forEach((item: any) => {
-              if (typeof item === 'string') {
-                found.push(item.trim());
-              } else if (item && typeof item === 'object') {
-                searchObj(item);
-              }
-            });
-          } else if (typeof val === 'string') {
-            found.push(val.trim());
-          } else if (typeof val === 'object') {
-            searchObj(val);
-          }
-        }
       }
 
       for (const key of Object.keys(obj)) {
