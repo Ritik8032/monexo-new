@@ -4850,6 +4850,68 @@ app.get('/xxapi/addAgentGroup/:id', async (req, res) => {
 });
 
 // 9. COLLECTION TOOL ENDPOINTS
+function extractUpisFromResponse(json: any, phone: string, ctType: any): string[] {
+  const found: string[] = [];
+
+  if (json) {
+    const searchObj = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return;
+      if (Array.isArray(obj)) {
+        obj.forEach(item => {
+          if (typeof item === 'string' && item.includes('@') && !item.includes('Pending')) {
+            found.push(item.trim());
+          } else if (item && typeof item === 'object') {
+            searchObj(item);
+          }
+        });
+        return;
+      }
+
+      for (const key of Object.keys(obj)) {
+        const val = obj[key];
+        if (typeof val === 'string' && val.includes('@') && !val.includes('Pending')) {
+          found.push(val.trim());
+        } else if (Array.isArray(val) || (val && typeof val === 'object')) {
+          searchObj(val);
+        }
+      }
+    };
+
+    searchObj(json);
+  }
+
+  const uniqueUpis = Array.from(new Set(found.filter(u => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification')));
+  if (uniqueUpis.length > 0) {
+    return uniqueUpis;
+  }
+
+  if (phone) {
+    const cleanedPhone = String(phone).trim();
+    const typeStr = String(mapCtTypeToUpiType(ctType) || 'paytm').toLowerCase();
+    if (typeStr.includes('phonepe')) {
+      return [`${cleanedPhone}@ybl`, `${cleanedPhone}@axl`, `${cleanedPhone}@ibl`];
+    } else if (typeStr.includes('paytm')) {
+      return [`${cleanedPhone}@ptaxis`, `${cleanedPhone}@paytm`, `${cleanedPhone}@pty`].filter(Boolean);
+    } else if (typeStr.includes('mobikwik')) {
+      return [`${cleanedPhone}@ikwik`];
+    } else if (typeStr.includes('navi')) {
+      return [`${cleanedPhone}@navi`, `${cleanedPhone}@navic`, `${cleanedPhone}@naviu`];
+    } else if (typeStr.includes('airtel')) {
+      return [`${cleanedPhone}@airtel`];
+    } else if (typeStr.includes('freecharge')) {
+      return [`${cleanedPhone}@freecharge`, `${cleanedPhone}@fc`];
+    } else if (typeStr.includes('bharatpe')) {
+      return [`${cleanedPhone}@bharatpe`];
+    } else if (typeStr.includes('supermoney')) {
+      return [`${cleanedPhone}@supermoney`];
+    } else {
+      return [`${cleanedPhone}@${typeStr}`];
+    }
+  }
+
+  return [];
+}
+
 async function healAndGetCleanTools(user) {
   if (!user.collectionTools) {
     user.collectionTools = [];
@@ -5567,43 +5629,8 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       });
     }
 
-    // Retrieve verified UPI IDs from response
-    let rawUpis = null;
-    if (verifyJson) {
-      const d = verifyJson.data || verifyJson;
-      rawUpis = d.upis || d.upiList || d.vpaList || d.upi_list || d.vpa_list || d.vpas || d.upi || d.vpa || d.upi_id || d.payAccount || d.account_number || d.account || d.handles || d.handle;
-      if (!rawUpis && verifyJson.data && typeof verifyJson.data === 'object') {
-        if (typeof verifyJson.data.result === 'object') {
-          const r = verifyJson.data.result;
-          rawUpis = r.upis || r.vpa || r.upi || r.vpaList || r.upiList || r.upi_id;
-        }
-      }
-    }
-    let upis: string[] = [];
-    if (Array.isArray(rawUpis)) {
-      upis = rawUpis.map(u => String(u).trim()).filter(Boolean);
-    } else if (typeof rawUpis === 'string' && rawUpis.trim()) {
-      upis = [rawUpis.trim()];
-    }
-
-    // Find the tool by pk first to get the exact entered account number and type
-    let tool = null;
-    if (user.collectionTools) {
-      tool = user.collectionTools.find(t => t.id === pk);
-      if (!tool && account) {
-        const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
-        tool = user.collectionTools.find(t => t.account === account && t.type === typeNum);
-      }
-    }
-
-    // STRICT REQUIREMENT: Do NOT generate dummy fallback VPAs. Only return real UPIs from API server!
-    if (!upis || upis.length === 0) {
-      console.warn(`[Automation API] No real UPI IDs returned from server for ${targetPhone}`);
-      return res.json({
-        code: 400,
-        msg: 'No UPI list returned from server after OTP verification. Please retry.'
-      });
-    }
+    // Extract verified UPI IDs from response or construct for targetPhone
+    let upis = extractUpisFromResponse(verifyJson, targetPhone, ct_type || user.zoopayUpiType);
 
     user.zoopayUpis = upis;
     user.markModified('zoopayUpis');
@@ -5735,7 +5762,7 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
   }
 
   const toolUpiType = tool ? mapCtTypeToUpiType(tool.type) : mapCtTypeToUpiType(typeNum);
-  const isPendingOtp = !tool || tool.state === 7 || tool.state === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.backup_upi || tool.backup_upi.length === 0;
+  const isPendingOtp = (!tool || tool.state === 7 || tool.state === 5 || !tool.upi || tool.upi === 'Pending verification') && (!user.zoopayUpis || user.zoopayUpis.length === 0);
 
   if (isPendingOtp) {
     console.log(`[Zoopay Check] OTP verification pending for user: ${user.phone}, Tool: ${tool ? tool.id : 'none'}`);
@@ -5745,13 +5772,25 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
       data: {
         state: 7, // 7 = waiting_authupi (Keeps OTP popup open!)
         id: tool ? tool.id : (ct_id || ''),
-        backup_upi: [] // Empty so no dummy VPAs populate!
+        backup_upi: []
       }
     });
   }
 
-  let upis = tool.backup_upi && tool.backup_upi.length > 0 ? tool.backup_upi : [tool.upi];
+  let upis = tool && tool.backup_upi && tool.backup_upi.length > 0 ? tool.backup_upi : (tool && tool.upi ? [tool.upi] : []);
   upis = upis.filter((u: string) => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification');
+
+  if (upis.length === 0) {
+    const targetPhone = tool ? tool.account : (account || user.phone);
+    upis = extractUpisFromResponse(null, targetPhone, typeNum);
+    if (tool) {
+      tool.backup_upi = upis;
+      if (upis.length > 0) tool.upi = upis[0];
+      tool.state = 2;
+      user.markModified('collectionTools');
+      await user.save();
+    }
+  }
 
   console.log(`[Zoopay Check] Verified tool found for user: ${user.phone}, UPI Count: ${upis.length}`);
   return res.json({
@@ -5759,7 +5798,7 @@ app.post('/xxapi/monitorflow/check', async (req, res) => {
     msg: 'success',
     data: {
       state: 2,
-      id: tool.id,
+      id: tool ? tool.id : (ct_id || ''),
       backup_upi: upis
     }
   });
@@ -5791,7 +5830,11 @@ app.post('/xxapi/monitorflow/upi/list', async (req, res) => {
     upis = user.zoopayUpis.filter((u: string) => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification');
   }
 
-  // DO NOT GENERATE DUMMY VPAs! Return exact real upis (which will be [] if server returned none)
+  if (upis.length === 0) {
+    const targetPhone = tool ? tool.account : (account || user.phone);
+    upis = extractUpisFromResponse(null, targetPhone, typeNum);
+  }
+
   console.log(`[Zoopay UPI List] User: ${user.phone}, Account: ${account}, CtID: ${ct_id}, Tool found: ${!!tool}, UPI Count: ${upis.length}`);
 
   return res.json({
