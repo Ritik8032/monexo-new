@@ -7,6 +7,14 @@ mongoose.set('bufferCommands', false); // Disable buffering globally so queries 
 import multer from 'multer';
 import fs from 'fs';
 import crypto from 'crypto';
+import ImageKit from 'imagekit';
+
+// Initialize ImageKit with user credentials
+const imagekit = new ImageKit({
+  publicKey: process.env.IMAGEKIT_PUBLIC_KEY || "public_xeE3nETcdPEjyfHG7osdryaReOk=",
+  privateKey: process.env.IMAGEKIT_PRIVATE_KEY || "private_QHSb824mw2wOUONVMn4UmgayL38=",
+  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT || "https://ik.imagekit.io/MonexoCS"
+});
 
 // Global error handlers to prevent process crashes under any serverless/cloud/container environments
 process.on('uncaughtException', (err) => {
@@ -281,6 +289,7 @@ const transactionSchema = new mongoose.Schema({
   usdtNetwork: { type: String, default: 'TRC20' },
   exchangeRate: { type: Number, default: 0 },
   utr: { type: String, default: '' },
+  proofImage: { type: String, default: '' },
   currentStep: { type: Number, default: 0 }, // 0: unpaid/instructions, 1: upload cert, 2: reviewed/success
   payee_recipients_name: { type: String, default: 'Monexo Merchant' },
   payee_ifsc: { type: String, default: 'SBIN0001234' },
@@ -4928,12 +4937,39 @@ app.all(['/xxapi/deviceInfo', '/xxapi/referral*', '/xxapi/team/edit/ratio', '/xx
   return res.json({ code: 0, msg: "success", data: {} });
 });
 
+// Payment Proof Upload Endpoint via ImageKit
+app.post(['/xxapi/uploadPaymentProof', '/xxapi/uploadPaymentProof/*'], async (req, res) => {
+  try {
+    let fileToUpload = req.body?.imagedata || req.body?.image || req.body?.file || req.body?.proofImage;
+    if (!fileToUpload && req.files && (req.files as any[]).length > 0) {
+      fileToUpload = (req.files as any[])[0].buffer;
+    }
+    if (!fileToUpload) {
+      return res.json({ code: 400, msg: "No image file provided" });
+    }
+    const result = await imagekit.upload({
+      file: fileToUpload,
+      fileName: `proof_${Date.now()}.png`,
+      folder: '/usdt_proofs'
+    });
+    console.log(`[ImageKit Proof Upload Success] URL: ${result.url}`);
+    return res.json({ code: 0, msg: "success", data: result.url, url: result.url });
+  } catch (err: any) {
+    console.error("ImageKit uploadPaymentProof error:", err);
+    return res.json({ code: 500, msg: err.message || "Failed to upload image" });
+  }
+});
+
 // USDT / TRX Deposit Notify & Record Submission
 app.all(['/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/buyUsdt/submit'], async (req, res) => {
   try {
     await connectToDatabase();
     const user = await getUserByToken(req).catch(() => null);
     
+    if (!user) {
+      return res.json({ code: 401, msg: "Unauthorized. Please login again." });
+    }
+
     // Extract parameters
     const body = req.body || {};
     const query = req.query || {};
@@ -4941,8 +4977,35 @@ app.all(['/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/buyUsdt/submit
     const usdtVal = Number(body.targetAmount || query.targetAmount || body.usdtAmount || query.usdtAmount || (amountVal > 0 ? (amountVal / 90) : 0));
     const networkVal = String(body.network || query.network || 'TRC20').toUpperCase();
     const utrVal = String(body.utr || query.utr || body.address || query.address || body.txHash || query.txHash || '');
+    let proofImage = String(body.proofImage || body.proof || body.imagedata || query.proofImage || query.proof || '').trim();
 
-    if (user && (amountVal > 0 || usdtVal > 0)) {
+    if (!proofImage && req.files && (req.files as any[]).length > 0) {
+      const file = (req.files as any[])[0];
+      proofImage = file.buffer;
+    }
+
+    // MANDATORY IMAGE CHECK: User must upload proof screenshot before submitting
+    if (!proofImage) {
+      return res.json({ code: 400, msg: "Payment proof screenshot is required! Please select/upload your payment screenshot." });
+    }
+
+    // Upload image to ImageKit if it's base64 or buffer or raw file data
+    let imageUrl = proofImage;
+    if (typeof proofImage !== 'string' || proofImage.startsWith('data:') || proofImage.length > 300) {
+      try {
+        const ikRes = await imagekit.upload({
+          file: proofImage,
+          fileName: `usdt_proof_${Date.now()}.png`,
+          folder: '/usdt_proofs'
+        });
+        imageUrl = ikRes.url;
+        console.log(`[ImageKit USDT Proof Uploaded] URL: ${imageUrl}`);
+      } catch (ikErr: any) {
+        console.error("[ImageKit USDT Proof Error]:", ikErr?.message || ikErr);
+      }
+    }
+
+    if (amountVal > 0 || usdtVal > 0) {
       const rptNo = 'USDT' + Date.now() + Math.floor(Math.random() * 1000);
       const siteConf = await SiteConfig.findOne().lean();
       const rate = Number(siteConf?.usdtExchangerate || 90);
@@ -4963,18 +5026,19 @@ app.all(['/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/buyUsdt/submit
         type: 'recharge',
         payer_status: 2, // In Review / Pending Admin Approval
         utr: utrVal,
+        proofImage: imageUrl,
         ctime: Math.floor(Date.now() / 1000)
       });
 
       await newTx.save();
-      console.log(`[USDT Deposit Recorded] User: ${user.phone}, INR: ${inrAmount}, USDT: ${actualUsdt}, RPT: ${rptNo}`);
-      return res.json({ code: 0, msg: "USDT deposit request recorded successfully", data: newTx });
+      console.log(`[USDT Deposit Recorded] User: ${user.phone}, INR: ${inrAmount}, USDT: ${actualUsdt}, Proof: ${imageUrl}, RPT: ${rptNo}`);
+      return res.json({ code: 0, msg: "USDT deposit request and payment proof submitted successfully", data: newTx });
     }
 
     return res.json({ code: 0, msg: "success", data: {} });
   } catch (err) {
     console.error("buyUsdt/notify error:", err);
-    return res.json({ code: 0, msg: "success", data: {} });
+    return res.json({ code: 500, msg: "Internal server error submitting deposit: " + (err?.message || err) });
   }
 });
 

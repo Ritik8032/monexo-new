@@ -1521,6 +1521,7 @@
                       <th class="p-3.5">INR Amount</th>
                       <th class="p-3.5">USDT Quantity</th>
                       <th class="p-3.5">Network & Rate</th>
+                      <th class="p-3.5">Payment Proof</th>
                       <th class="p-3.5">UTR / Tx Hash</th>
                       <th class="p-3.5">Status</th>
                       <th class="p-3.5">Submitted Date</th>
@@ -1529,12 +1530,12 @@
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-medium text-slate-700">
                     <tr v-if="usdtLoading" class="text-center">
-                      <td colspan="9" class="py-8 text-slate-400">
+                      <td colspan="10" class="py-8 text-slate-400">
                         <i class="fa-solid fa-spinner fa-spin text-lg mr-2"></i> Loading USDT history records...
                       </td>
                     </tr>
                     <tr v-else-if="usdtHistoryList.length === 0" class="text-center">
-                      <td colspan="9" class="py-8 text-slate-400">
+                      <td colspan="10" class="py-8 text-slate-400">
                         No USDT deposit records found.
                       </td>
                     </tr>
@@ -1557,6 +1558,15 @@
                           {{ item.usdtNetwork || 'TRC20' }}
                         </span>
                         <span class="text-[10px] text-slate-400 block mt-0.5">Rate: ₹{{ item.exchangeRate || 90 }}</span>
+                      </td>
+                      <td class="p-3.5">
+                        <div v-if="item.proofImage" class="flex items-center gap-1.5">
+                          <img :src="item.proofImage" @click="openProofPreview(item.proofImage)" alt="Proof" class="w-9 h-9 object-cover rounded-lg border border-slate-200 shadow-2xs cursor-pointer hover:scale-105 transition" />
+                          <button @click="openProofPreview(item.proofImage)" class="px-2 py-1 bg-purple-50 text-purple-600 hover:bg-purple-100 rounded-lg text-[10px] font-bold border border-purple-200 transition flex items-center gap-1">
+                            <i class="fa-solid fa-eye"></i> View
+                          </button>
+                        </div>
+                        <span v-else class="text-slate-400 text-[10px] italic">No image</span>
                       </td>
                       <td class="p-3.5 font-mono text-[11px] max-w-[180px] truncate" :title="item.utr">
                         {{ item.utr || '-' }}
@@ -1650,6 +1660,31 @@
                 </button>
                 <button @click="submitManualUsdtDeposit" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm">
                   <i class="fa-solid fa-check mr-1"></i> Submit Deposit
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========================================== -->
+          <!-- PAYMENT PROOF SCREENSHOT PREVIEW MODAL      -->
+          <!-- ========================================== -->
+          <div v-if="showProofModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 z-50" @click.self="showProofModal = false">
+            <div class="bg-white rounded-3xl max-w-2xl w-full p-5 shadow-2xl border border-slate-100 flex flex-col items-center relative animate-in fade-in zoom-in-95 duration-150 font-sans">
+              <button @click="showProofModal = false" class="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 text-slate-700 w-8 h-8 rounded-full flex items-center justify-center transition">
+                <i class="fa-solid fa-xmark text-sm"></i>
+              </button>
+              <h3 class="font-extrabold text-slate-800 text-sm mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-file-invoice text-emerald-600"></i> Payment Proof Screenshot
+              </h3>
+              <div class="max-h-[70vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 flex justify-center w-full">
+                <img :src="previewProofUrl" class="max-w-full max-h-[65vh] object-contain rounded-xl shadow-sm" alt="Payment Proof Full" />
+              </div>
+              <div class="flex items-center gap-3 mt-4 w-full justify-between">
+                <a :href="previewProofUrl" target="_blank" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                  <i class="fa-solid fa-up-right-from-square"></i> Open Original Image in New Tab
+                </a>
+                <button @click="showProofModal = false" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition">
+                  Close
                 </button>
               </div>
             </div>
@@ -3360,6 +3395,13 @@
         });
 
         const showAddUsdtModal = ref(false);
+        const showProofModal = ref(false);
+        const previewProofUrl = ref('');
+        const openProofPreview = (url) => {
+          previewProofUrl.value = url || '';
+          showProofModal.value = true;
+        };
+
         const newUsdtForm = reactive({
           phone: '',
           inrAmount: '',
@@ -4610,6 +4652,9 @@
           usdtStatusFilter,
           usdtStats,
           showAddUsdtModal,
+          showProofModal,
+          previewProofUrl,
+          openProofPreview,
           newUsdtForm,
           fetchUsdtHistory,
           approveUsdtDeposit,
