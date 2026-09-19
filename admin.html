@@ -293,58 +293,171 @@
           <!-- ========================================== -->
           <div v-if="activeTab === 'dashboard' && !selectedUser" class="space-y-8">
             
-            <!-- 3 Gradient Cards Grid (mimicking the Purple Admin screenshot) -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Successful Orders Section Header -->
+            <div class="flex items-center justify-between border-b border-slate-200/80 pb-3">
+              <div>
+                <h2 class="text-lg font-extrabold text-slate-800 flex items-center gap-2">
+                  <i class="fa-solid fa-chart-line text-[#b66dff]"></i>
+                  Successful Order Financial Summary
+                </h2>
+                <p class="text-xs text-slate-500 font-medium mt-0.5">Live real-time aggregation of completed buy (recharge) and sell (withdrawal) orders</p>
+              </div>
+              <span class="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-extrabold rounded-full border border-emerald-200/60 flex items-center gap-1.5 shadow-xs">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Status: 3 (Success Only)
+              </span>
+            </div>
+
+            <!-- 4 Order Stats Cards Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               
-              <!-- Card 1: Weekly Sales (Pink/Orange Gradient) -->
-              <div class="pink-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
-                <!-- Subtle background design overlay -->
-                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
-                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+              <!-- 1. Total Buy Amount Card -->
+              <div class="bg-gradient-to-br from-emerald-500 to-teal-700 rounded-2xl p-5 text-white relative overflow-hidden shadow-lg flex flex-col justify-between min-h-[150px] transform transition hover:-translate-y-1">
+                <span class="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xs"></span>
+                <span class="absolute right-10 -bottom-10 w-20 h-20 bg-white/15 rounded-full"></span>
                 
                 <div class="flex justify-between items-start z-10">
-                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Users</span>
-                  <i class="fa-solid fa-users text-2xl opacity-40"></i>
+                  <span class="text-xs font-bold tracking-wider uppercase opacity-90">Total Buy Amount</span>
+                  <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-xs">
+                    <i class="fa-solid fa-cart-shopping text-xl"></i>
+                  </div>
                 </div>
                 
-                <div class="z-10 mt-4">
-                  <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.totalUsers }}</h3>
-                  <p class="text-xs opacity-90 mt-2 font-medium">Increased by 60% this week</p>
+                <div class="z-10 mt-3">
+                  <h3 class="text-2xl lg:text-3xl font-black tracking-tight">₹{{ formatCurrency(stats.totalBuyAmount) }}</h3>
+                  <div class="flex items-center justify-between text-xs opacity-90 mt-2 font-semibold pt-2 border-t border-white/20">
+                    <span>Successful Buy Orders</span>
+                    <span class="bg-white/20 px-2 py-0.5 rounded-full font-bold">{{ stats.totalBuyCount || 0 }}</span>
+                  </div>
                 </div>
               </div>
 
-              <!-- Card 2: Weekly Orders (Blue Gradient) -->
-              <div class="blue-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
-                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
-                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+              <!-- 2. Today Buy Amount Card -->
+              <div class="bg-gradient-to-br from-cyan-500 to-blue-700 rounded-2xl p-5 text-white relative overflow-hidden shadow-lg flex flex-col justify-between min-h-[150px] transform transition hover:-translate-y-1">
+                <span class="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xs"></span>
+                <span class="absolute right-10 -bottom-10 w-20 h-20 bg-white/15 rounded-full"></span>
                 
                 <div class="flex justify-between items-start z-10">
-                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Wallet Balances</span>
-                  <i class="fa-solid fa-wallet text-2xl opacity-40"></i>
+                  <span class="text-xs font-bold tracking-wider uppercase opacity-90">Today Buy Amount</span>
+                  <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-xs">
+                    <i class="fa-solid fa-calendar-day text-xl"></i>
+                  </div>
                 </div>
                 
-                <div class="z-10 mt-4">
-                  <h3 class="text-2xl lg:text-3xl font-bold tracking-tight">₹{{ formatCurrency(stats.totalBalance) }}</h3>
-                  <p class="text-xs opacity-90 mt-2 font-medium">Live ledger synchronization</p>
+                <div class="z-10 mt-3">
+                  <h3 class="text-2xl lg:text-3xl font-black tracking-tight">₹{{ formatCurrency(stats.todayBuyAmount) }}</h3>
+                  <div class="flex items-center justify-between text-xs opacity-90 mt-2 font-semibold pt-2 border-t border-white/20">
+                    <span>Completed Today</span>
+                    <span class="bg-white/20 px-2 py-0.5 rounded-full font-bold">{{ stats.todayBuyCount || 0 }}</span>
+                  </div>
                 </div>
               </div>
 
-              <!-- Card 3: Visitors Online (Teal/Green Gradient) -->
-              <div class="green-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
-                <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
-                <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+              <!-- 3. Total Sell Amount Card -->
+              <div class="bg-gradient-to-br from-purple-600 to-indigo-800 rounded-2xl p-5 text-white relative overflow-hidden shadow-lg flex flex-col justify-between min-h-[150px] transform transition hover:-translate-y-1">
+                <span class="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xs"></span>
+                <span class="absolute right-10 -bottom-10 w-20 h-20 bg-white/15 rounded-full"></span>
                 
                 <div class="flex justify-between items-start z-10">
-                  <span class="text-sm font-medium opacity-90 tracking-wider">Total Verified KYC</span>
-                  <i class="fa-solid fa-circle-check text-2xl opacity-40"></i>
+                  <span class="text-xs font-bold tracking-wider uppercase opacity-90">Total Sell Amount</span>
+                  <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-xs">
+                    <i class="fa-solid fa-hand-holding-dollar text-xl"></i>
+                  </div>
                 </div>
                 
-                <div class="z-10 mt-4">
-                  <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.kycVerified }} Users</h3>
-                  <p class="text-xs opacity-90 mt-2 font-medium">Increased by 5% compared to yesterday</p>
+                <div class="z-10 mt-3">
+                  <h3 class="text-2xl lg:text-3xl font-black tracking-tight">₹{{ formatCurrency(stats.totalSellAmount) }}</h3>
+                  <div class="flex items-center justify-between text-xs opacity-90 mt-2 font-semibold pt-2 border-t border-white/20">
+                    <span>Successful Sell Orders</span>
+                    <span class="bg-white/20 px-2 py-0.5 rounded-full font-bold">{{ stats.totalSellCount || 0 }}</span>
+                  </div>
                 </div>
               </div>
 
+              <!-- 4. Today Sell Amount Card -->
+              <div class="bg-gradient-to-br from-rose-500 to-amber-600 rounded-2xl p-5 text-white relative overflow-hidden shadow-lg flex flex-col justify-between min-h-[150px] transform transition hover:-translate-y-1">
+                <span class="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xs"></span>
+                <span class="absolute right-10 -bottom-10 w-20 h-20 bg-white/15 rounded-full"></span>
+                
+                <div class="flex justify-between items-start z-10">
+                  <span class="text-xs font-bold tracking-wider uppercase opacity-90">Today Sell Amount</span>
+                  <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-xs">
+                    <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+                  </div>
+                </div>
+                
+                <div class="z-10 mt-3">
+                  <h3 class="text-2xl lg:text-3xl font-black tracking-tight">₹{{ formatCurrency(stats.todaySellAmount) }}</h3>
+                  <div class="flex items-center justify-between text-xs opacity-90 mt-2 font-semibold pt-2 border-t border-white/20">
+                    <span>Completed Today</span>
+                    <span class="bg-white/20 px-2 py-0.5 rounded-full font-bold">{{ stats.todaySellCount || 0 }}</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Platform Overview Header & Cards -->
+            <div class="pt-2">
+              <div class="flex items-center justify-between border-b border-slate-200/80 pb-3 mb-5">
+                <div>
+                  <h2 class="text-lg font-extrabold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-users text-purple-600"></i>
+                    Platform User & Balance Overview
+                  </h2>
+                  <p class="text-xs text-slate-500 font-medium mt-0.5">Registered accounts, total ledger balances, and KYC status</p>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Card 1: Total Users -->
+                <div class="pink-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                  <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                  <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                  
+                  <div class="flex justify-between items-start z-10">
+                    <span class="text-sm font-medium opacity-90 tracking-wider">Total Users</span>
+                    <i class="fa-solid fa-users text-2xl opacity-40"></i>
+                  </div>
+                  
+                  <div class="z-10 mt-4">
+                    <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.totalUsers }}</h3>
+                    <p class="text-xs opacity-90 mt-2 font-medium">+{{ stats.todayRegistrations || 0 }} registrations today</p>
+                  </div>
+                </div>
+
+                <!-- Card 2: Total Wallet Balances -->
+                <div class="blue-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                  <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                  <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                  
+                  <div class="flex justify-between items-start z-10">
+                    <span class="text-sm font-medium opacity-90 tracking-wider">Total Wallet Balances</span>
+                    <i class="fa-solid fa-wallet text-2xl opacity-40"></i>
+                  </div>
+                  
+                  <div class="z-10 mt-4">
+                    <h3 class="text-2xl lg:text-3xl font-bold tracking-tight">₹{{ formatCurrency(stats.totalBalance) }}</h3>
+                    <p class="text-xs opacity-90 mt-2 font-medium">Live ledger synchronization</p>
+                  </div>
+                </div>
+
+                <!-- Card 3: Total Verified KYC -->
+                <div class="green-gradient rounded-2xl p-6 text-white relative overflow-hidden shadow-md flex flex-col justify-between min-h-[160px]">
+                  <span class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full"></span>
+                  <span class="absolute right-12 -bottom-12 w-20 h-20 bg-white/15 rounded-full"></span>
+                  
+                  <div class="flex justify-between items-start z-10">
+                    <span class="text-sm font-medium opacity-90 tracking-wider">Total Verified KYC</span>
+                    <i class="fa-solid fa-circle-check text-2xl opacity-40"></i>
+                  </div>
+                  
+                  <div class="z-10 mt-4">
+                    <h3 class="text-3xl lg:text-4xl font-bold tracking-tight">{{ stats.kycVerified }} Users</h3>
+                    <p class="text-xs opacity-90 mt-2 font-medium">Verified User Profiles</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -2285,7 +2398,15 @@
           totalBalance: 0,
           totalRecharge: 0,
           kycVerified: 0,
-          todayRegistrations: 0
+          todayRegistrations: 0,
+          totalBuyAmount: 0,
+          totalBuyCount: 0,
+          todayBuyAmount: 0,
+          todayBuyCount: 0,
+          totalSellAmount: 0,
+          totalSellCount: 0,
+          todaySellAmount: 0,
+          todaySellCount: 0
         });
 
         const users = ref([]);

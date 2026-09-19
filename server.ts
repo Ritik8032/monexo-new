@@ -7939,8 +7939,64 @@ app.get('/xxapi/admin/stats', requireAdmin, async (req, res) => {
     
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+    const todayStartSec = Math.floor(todayStart.getTime() / 1000);
     const todayRegistrations = allUsers.filter(u => u.createdAt && new Date(u.createdAt) >= todayStart).length;
     
+    // Fetch all successful transactions (payer_status === 3 or '3')
+    const successfulTxs = await Transaction.find({
+      $or: [{ payer_status: 3 }, { payer_status: '3' }]
+    }).lean();
+
+    let totalBuyAmount = 0;
+    let totalBuyCount = 0;
+    let todayBuyAmount = 0;
+    let todayBuyCount = 0;
+
+    let totalSellAmount = 0;
+    let totalSellCount = 0;
+    let todaySellAmount = 0;
+    let todaySellCount = 0;
+
+    for (const tx of successfulTxs) {
+      const amt = Number(tx.amount || 0);
+      if (isNaN(amt) || amt <= 0) continue;
+
+      let txSec = 0;
+      if (typeof tx.ctime === 'number' && tx.ctime > 0) {
+        txSec = tx.ctime;
+      } else if (tx.timestamp) {
+        txSec = Math.floor(new Date(tx.timestamp).getTime() / 1000);
+      } else if (tx.createdAt) {
+        txSec = Math.floor(new Date(tx.createdAt).getTime() / 1000);
+      }
+
+      const isToday = txSec >= todayStartSec;
+      const isSell = tx.type === 'sell' || tx.orderType === 'sell';
+
+      if (isSell) {
+        totalSellAmount += amt;
+        totalSellCount++;
+        if (isToday) {
+          todaySellAmount += amt;
+          todaySellCount++;
+        }
+      } else {
+        totalBuyAmount += amt;
+        totalBuyCount++;
+        if (isToday) {
+          todayBuyAmount += amt;
+          todayBuyCount++;
+        }
+      }
+    }
+
+    totalBuyAmount = Math.round(totalBuyAmount * 100) / 100;
+    todayBuyAmount = Math.round(todayBuyAmount * 100) / 100;
+    totalSellAmount = Math.round(totalSellAmount * 100) / 100;
+    todaySellAmount = Math.round(todaySellAmount * 100) / 100;
+    totalBalance = Math.round(totalBalance * 100) / 100;
+    totalRecharge = Math.round(totalRecharge * 100) / 100;
+
     return res.json({
       code: 0,
       msg: 'success',
@@ -7949,7 +8005,15 @@ app.get('/xxapi/admin/stats', requireAdmin, async (req, res) => {
         totalBalance,
         totalRecharge,
         kycVerified,
-        todayRegistrations
+        todayRegistrations,
+        totalBuyAmount,
+        totalBuyCount,
+        todayBuyAmount,
+        todayBuyCount,
+        totalSellAmount,
+        totalSellCount,
+        todaySellAmount,
+        todaySellCount
       }
     });
   } catch (err) {
