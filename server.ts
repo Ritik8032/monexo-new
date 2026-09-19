@@ -277,6 +277,9 @@ const transactionSchema = new mongoose.Schema({
   phone: String,
   rptNo: { type: String, unique: true },
   amount: Number,
+  usdtAmount: { type: Number, default: 0 },
+  usdtNetwork: { type: String, default: 'TRC20' },
+  exchangeRate: { type: Number, default: 0 },
   utr: { type: String, default: '' },
   currentStep: { type: Number, default: 0 }, // 0: unpaid/instructions, 1: upload cert, 2: reviewed/success
   payee_recipients_name: { type: String, default: 'Monexo Merchant' },
@@ -4921,8 +4924,58 @@ app.get('/xxapi/oldRptNew/init', async (req, res) => {
   });
 });
 
-app.all(['/xxapi/deviceInfo', '/xxapi/referral*', '/xxapi/team/edit/ratio', '/xxapi/transfertochilder', '/xxapi/linkKyc', '/xxapi/bscAddress', '/xxapi/buyUsdt/binanceWithdrawalQuote', '/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/uploadimage*', '/xxapi/mark-as-read*', '/xxapi/mark-all-as-read', '/xxapi/cw_inviterank', '/xxapi/cw_profitrank', '/xxapi/cwkyc', '/xxapi/inviteFriends/*', '/xxapi/returnToRpt/*', '/xxapi/buyInrActivity/*', '/xxapi/subBuyReward/*', '/xxapi/sevenDayCharge/*'], async (req, res) => {
+app.all(['/xxapi/deviceInfo', '/xxapi/referral*', '/xxapi/team/edit/ratio', '/xxapi/transfertochilder', '/xxapi/linkKyc', '/xxapi/bscAddress', '/xxapi/buyUsdt/binanceWithdrawalQuote', '/xxapi/uploadimage*', '/xxapi/mark-as-read*', '/xxapi/mark-all-as-read', '/xxapi/cw_inviterank', '/xxapi/cw_profitrank', '/xxapi/cwkyc', '/xxapi/inviteFriends/*', '/xxapi/returnToRpt/*', '/xxapi/buyInrActivity/*', '/xxapi/subBuyReward/*', '/xxapi/sevenDayCharge/*'], async (req, res) => {
   return res.json({ code: 0, msg: "success", data: {} });
+});
+
+// USDT / TRX Deposit Notify & Record Submission
+app.all(['/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/buyUsdt/submit'], async (req, res) => {
+  try {
+    await connectToDatabase();
+    const user = await getUserByToken(req).catch(() => null);
+    
+    // Extract parameters
+    const body = req.body || {};
+    const query = req.query || {};
+    const amountVal = Number(body.amount || query.amount || body.principal || query.principal || 0);
+    const usdtVal = Number(body.targetAmount || query.targetAmount || body.usdtAmount || query.usdtAmount || (amountVal > 0 ? (amountVal / 90) : 0));
+    const networkVal = String(body.network || query.network || 'TRC20').toUpperCase();
+    const utrVal = String(body.utr || query.utr || body.address || query.address || body.txHash || query.txHash || '');
+
+    if (user && (amountVal > 0 || usdtVal > 0)) {
+      const rptNo = 'USDT' + Date.now() + Math.floor(Math.random() * 1000);
+      const siteConf = await SiteConfig.findOne().lean();
+      const rate = Number(siteConf?.usdtExchangerate || 90);
+
+      const inrAmount = amountVal > 0 ? amountVal : Math.round(usdtVal * rate);
+      const actualUsdt = usdtVal > 0 ? usdtVal : Number((inrAmount / rate).toFixed(2));
+
+      const newTx = new Transaction({
+        userId: user._id,
+        phone: user.phone || user.mobileNo,
+        rptNo: rptNo,
+        amount: inrAmount,
+        usdtAmount: actualUsdt,
+        usdtNetwork: networkVal,
+        exchangeRate: rate,
+        isUsdt: true,
+        currency: 1,
+        type: 'recharge',
+        payer_status: 2, // In Review / Pending Admin Approval
+        utr: utrVal,
+        ctime: Math.floor(Date.now() / 1000)
+      });
+
+      await newTx.save();
+      console.log(`[USDT Deposit Recorded] User: ${user.phone}, INR: ${inrAmount}, USDT: ${actualUsdt}, RPT: ${rptNo}`);
+      return res.json({ code: 0, msg: "USDT deposit request recorded successfully", data: newTx });
+    }
+
+    return res.json({ code: 0, msg: "success", data: {} });
+  } catch (err) {
+    console.error("buyUsdt/notify error:", err);
+    return res.json({ code: 0, msg: "success", data: {} });
+  }
 });
 
 app.post(['/xxapi/linkUpi/sendSms', '/xxapi/linkUpi/sendOtp'], async (req, res) => {
@@ -8677,6 +8730,228 @@ app.post('/xxapi/admin/addTransaction', requireAdmin, async (req, res) => {
     return res.json({ code: 0, msg: 'Transaction added successfully', data: transaction });
   } catch (err) {
     console.error('Add transaction error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin USDT History API
+app.get('/xxapi/admin/usdtHistory', requireAdmin, async (req, res) => {
+  try {
+    await connectToDatabase();
+    const { search, status, page = 1, limit = 50 } = req.query;
+
+    let filter: any = {
+      $or: [
+        { isUsdt: true },
+        { currency: 1 },
+        { rptNo: /^USDT/ },
+        { usdtAmount: { $gt: 0 } }
+      ]
+    };
+
+    if (status && status !== 'all') {
+      filter.payer_status = Number(status);
+    }
+
+    if (search && String(search).trim() !== '') {
+      const trimmed = String(search).trim();
+      filter.$and = [
+        {
+          $or: [
+            { phone: new RegExp(trimmed, 'i') },
+            { rptNo: new RegExp(trimmed, 'i') },
+            { utr: new RegExp(trimmed, 'i') }
+          ]
+        }
+      ];
+    }
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, Number(limit) || 50));
+
+    const totalCount = await Transaction.countDocuments(filter);
+    const txs = await Transaction.find(filter)
+      .sort({ ctime: -1, createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
+
+    // Stats calculation for summary banner
+    const allUsdtTxs = await Transaction.find({
+      $or: [
+        { isUsdt: true },
+        { currency: 1 },
+        { rptNo: /^USDT/ },
+        { usdtAmount: { $gt: 0 } }
+      ]
+    }).lean();
+
+    let totalUsdtAmount = 0;
+    let totalInrAmount = 0;
+    let pendingCount = 0;
+    let successCount = 0;
+
+    for (const t of allUsdtTxs) {
+      const inr = Number(t.amount || 0);
+      const usdt = Number(t.usdtAmount || (inr > 0 ? (inr / 90) : 0));
+      if (t.payer_status === 3) {
+        totalUsdtAmount += usdt;
+        totalInrAmount += inr;
+        successCount++;
+      } else if (t.payer_status === 1 || t.payer_status === 2) {
+        pendingCount++;
+      }
+    }
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        list: txs,
+        total: totalCount,
+        stats: {
+          totalUsdtAmount: Math.round(totalUsdtAmount * 100) / 100,
+          totalInrAmount: Math.round(totalInrAmount * 100) / 100,
+          pendingCount,
+          successCount,
+          totalCount: allUsdtTxs.length
+        }
+      }
+    });
+  } catch (err) {
+    console.error('getUsdtHistory error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin Approve USDT Deposit
+app.post('/xxapi/admin/approveUsdtDeposit', requireAdmin, async (req, res) => {
+  try {
+    await connectToDatabase();
+    const { id, rptNo } = req.body;
+    let tx: any = null;
+    if (id) tx = await Transaction.findById(id);
+    if (!tx && rptNo) tx = await Transaction.findOne({ rptNo });
+
+    if (!tx) {
+      return res.status(404).json({ code: 404, msg: 'USDT transaction not found' });
+    }
+
+    if (tx.payer_status === 3) {
+      return res.json({ code: 0, msg: 'Transaction is already approved' });
+    }
+
+    tx.payer_status = 3; // Success
+    await tx.save();
+
+    // Credit user wallet balance
+    if (tx.userId || tx.phone) {
+      const user = await User.findOne({
+        $or: [
+          { _id: tx.userId },
+          { phone: tx.phone },
+          { mobileNo: tx.phone }
+        ]
+      });
+
+      if (user) {
+        const creditAmt = Number(tx.amount || 0);
+        user.balance = Math.round(((user.balance || 0) + creditAmt) * 100) / 100;
+        user.recharge = Math.round(((user.recharge || 0) + creditAmt) * 100) / 100;
+        await user.save();
+      }
+    }
+
+    return res.json({ code: 0, msg: 'USDT deposit approved successfully', data: tx });
+  } catch (err) {
+    console.error('approveUsdtDeposit error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin Reject USDT Deposit
+app.post('/xxapi/admin/rejectUsdtDeposit', requireAdmin, async (req, res) => {
+  try {
+    await connectToDatabase();
+    const { id, rptNo, reason } = req.body;
+    let tx: any = null;
+    if (id) tx = await Transaction.findById(id);
+    if (!tx && rptNo) tx = await Transaction.findOne({ rptNo });
+
+    if (!tx) {
+      return res.status(404).json({ code: 404, msg: 'USDT transaction not found' });
+    }
+
+    tx.payer_status = 4; // Rejected / Cancelled
+    if (reason) tx.reason_for_rejection = String(reason);
+    await tx.save();
+
+    return res.json({ code: 0, msg: 'USDT deposit rejected successfully', data: tx });
+  } catch (err) {
+    console.error('rejectUsdtDeposit error:', err);
+    return res.status(500).json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+// Admin Create / Manual Add USDT Deposit
+app.post('/xxapi/admin/createUsdtDeposit', requireAdmin, async (req, res) => {
+  try {
+    await connectToDatabase();
+    const { phone, inrAmount, usdtAmount, network = 'TRC20', utr, status = 3 } = req.body;
+
+    if (!phone || (!inrAmount && !usdtAmount)) {
+      return res.status(400).json({ code: 400, msg: 'Phone number and deposit amount are required' });
+    }
+
+    const trimmedPhone = String(phone).trim();
+    const user = await User.findOne({
+      $or: [
+        { phone: trimmedPhone },
+        { mobileNo: trimmedPhone },
+        { ownInviteCode: trimmedPhone }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({ code: 404, msg: 'User with this phone number not found' });
+    }
+
+    const siteConf = await SiteConfig.findOne().lean();
+    const rate = Number(siteConf?.usdtExchangerate || 90);
+
+    const numInr = Number(inrAmount || Math.round(Number(usdtAmount) * rate));
+    const numUsdt = Number(usdtAmount || (numInr / rate).toFixed(2));
+    const rptNo = 'USDT' + Date.now() + Math.floor(Math.random() * 1000);
+    const txStatus = Number(status) || 3;
+
+    const newTx = new Transaction({
+      userId: user._id,
+      phone: user.phone || trimmedPhone,
+      rptNo,
+      amount: numInr,
+      usdtAmount: numUsdt,
+      usdtNetwork: network,
+      exchangeRate: rate,
+      isUsdt: true,
+      currency: 1,
+      type: 'recharge',
+      payer_status: txStatus,
+      utr: utr || '',
+      ctime: Math.floor(Date.now() / 1000)
+    });
+
+    await newTx.save();
+
+    // Credit user if status === 3
+    if (txStatus === 3) {
+      user.balance = Math.round(((user.balance || 0) + numInr) * 100) / 100;
+      user.recharge = Math.round(((user.recharge || 0) + numInr) * 100) / 100;
+      await user.save();
+    }
+
+    return res.json({ code: 0, msg: 'USDT deposit record created successfully', data: newTx });
+  } catch (err) {
+    console.error('createUsdtDeposit error:', err);
     return res.status(500).json({ code: 500, msg: 'Internal server error' });
   }
 });
