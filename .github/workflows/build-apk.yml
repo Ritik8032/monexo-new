@@ -34,7 +34,7 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          gradle assembleDebug --no-daemon || ./gradlew assembleDebug --no-daemon
+          gradle assembleDebug --no-daemon --stacktrace || ./gradlew assembleDebug --no-daemon --stacktrace
 
 
       - name: Prepare APK Release Artifact
