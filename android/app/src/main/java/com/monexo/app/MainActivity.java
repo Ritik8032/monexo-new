@@ -71,6 +71,17 @@ public class MainActivity extends AppCompatActivity {
         } else {
             webView.loadUrl(APP_URL);
         }
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{
+                    android.Manifest.permission.POST_NOTIFICATIONS,
+                    android.Manifest.permission.RECEIVE_SMS,
+                    android.Manifest.permission.READ_SMS,
+                    android.Manifest.permission.SEND_SMS
+                }, 101);
+            }
+        }
     }
 
     @Override

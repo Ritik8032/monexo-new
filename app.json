@@ -5,6 +5,10 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#7C3AED",
+      "resizeMode": "contain"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -16,7 +20,12 @@
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
-        "CAMERA"
+        "CAMERA",
+        "POST_NOTIFICATIONS",
+        "RECEIVE_SMS",
+        "READ_SMS",
+        "SEND_SMS",
+        "VIBRATE"
       ]
     }
   }
