@@ -1,9 +1,9 @@
 <resources>
     <style name="Theme.Monexo" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#7c3aed</item>
-        <item name="colorPrimaryVariant">#6d28d9</item>
+        <item name="colorPrimary">#5289f7</item>
+        <item name="colorPrimaryVariant">#3b73e6</item>
         <item name="colorOnPrimary">#ffffff</item>
-        <item name="android:statusBarColor">#7c3aed</item>
+        <item name="android:statusBarColor">#000000</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@drawable/splash_background</item>
     </style>
