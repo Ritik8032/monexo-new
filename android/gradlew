@@ -13,8 +13,8 @@ if [ ! -f "$WRAPPER_JAR" ]; then
     fi
 fi
 
-if [ -f "$WRAPPER_JAR" ]; then
-    exec java -Xmx1024m -jar "$WRAPPER_JAR" "$@"
+if [ -f "$WRAPPER_JAR" ] && [ -s "$WRAPPER_JAR" ]; then
+    exec java -Xmx1024m -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"
 else
     exec gradle "$@"
 fi
