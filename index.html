@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Monexo</title>
+    <meta name="description" content="Monexo user workflow, transaction logging, and compliance platform" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="monexo.wiki" />
+    <meta property="og:title" content="Monexo" />
+    <meta property="og:description" content="Monexo user workflow, transaction logging, and compliance platform" />
+    <meta property="og:url" content="https://monexo.wiki/" />
+    <meta property="og:image" content="https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/file_00000000c3b871f8ac814a58eb9b5db3.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Monexo" />
+    <meta name="twitter:description" content="" />
+    <meta name="twitter:image" content="https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/file_00000000c3b871f8ac814a58eb9b5db3.png" />
+    <style>
+      .md-toast-content .md-toast-text{
+        white-space: pre-wrap !important;
+        word-break: break-word !important;
+      }
+      #pieceOutline {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        border: 1px solid rgba(45, 45, 45, 0.70) !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        pointer-events: none !important;
+      }
+    </style>
+    <script>
+      (function() {
+        const _origParse = JSON.parse;
+        JSON.parse = function(text, reviver) {
+          if (text === undefined || text === null || text === "undefined" || text === "") {
+            return [];
+          }
+          try {
+            return _origParse(text, reviver);
+          } catch (e) {
+            return [];
+          }
+        };
+      })();
+
+      (function() {
+        // Do not pre-fill or seed default dummy phone number or token
+      })();
+      // Global Console Interceptor to suppress redundant navigation messages and other ignorable noise
+      (function() {
+        const suppressKeywords = [
+          'avoided redundant navigation',
+          'navigationduplicated',
+          'navigation duplicated',
+          'createroutererror',
+          'createnavigationduplicatederror'
+        ];
+        function shouldSuppress(args) {
+          const msg = args.map(arg => {
+            try {
+              if (arg && arg.message) return arg.message;
+              if (arg && arg.reason && arg.reason.message) return arg.reason.message;
+              return String(arg);
+            } catch(e) {
+              return '';
+            }
+          }).join(' ').toLowerCase();
+          return suppressKeywords.some(keyword => msg.includes(keyword));
+        }
+
+        const originalError = console.error;
+        console.error = function(...args) {
+          if (shouldSuppress(args)) return;
+          originalError.apply(console, args);
+        };
+
+        const originalWarn = console.warn;
+        console.warn = function(...args) {
+          if (shouldSuppress(args)) return;
+          originalWarn.apply(console, args);
+        };
+      })();
+
+      // 0a. Global Fetch Interceptor to mock/sanitize failing external requests
+      (function() {
+        const originalFetch = window.fetch;
+        window.fetch = function(input, init) {
+          let url = '';
+          if (typeof input === 'string') {
+            url = input;
+          } else if (input instanceof URL) {
+            url = input.href;
+          } else if (input && typeof input === 'object' && input.url) {
+            url = input.url;
+          }
+
+          if (url) {
+            const lowerUrl = url.toLowerCase();
+            // Mock ipapi request
+            if (lowerUrl.indexOf('ipapi.tooripaindia.workers.dev') !== -1) {
+              console.log("[Mock Fetch] Intercepted ipapi request");
+              return Promise.resolve(new Response(JSON.stringify({ ip: "127.0.0.1" }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+            }
+            // Mock TRON grid or TRC20 requests
+            if (lowerUrl.indexOf('trongrid.io') !== -1 || lowerUrl.indexOf('/transactions/trc20') !== -1) {
+              console.log("[Mock Fetch] Intercepted TRON grid/TRC20 request:", url);
+              return Promise.resolve(new Response(JSON.stringify({ data: [], meta: { page_size: 0 } }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+            }
+            // Catch-all for any other external domains to prevent them from causing uncaught Rejections
+            if (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) {
+              // Get current origin
+              const origin = window.location.origin;
+              if (!lowerUrl.startsWith(origin.toLowerCase())) {
+                console.log("[Mock Fetch] Safe-guarding external fetch:", url);
+                return Promise.resolve(new Response(JSON.stringify({ code: 0, msg: "success", data: {} }), {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' }
+                }));
+              }
+            }
+          }
+          return originalFetch.apply(this, arguments);
+        };
+      })();
+
+      // 0. Global Error and Rejection Logging
+      function isIgnorableError(msg, stack) {
+        if (!msg) return true;
+        const lowerMsg = String(msg).toLowerCase();
+        const lowerStack = stack ? String(stack).toLowerCase() : '';
+        function matches(str) {
+          const lowerStr = str.toLowerCase();
+          return lowerMsg.indexOf(lowerStr) !== -1 || lowerStack.indexOf(lowerStr) !== -1;
+        }
+        return (
+          matches('failed to fetch') ||
+          matches('load failed') ||
+          matches('[object object]') ||
+          matches('networkerror') ||
+          matches('aborted') ||
+          matches('timeout') ||
+          matches('image load error') ||
+          matches('load error') ||
+          matches('script error') ||
+          matches('avoided redundant navigation') ||
+          matches('navigationduplicated') ||
+          matches('navigation duplicated') ||
+          matches('createroutererror') ||
+          matches('createnavigationduplicatederror')
+        );
+      }
+
+      window.addEventListener('error', function(e) {
+        if (e.target && e.target !== window && (e.target.tagName || e.target.src || e.target.href)) {
+          return; // Ignore asset loading errors
+        }
+        var errorInfo = {
+          message: e.message,
+          filename: e.filename,
+          lineno: e.lineno,
+          colno: e.colno,
+          stack: e.error ? e.error.stack : ''
+        };
+        if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return;
+        }
+        console.error("GLOBAL ERROR CAPTURED:", errorInfo);
+        fetch('/xxapi/client_error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorInfo)
+        }).catch(err => console.error("Error logging failed:", err));
+      }, true);
+
+      window.addEventListener('unhandledrejection', function(e) {
+        var errorInfo = {
+          message: e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled rejection',
+          stack: e.reason ? e.reason.stack : ''
+        };
+        if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return;
+        }
+        console.error("GLOBAL REJECTION CAPTURED:", errorInfo);
+        fetch('/xxapi/client_error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorInfo)
+        }).catch(err => console.error("Error logging failed:", err));
+      }, true);
+
+      // 1. High-fidelity reCAPTCHA Mock
+      window.grecaptcha = {
+        ready: function(cb) {
+          if (typeof cb === 'function') {
+            try { cb(); } catch(e) { console.error(e); }
+          }
+        },
+        execute: function(siteKey, options) {
+          console.log("Mock reCAPTCHA execute called with siteKey:", siteKey);
+          return Promise.resolve("mock-recaptcha-token");
+        },
+        render: function(container, options) {
+          console.log("Mock reCAPTCHA render called");
+          return "mock-recaptcha-widget-id";
+        }
+      };
+
+      // 2. High-fidelity Turnstile Loader & Callback
+      let turnstileCallback = null;
+      Object.defineProperty(window, 'onloadTurnstileCallback', {
+        get() {
+          return turnstileCallback;
+        },
+        set(fn) {
+          turnstileCallback = fn;
+          if (typeof fn === 'function') {
+            console.log("onloadTurnstileCallback defined, invoking...");
+            setTimeout(() => {
+              try {
+                fn();
+              } catch (e) {
+                console.error("Error in onloadTurnstileCallback:", e);
+              }
+            }, 50);
+          }
+        },
+        configurable: true
+      });
+
+      // Intercept and block non-essential third-party scripts
+      const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+      if (originalSrcDescriptor) {
+        Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+          set(val) {
+            if (val && typeof val === 'string') {
+              const lowerVal = val.toLowerCase();
+              if (
+                lowerVal.indexOf('recaptcha') !== -1 ||
+                lowerVal.indexOf('livechat') !== -1 ||
+                lowerVal.indexOf('salesmartly') !== -1 ||
+                lowerVal.indexOf('facebook') !== -1 ||
+                lowerVal.indexOf('fbevents') !== -1
+              ) {
+                console.log("Redirecting third-party script load to safe empty script:", val);
+                originalSrcDescriptor.set.call(this, "data:text/javascript;base64,LyoqLw==");
+                return;
+              }
+            }
+            originalSrcDescriptor.set.call(this, val);
+          },
+          get() {
+            return originalSrcDescriptor.get.call(this);
+          },
+          configurable: true
+        });
+      }
+
+      // Pre-populate sessionStorage with Cloudflare Turnstile testing sitekey and slider captcha config
+      try {
+        const STORAGE_KEY = "xxapi_config_bundle_v1";
+        sessionStorage.removeItem(STORAGE_KEY); // Clear stale cache
+        console.log("[Setup] Pre-populating sessionStorage with Cloudflare Turnstile and Slider Captcha...");
+        const defaultBody = {
+          code: 0,
+          msg: "success",
+          data: {
+            okTurnstileSitekey: "1x00000000000000000000AA",
+            rsKeyMode: 1,
+            siteKey: "1x00000000000000000000AA",
+            sliderSmsCaptcha: 1,
+            usdtExchangerate: "115",
+            currency: "INR",
+            registerHost: window.location.origin + "/#/rs/",
+            tgChannelLink: "https://t.me/+AmPPZsOTjEBjMzg1",
+            rewardRules: {
+              freeze_comp_reward: { name: "freeze_comp_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 0, rule: "{}" },
+              inr_buy_dividend: { name: "inr_buy_dividend", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.002, \"3\": 0.001}" },
+              inr_buy_reward: { name: "inr_buy_reward", fixed: 0, ratio: 4.0, minCondi: 1, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              inr_buy_reward_0: { name: "inr_buy_reward_0", fixed: 0, ratio: 4.0, minCondi: 0, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              inr_buy_reward_1: { name: "inr_buy_reward_1", fixed: 0, ratio: 4.0, minCondi: 0, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              inr_buy_reward_2: { name: "inr_buy_reward_2", fixed: 0, ratio: 4.0, minCondi: 0, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              today_buy_times_reward: { name: "today_buy_times_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 1, rule: "{\"1\": 10, \"3\": 20, \"5\": 20, \"10\": 50}" },
+              usdt_buy_dividend: { name: "usdt_buy_dividend", fixed: 0, ratio: 0, minCondi: 100, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.001, \"3\": 0.0}" }
+            },
+            bannerSrcs: [
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101706_979.jpg",
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101703_329.jpg",
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101705_433.jpg",
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101701_804.jpg"
+            ],
+            newsList: [
+              { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="https://ik.imagekit.io/Monexo/IMG_20260920_030349_732.jpg" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
+            ],
+            pinFlag: false,
+            ctTypes: [1, 2, 3, 4, 6, 8, 9, 13, 14, 16, 17, 18, 20, 21, 33],
+            ctTypesPayType: { "1": 2, "2": 2, "3": 2, "4": 2, "6": 2, "8": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "20": 2, "21": 2, "33": 2 },
+            ifFinishNewbieActivity: 0,
+            rptPaymentMode: 1,
+            webLicenseId: "19711455",
+            userBalShowReal: 0,
+            sevenDayBuyEnabled: 0,
+            v: 2039,
+            pv: 3
+          }
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+          at: Date.now(),
+          body: defaultBody
+        }));
+      } catch (err) {
+        console.error("Failed to seed fallback site config:", err);
+      }
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // SPA Hash-Router safeguard: Convert direct path access like /buyinrdetail/... to /#/buyinrdetail/...
+      (function() {
+        const p = window.location.pathname;
+        if (p.startsWith('/buyinr') || p.startsWith('/rechargeToken') || p.startsWith('/buyitokeninr')) {
+          if (!window.location.hash || window.location.hash === '#/' || window.location.hash === '#') {
+            window.location.replace(window.location.origin + '/#' + p + window.location.search);
+            return;
+          }
+        }
+      })();
+
+      // Support route handler: Prevent legacy app login redirects and handle public support chat
+      (function() {
+        const path = window.location.pathname.toLowerCase();
+        const search = window.location.search.toLowerCase();
+        const isSupportRoute = path.startsWith('/support') || search.includes('token=') || search.includes('session=');
+        const isAdminRoute = path.startsWith('/admin');
+
+        if (isSupportRoute || isAdminRoute) {
+          const style = document.createElement('style');
+          style.innerHTML = '#app { display: none !important; visibility: hidden !important; opacity: 0 !important; }';
+          document.head.appendChild(style);
+        } else {
+          // Load main Monexo app script bundle
+          const script = document.createElement('script');
+          script.type = 'module';
+          script.crossOrigin = '';
+          script.src = '/assets/index.7e476b48.js';
+          document.head.appendChild(script);
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/assets/index.6361bc74.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="app"></div>
+
+    <!-- Mine Page Phone Masking -->
+    <style>
+      .mine-phone-hidden {
+        display: none !important;
+      }
+    </style>
+
+    <script>
+      (function() {
+        // Mine Page Phone Number Masking Observer
+        function maskMinePagePhone() {
+          if (!window.location.hash.includes('/my')) return;
+          const elements = document.querySelectorAll('#app *, .content *, .card *');
+          elements.forEach(el => {
+            if (el.children.length === 0 && el.textContent) {
+              const text = el.textContent.trim();
+              if (/^\+?91[6-9]\d{9}$/.test(text) || /^[6-9]\d{9}$/.test(text)) {
+                if (el.parentElement && !el.parentElement.classList.contains('mine-phone-hidden')) {
+                  el.style.display = 'none';
+                  if (el.parentElement.children.length === 1) {
+                    el.parentElement.style.display = 'none';
+                  }
+                }
+              }
+            }
+          });
+        }
+
+        setInterval(maskMinePagePhone, 400);
+      })();
+    </script>
+  </body>
+</html>

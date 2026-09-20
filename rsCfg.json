@@ -1,0 +1,13 @@
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "okTurnstileSitekey": "1x00000000000000000000AA",
+    "rsKeyMode": 1,
+    "siteKey": "1x00000000000000000000AA",
+    "antResetPassFlag": "0",
+    "sliderSmsCaptcha": 1,
+    "appDownloadUrl": "",
+    "appVersion": "1.0.0"
+  }
+}
