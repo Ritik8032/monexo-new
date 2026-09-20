@@ -3,19 +3,12 @@
 APP_HOME=$(cd "$(dirname "$0")" && pwd)
 WRAPPER_JAR="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
 
-if [ ! -f "$WRAPPER_JAR" ]; then
-    mkdir -p "$APP_HOME/gradle/wrapper"
-    echo "Downloading gradle-wrapper.jar..."
-    if command -v curl >/dev/null 2>&1; then
-        curl -s -L "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar" -o "$WRAPPER_JAR"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar" -O "$WRAPPER_JAR"
-    fi
-fi
-
 if [ -f "$WRAPPER_JAR" ] && [ -s "$WRAPPER_JAR" ]; then
     exec java -Xmx1024m -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"
-else
+elif command -v gradle >/dev/null 2>&1; then
     exec gradle "$@"
+else
+    echo "Gradle executable not found in PATH."
+    exit 1
 fi
 
