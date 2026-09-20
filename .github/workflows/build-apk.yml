@@ -22,9 +22,37 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Accept Android SDK Licenses & Build APK
+      - name: Set up Android SDK & Accept Licenses
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          export ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}
+          export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          
+          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER=$(which sdkmanager)
+          fi
+          
+          echo "Using sdkmanager at: $SDKMANAGER"
+          
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf "89330172225f80001155cd8cf1267f1012d446d0\nd56f5185470c782f3d10980ca70e214480737373\n79323ba878626d7f093a81153d2491c659ea5b28\n" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf "84831b9409646a323f44280a5e848e86d78602ea\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          printf "d9754512c7830011ec1d0497a6a0a753bf96121a\n" > "$ANDROID_HOME/licenses/intel-android-sysimage-license"
+          printf "e67567531238681734268e31002e1c9510103280\n" > "$ANDROID_HOME/licenses/android-googletv-license"
+          printf "24333f8a637b37ea1d55c4000123456789abcdef\n" > "$ANDROID_HOME/licenses/google-gdk-license"
+          printf "33b622425881121976574f43703f23c010b74f4b\n" > "$ANDROID_HOME/licenses/mips-android-sysimage-license"
+          
+          yes | "$SDKMANAGER" --licenses || true
+          yes | "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+
+      - name: Build Android APK
+        run: |
           cd android
           gradle wrapper --gradle-version 8.5
           chmod +x gradlew
