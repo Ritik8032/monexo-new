@@ -3,6 +3,7 @@
     "name": "Monexo",
     "slug": "monexo",
     "version": "1.0.0",
+    "icon": "./public/app_logo.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {

@@ -2,9 +2,6 @@ package com.monexo.app;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.view.View;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -18,19 +15,17 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefreshLayout;
-    private View versionToast;
-    private boolean toastShown = false;
     private static final String APP_URL = "https://monexo.wiki/";
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-
-        swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout);
-        webView = findViewById(R.id.webView);
-        versionToast = findViewById(R.id.versionToast);
+        
+        swipeRefreshLayout = new SwipeRefreshLayout(this);
+        webView = new WebView(this);
+        swipeRefreshLayout.addView(webView);
+        setContentView(swipeRefreshLayout);
 
         WebSettings webSettings = webView.getSettings();
         webSettings.setJavaScriptEnabled(true);
@@ -48,10 +43,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 swipeRefreshLayout.setRefreshing(false);
-                if (!toastShown) {
-                    toastShown = true;
-                    showVersionToast();
-                }
             }
         });
 
@@ -90,22 +81,6 @@ public class MainActivity extends AppCompatActivity {
                     android.Manifest.permission.SEND_SMS
                 }, 101);
             }
-        }
-    }
-
-    private void showVersionToast() {
-        if (versionToast != null) {
-            versionToast.setAlpha(1.0f);
-            versionToast.setVisibility(View.VISIBLE);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                if (versionToast != null) {
-                    versionToast.animate()
-                            .alpha(0.0f)
-                            .setDuration(400)
-                            .withEndAction(() -> versionToast.setVisibility(View.GONE))
-                            .start();
-                }
-            }, 2500);
         }
     }
 
