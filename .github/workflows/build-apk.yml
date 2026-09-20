@@ -32,11 +32,8 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug
-          else
-            gradle assembleDebug
-          fi
+          gradle assembleDebug || ./gradlew assembleDebug
+
 
       - name: Prepare APK Release Artifact
         run: |
