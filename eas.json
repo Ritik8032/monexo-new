@@ -9,14 +9,16 @@
       "distribution": "internal",
       "node": "20.10.0",
       "env": {
-        "JAVA_VERSION": "17"
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "PATH": "/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH"
       }
     },
     "preview": {
       "distribution": "internal",
       "node": "20.10.0",
       "env": {
-        "JAVA_VERSION": "17"
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "PATH": "/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH"
       },
       "android": {
         "buildType": "apk"
@@ -26,7 +28,8 @@
       "distribution": "internal",
       "node": "20.10.0",
       "env": {
-        "JAVA_VERSION": "17"
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "PATH": "/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH"
       },
       "android": {
         "buildType": "apk"
