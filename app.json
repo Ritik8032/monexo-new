@@ -28,6 +28,12 @@
         "SEND_SMS",
         "VIBRATE"
       ]
+    },
+    "owner": "ritik8032",
+    "extra": {
+      "eas": {
+        "projectId": "monexo-app"
+      }
     }
   }
 }
