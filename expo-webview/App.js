@@ -19,27 +19,15 @@ const CUSTOM_USER_AGENT =
 
 const INJECTED_JAVASCRIPT = `
   (function() {
-    function fixWeb() {
+    function fixBlankTargets() {
       var anchors = document.querySelectorAll('a[target="_blank"]');
       for (var i = 0; i < anchors.length; i++) {
         anchors[i].setAttribute('target', '_self');
       }
-      if (window.location.hash.includes('/my') || window.location.pathname.includes('/my')) {
-        var hiddenEls = document.querySelectorAll('#app [style*="display: none"], .content [style*="display: none"], .card [style*="display: none"], body [style*="display: none"]');
-        for (var j = 0; j < hiddenEls.length; j++) {
-          var el = hiddenEls[j];
-          var txt = el.textContent ? el.textContent.trim() : '';
-          var isLeafPhone = (el.children.length === 0 && (/^\\+?91[6-9]\\d{9}$/.test(txt) || /^[6-9]\\d{9}$/.test(txt)));
-          if (!isLeafPhone) {
-            el.style.display = '';
-          }
-        }
-      }
     }
-    fixWeb();
-    if (!window.__monexoFixInterval) {
-      window.__monexoFixInterval = setInterval(fixWeb, 400);
-    }
+    fixBlankTargets();
+    var observer = new MutationObserver(fixBlankTargets);
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
   })();
   true;
 `;
