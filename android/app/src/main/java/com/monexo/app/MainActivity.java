@@ -4,8 +4,10 @@ import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -29,6 +31,12 @@ public class MainActivity extends AppCompatActivity {
         swipeRefreshLayout.addView(webView);
         setContentView(swipeRefreshLayout);
 
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            cookieManager.setAcceptThirdPartyCookies(webView, true);
+        }
+
         WebSettings webSettings = webView.getSettings();
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
@@ -43,30 +51,22 @@ public class MainActivity extends AppCompatActivity {
         webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         webSettings.setLoadsImagesAutomatically(true);
         webSettings.setBlockNetworkImage(false);
+        webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
+        webSettings.setSupportMultipleWindows(false);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null) {
+                    return handleUrlLoading(request.getUrl().toString());
+                }
+                return false;
+            }
+
+            @SuppressWarnings("deprecation")
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                if (url == null) return false;
-
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    if (url.contains("t.me/") || url.contains("telegram.me/")) {
-                        try {
-                            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                            startActivity(intent);
-                            return true;
-                        } catch (Exception ignored) {}
-                    }
-                    return false;
-                }
-
-                try {
-                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                    startActivity(intent);
-                    return true;
-                } catch (Exception e) {
-                    return true;
-                }
+                return handleUrlLoading(url);
             }
 
             @Override
@@ -118,6 +118,43 @@ public class MainActivity extends AppCompatActivity {
         super.onSaveInstanceState(outState);
         if (webView != null) {
             webView.saveState(outState);
+        }
+    }
+
+    private boolean handleUrlLoading(String url) {
+        if (url == null) return false;
+
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            if (url.contains("t.me/") || url.contains("telegram.me/") || url.contains("wa.me/") || url.contains("api.whatsapp.com")) {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                    startActivity(intent);
+                    return true;
+                } catch (Exception ignored) {}
+            }
+            return false;
+        }
+
+        try {
+            Intent intent;
+            if (url.startsWith("intent://")) {
+                intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
+            } else {
+                intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            }
+            if (intent != null) {
+                try {
+                    startActivity(intent);
+                } catch (Exception e) {
+                    String fallbackUrl = intent.getStringExtra("browser_fallback_url");
+                    if (fallbackUrl != null) {
+                        webView.loadUrl(fallbackUrl);
+                    }
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return true;
         }
     }
 }
