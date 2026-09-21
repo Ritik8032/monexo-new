@@ -7,7 +7,6 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "image": "latest",
       "node": "20.10.0",
       "env": {
         "JAVA_VERSION": "17"
@@ -15,7 +14,6 @@
     },
     "preview": {
       "distribution": "internal",
-      "image": "latest",
       "node": "20.10.0",
       "env": {
         "JAVA_VERSION": "17"
@@ -26,7 +24,6 @@
     },
     "production": {
       "distribution": "internal",
-      "image": "latest",
       "node": "20.10.0",
       "env": {
         "JAVA_VERSION": "17"
