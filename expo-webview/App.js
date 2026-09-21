@@ -7,11 +7,30 @@ import {
   View,
   Text,
   TouchableOpacity,
-  StatusBar
+  StatusBar,
+  Linking,
+  Platform
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 const WEB_URL = 'https://monexo.wiki/';
+const CUSTOM_USER_AGENT =
+  'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
+
+const INJECTED_JAVASCRIPT = `
+  (function() {
+    function fixBlankTargets() {
+      var anchors = document.querySelectorAll('a[target="_blank"]');
+      for (var i = 0; i < anchors.length; i++) {
+        anchors[i].setAttribute('target', '_self');
+      }
+    }
+    fixBlankTargets();
+    var observer = new MutationObserver(fixBlankTargets);
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  })();
+  true;
+`;
 
 export default function App() {
   const webViewRef = useRef(null);
@@ -32,25 +51,88 @@ export default function App() {
     return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
   }, [canGoBack]);
 
+  const handleShouldStartLoad = (request) => {
+    const { url } = request;
+    if (!url) return true;
+
+    // Deep links and payment intent schemes
+    if (
+      url.startsWith('upi://') ||
+      url.startsWith('intent://') ||
+      url.startsWith('paytmmp://') ||
+      url.startsWith('phonepe://') ||
+      url.startsWith('gpay://') ||
+      url.startsWith('bhim://') ||
+      url.startsWith('whatsapp://') ||
+      url.startsWith('tg://')
+    ) {
+      Linking.openURL(url).catch((err) => {
+        console.warn('Could not open external app link:', url, err);
+      });
+      return false;
+    }
+
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      if (
+        url.includes('t.me/') ||
+        url.includes('telegram.me/') ||
+        url.includes('wa.me/') ||
+        url.includes('api.whatsapp.com')
+      ) {
+        Linking.openURL(url).catch((err) => {
+          console.warn('Could not open external web link:', url, err);
+        });
+        return false;
+      }
+      return true;
+    }
+
+    // Default external scheme handler
+    Linking.openURL(url).catch((err) => {
+      console.warn('Could not open scheme:', url, err);
+    });
+    return false;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       <WebView
         ref={webViewRef}
         source={{ uri: WEB_URL }}
         style={styles.webview}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        startInLoadingState={true}
+        thirdPartyCookiesEnabled={true}
+        sharedCookiesEnabled={true}
+        startInLoadingState={false}
         allowFileAccess={true}
         allowUniversalAccessFromFileURLs={true}
+        allowFileAccessFromFileURLs={true}
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+        userAgent={CUSTOM_USER_AGENT}
+        injectedJavaScript={INJECTED_JAVASCRIPT}
+        onShouldStartLoadWithRequest={handleShouldStartLoad}
         onNavigationStateChange={(navState) => {
           setCanGoBack(navState.canGoBack);
         }}
-        onLoadStart={() => setLoading(true)}
+        onLoadStart={() => {
+          setLoading(true);
+          setError(false);
+        }}
         onLoadEnd={() => setLoading(false)}
-        onError={() => setError(true)}
+        onError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.warn('WebView error: ', nativeEvent);
+          setLoading(false);
+          setError(true);
+        }}
+        onHttpError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.warn('WebView HTTP error: ', nativeEvent.statusCode);
+        }}
       />
 
       {loading && (
@@ -64,8 +146,9 @@ export default function App() {
           <Text style={styles.errorText}>Failed to load Monexo</Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onClick={() => {
+            onPress={() => {
               setError(false);
+              setLoading(true);
               webViewRef.current?.reload();
             }}
           >
