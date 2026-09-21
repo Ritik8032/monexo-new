@@ -117,12 +117,11 @@
                 headers: { 'Content-Type': 'application/json' }
               }));
             }
-            // Catch-all for any other external domains to prevent them from causing uncaught Rejections
+            // Catch-all for non-monexo third-party external domains to prevent them from causing uncaught Rejections
             if (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) {
-              // Get current origin
               const origin = window.location.origin;
-              if (!lowerUrl.startsWith(origin.toLowerCase())) {
-                console.log("[Mock Fetch] Safe-guarding external fetch:", url);
+              if (!lowerUrl.startsWith(origin.toLowerCase()) && lowerUrl.indexOf('monexo') === -1 && lowerUrl.indexOf('xxapi') === -1) {
+                console.log("[Mock Fetch] Safe-guarding third-party external fetch:", url);
                 return Promise.resolve(new Response(JSON.stringify({ code: 0, msg: "success", data: {} }), {
                   status: 200,
                   headers: { 'Content-Type': 'application/json' }
@@ -369,34 +368,23 @@
     <div id="app"></div>
 
     <!-- Mine Page Phone Masking -->
-    <style>
-      .mine-phone-hidden {
-        display: none !important;
-      }
-    </style>
-
     <script>
       (function() {
         // Mine Page Phone Number Masking Observer
         function maskMinePagePhone() {
           if (!window.location.hash.includes('/my')) return;
-          const elements = document.querySelectorAll('#app *, .content *, .card *');
+          const elements = document.querySelectorAll('.user-info-phone, .user-phone, .phone');
           elements.forEach(el => {
             if (el.children.length === 0 && el.textContent) {
               const text = el.textContent.trim();
-              if (/^\+?91[6-9]\d{9}$/.test(text) || /^[6-9]\d{9}$/.test(text)) {
-                if (el.parentElement && !el.parentElement.classList.contains('mine-phone-hidden')) {
-                  el.style.display = 'none';
-                  if (el.parentElement.children.length === 1) {
-                    el.parentElement.style.display = 'none';
-                  }
-                }
+              if (/^(\+?91)?[6-9]\d{9}$/.test(text)) {
+                el.textContent = text.replace(/^(\+?91)?(\d{2})\d{6}(\d{2})$/, '$1$2******$3');
               }
             }
           });
         }
 
-        setInterval(maskMinePagePhone, 400);
+        setInterval(maskMinePagePhone, 500);
       })();
     </script>
   </body>
