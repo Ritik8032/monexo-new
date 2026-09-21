@@ -1,0 +1,3 @@
+# Cloudflare Pages Redirects and SPA rules
+/admin /admin.html 200
+/* /index.html 200
