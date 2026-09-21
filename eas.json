@@ -7,23 +7,22 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "node": "20.10.0",
-      "android": {
-        "jdk": "17"
-      }
+      "jdk": "17",
+      "node": "20.10.0"
     },
     "preview": {
       "distribution": "internal",
+      "jdk": "17",
       "android": {
-        "buildType": "apk",
-        "jdk": "17"
+        "buildType": "apk"
       },
       "node": "20.10.0"
     },
     "production": {
+      "distribution": "internal",
+      "jdk": "17",
       "android": {
-        "buildType": "apk",
-        "jdk": "17"
+        "buildType": "apk"
       },
       "node": "20.10.0"
     }
