@@ -7,24 +7,33 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "jdk": "17",
-      "node": "20.10.0"
+      "image": "latest",
+      "node": "20.10.0",
+      "env": {
+        "JAVA_VERSION": "17"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "jdk": "17",
+      "image": "latest",
+      "node": "20.10.0",
+      "env": {
+        "JAVA_VERSION": "17"
+      },
       "android": {
         "buildType": "apk"
-      },
-      "node": "20.10.0"
+      }
     },
     "production": {
       "distribution": "internal",
-      "jdk": "17",
+      "image": "latest",
+      "node": "20.10.0",
+      "env": {
+        "JAVA_VERSION": "17"
+      },
       "android": {
         "buildType": "apk"
-      },
-      "node": "20.10.0"
+      }
     }
   },
   "submit": {
