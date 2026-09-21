@@ -106,12 +106,14 @@ export default function App() {
         domStorageEnabled={true}
         thirdPartyCookiesEnabled={true}
         sharedCookiesEnabled={true}
-        startInLoadingState={false}
+        javaScriptCanOpenWindowsAutomatically={true}
+        setSupportMultipleWindows={true}
         allowFileAccess={true}
         allowUniversalAccessFromFileURLs={true}
         allowFileAccessFromFileURLs={true}
         allowsInlineMediaPlayback={true}
         mediaPlaybackRequiresUserAction={false}
+        originWhitelist={['*']}
         userAgent={CUSTOM_USER_AGENT}
         injectedJavaScript={INJECTED_JAVASCRIPT}
         onShouldStartLoadWithRequest={handleShouldStartLoad}
@@ -119,7 +121,6 @@ export default function App() {
           setCanGoBack(navState.canGoBack);
         }}
         onLoadStart={() => {
-          setLoading(true);
           setError(false);
         }}
         onLoadEnd={() => setLoading(false)}

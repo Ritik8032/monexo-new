@@ -368,31 +368,5 @@
     <div id="root"></div>
     <div id="app"></div>
 
-    <!-- Mine Page Phone Masking -->
-    <style>
-      .mine-phone-hidden {
-        display: none !important;
-      }
-    </style>
-
-    <script>
-      (function() {
-        // Mine Page Phone Number Masking Observer
-        function maskMinePagePhone() {
-          if (!window.location.hash.includes('/my')) return;
-          const elements = document.querySelectorAll('#app *, .content *, .card *');
-          elements.forEach(el => {
-            if (el.children.length === 0 && el.textContent) {
-              const text = el.textContent.trim();
-              if (/^\+?91[6-9]\d{9}$/.test(text) || /^[6-9]\d{9}$/.test(text)) {
-                el.style.display = 'none';
-              }
-            }
-          });
-        }
-
-        setInterval(maskMinePagePhone, 400);
-      })();
-    </script>
   </body>
 </html>
