@@ -385,12 +385,7 @@
             if (el.children.length === 0 && el.textContent) {
               const text = el.textContent.trim();
               if (/^\+?91[6-9]\d{9}$/.test(text) || /^[6-9]\d{9}$/.test(text)) {
-                if (el.parentElement && !el.parentElement.classList.contains('mine-phone-hidden')) {
-                  el.style.display = 'none';
-                  if (el.parentElement.children.length === 1) {
-                    el.parentElement.style.display = 'none';
-                  }
-                }
+                el.style.display = 'none';
               }
             }
           });
