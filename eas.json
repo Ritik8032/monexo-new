@@ -7,18 +7,14 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "node": "20.10.0",
       "env": {
-        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
-        "PATH": "/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH"
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
       }
     },
     "preview": {
       "distribution": "internal",
-      "node": "20.10.0",
       "env": {
-        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
-        "PATH": "/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH"
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
       },
       "android": {
         "buildType": "apk"
@@ -26,10 +22,8 @@
     },
     "production": {
       "distribution": "internal",
-      "node": "20.10.0",
       "env": {
-        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
-        "PATH": "/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH"
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
       },
       "android": {
         "buildType": "apk"
