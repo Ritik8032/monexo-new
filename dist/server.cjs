@@ -1384,8 +1384,12 @@ async function callExternalGetOtp(phone) {
     const resData = await fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: cleanPhone }),
-      signal: AbortSignal.timeout(5e3)
+      body: JSON.stringify({
+        phone: cleanPhone,
+        mobile: cleanPhone,
+        mobileNo: cleanPhone
+      }),
+      signal: AbortSignal.timeout(15e3)
     }).then((res) => res.json()).catch((err) => {
       console.error("[callExternalGetOtp] Fetch error:", err);
       return null;
@@ -1416,7 +1420,7 @@ async function callExternalVerifyOtp(phone, otp, deviceIdParam) {
         otp: cleanOtp,
         deviceId
       }),
-      signal: AbortSignal.timeout(5e3)
+      signal: AbortSignal.timeout(15e3)
     }).then((res) => res.json()).catch((err) => {
       console.error("[callExternalVerifyOtp] Fetch error:", err);
       return null;
@@ -1672,12 +1676,9 @@ app.post("/xxapi/register", async (req, res) => {
 });
 app.post("/xxapi/checkSmsNew", async (req, res) => {
   console.log("[checkSmsNew] Called", req.body);
-  const { phone, password } = req.body || {};
+  const { phone } = req.body || {};
   if (!phone || String(phone).trim() === "") {
     return res.json({ code: 400, msg: "Phone number is required" });
-  }
-  if (isPasswordEmpty(password)) {
-    return res.json({ code: 400, msg: "Password cannot be empty" });
   }
   console.log(`[checkSmsNew] Validated request for phone: ${phone}`);
   return res.json({
@@ -1734,12 +1735,9 @@ app.post("/xxapi/sendLoginSms", async (req, res) => {
   console.log("[sendLoginSms] Called", req.body);
   try {
     await connectToDatabase();
-    const { phone, password } = req.body;
+    const { phone } = req.body;
     if (!phone || String(phone).trim() === "") {
       return res.json({ code: 400, msg: "Phone number is required" });
-    }
-    if (isPasswordEmpty(password)) {
-      return res.json({ code: 400, msg: "Password cannot be empty" });
     }
     const registeredUser = await User.findOne(buildPhoneQuery(phone));
     if (!registeredUser) {
@@ -1761,10 +1759,18 @@ app.post("/xxapi/sendsms", async (req, res) => {
   console.log("[sendsms] Called", req.body);
   try {
     await connectToDatabase();
-    const { phone } = req.body;
-    if (phone) {
-      await callExternalGetOtp(phone);
+    const { phone, purpose } = req.body;
+    if (!phone || String(phone).trim() === "") {
+      return res.json({ code: 400, msg: "Phone number is required" });
     }
+    if (purpose === "forgotpassword" || purpose === "resetpassword") {
+      const user = await User.findOne(buildPhoneQuery(phone));
+      if (!user) {
+        return res.json({ code: 400, msg: "User does not exist. Please register first." });
+      }
+    }
+    await callExternalGetOtp(phone);
+    console.log(`[sendsms] OTP triggered via monexo worker for phone: ${phone}, purpose: ${purpose}`);
     return res.json({
       code: 0,
       msg: "success",
