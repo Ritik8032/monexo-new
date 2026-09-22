@@ -3096,9 +3096,9 @@ const getNewbieUserData = async (req: any) => {
   }
 
   const rules = buildNewbieRules(userParams, totalBought, hasLinkedUpi);
-  // 1 = Done & Claimable, 2 = Already Claimed
+  // 1 = Done & Ready to Claim, 2 = Already Claimed (Received)
   let isDone = 1;
-  if (user && ((user as any).newbieDone === true || (user as any).newbieDone === 2)) {
+  if (user && ((user as any).newbieClaimed === true || (user as any).newbieDone === 'claimed' || (user as any).newbieDone === 2)) {
     isDone = 2;
   }
   return { user, userParams, rules, isDone, totalBought };
@@ -3273,7 +3273,8 @@ app.all([
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: "Unauthorized" });
 
-  if (!(user as any).newbieDone || (user as any).newbieDone === 1) {
+  if (!(user as any).newbieClaimed && (user as any).newbieDone !== 'claimed' && (user as any).newbieDone !== 2) {
+    (user as any).newbieClaimed = true;
     (user as any).newbieDone = 2; // Marked as claimed
     user.balance = (user.balance || 0) + 200;
     await user.save();
