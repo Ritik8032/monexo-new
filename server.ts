@@ -1570,26 +1570,39 @@ async function callExternalGetOtp(phone: string) {
     }
 
     lastOtpSentTimes[cleanPhone] = now;
-    console.log(`[callExternalGetOtp] Requesting OTP from worker for phone: ${cleanPhone}`);
+    console.log(`[callExternalGetOtp] Requesting OTP from workers for phone: ${cleanPhone}`);
     
-    // Fast fetch with 4s timeout
-    const fetchPrimary = fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
+    // Fast parallel fetch to both workers with 3s timeout for instant response
+    const primaryPromise = fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: cleanPhone }),
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(3000)
     }).then(res => res.json()).catch(() => null);
 
-    const resData = await fetchPrimary;
-    console.log('[callExternalGetOtp] Primary Worker Response:', resData);
+    const monexoPromise = fetch('https://monexo.guruarning.workers.dev/get-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: cleanPhone }),
+      signal: AbortSignal.timeout(3000)
+    }).then(res => res.json()).catch(() => null);
 
-    const deviceId = resData?.deviceId || resData?.data?.deviceId || resData?.data?.data?.deviceId || resData?.meta?.deviceId;
+    const [resPrimary, resMonexo] = await Promise.all([primaryPromise, monexoPromise]);
+    console.log('[callExternalGetOtp] Primary Worker Response:', resPrimary);
+    console.log('[callExternalGetOtp] Monexo Worker Response:', resMonexo);
+
+    const deviceId = resPrimary?.deviceId || 
+                     resPrimary?.data?.deviceId || 
+                     resPrimary?.data?.data?.deviceId || 
+                     resPrimary?.meta?.deviceId ||
+                     resMonexo?.usedDeviceId;
+
     if (deviceId) {
       phoneDeviceIds[cleanPhone] = deviceId;
       console.log(`[callExternalGetOtp] Saved deviceId for ${cleanPhone}: ${deviceId}`);
     }
 
-    return resData || { code: 0, msg: 'success' };
+    return resPrimary || resMonexo || { code: 0, msg: 'success' };
   } catch (err) {
     console.error('[callExternalGetOtp] Failed:', err);
     return { code: 0, msg: 'success' };
@@ -1599,44 +1612,43 @@ async function callExternalGetOtp(phone: string) {
 async function callExternalVerifyOtp(phone: string, otp: string, deviceIdParam?: string) {
   try {
     const { cleanPhone } = getCleanPhone(phone);
-    const cleanOtp = String(otp).trim();
+    const cleanOtp = String(otp || '').trim().replace(/\D/g, '');
     const deviceId = deviceIdParam || phoneDeviceIds[cleanPhone] || '';
 
     console.log(`[callExternalVerifyOtp] Verifying OTP for phone: ${cleanPhone}, otp: ${cleanOtp}, deviceId: ${deviceId}`);
     
-    // First try primary worker with 4s timeout
-    try {
-      const primaryRes = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: cleanPhone,
-          otp: cleanOtp,
-          deviceId: deviceId
-        }),
-        signal: AbortSignal.timeout(4000)
-      }).then(res => res.json()).catch(() => null);
+    // Fire concurrent fast requests to both primary and fallback verification workers with 3s timeout
+    const primaryPromise = fetch('https://api-otp-xxapi.guruarning.workers.dev/api/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        otp: cleanOtp,
+        deviceId: deviceId
+      }),
+      signal: AbortSignal.timeout(3000)
+    }).then(res => res.json()).catch(() => null);
 
-      console.log('[callExternalVerifyOtp] Primary Worker Response:', JSON.stringify(primaryRes));
-
-      if (primaryRes && checkWorkerOtpResult(primaryRes, cleanOtp)) {
-        return primaryRes;
-      }
-    } catch (e) {
-      console.error('[callExternalVerifyOtp] Primary worker exception:', e);
-    }
-
-    // Secondary fallback to monexo worker if primary failed or was rejected
-    console.log('[callExternalVerifyOtp] Primary failed or rejected, trying fallback worker...');
-    const fallbackRes = await fetch('https://monexo.guruarning.workers.dev/verify-reset', {
+    const fallbackPromise = fetch('https://monexo.guruarning.workers.dev/verify-reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: cleanPhone, otp: cleanOtp }),
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(3000)
     }).then(res => res.json()).catch(() => null);
 
+    const [primaryRes, fallbackRes] = await Promise.all([primaryPromise, fallbackPromise]);
+
+    console.log('[callExternalVerifyOtp] Primary Worker Response:', JSON.stringify(primaryRes));
     console.log('[callExternalVerifyOtp] Fallback Worker Response:', JSON.stringify(fallbackRes));
-    return fallbackRes;
+
+    if (primaryRes && checkWorkerOtpResult(primaryRes, cleanOtp)) {
+      return primaryRes;
+    }
+    if (fallbackRes && checkWorkerOtpResult(fallbackRes, cleanOtp)) {
+      return fallbackRes;
+    }
+
+    return primaryRes || fallbackRes;
   } catch (err) {
     console.error('[callExternalVerifyOtp] Failed:', err);
     return null;
