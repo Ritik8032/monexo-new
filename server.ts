@@ -2077,9 +2077,7 @@ app.post('/xxapi/sendLoginSms', async (req, res) => {
     }
 
     const cleanDeviceId = String(trustedDeviceId || clientId || '').trim();
-    const isTrusted = registeredUser.trustedDeviceId &&
-                      cleanDeviceId !== '' &&
-                      registeredUser.trustedDeviceId === cleanDeviceId;
+    const isTrusted = registeredUser.trustedDeviceId && cleanDeviceId !== '' && (registeredUser.trustedDeviceId === cleanDeviceId || (cleanDeviceId.startsWith('td_fp_') && registeredUser.trustedDeviceId.includes(cleanDeviceId)));
 
     if (isTrusted) {
       console.log('[sendLoginSms] Same device verified for phone ' + cleanPhone + ' (' + cleanDeviceId + '). Bypassing OTP trigger.');
@@ -2136,7 +2134,7 @@ app.post('/xxapi/login', async (req, res) => {
       }
     }
 
-    const isTrustedMatch = user.trustedDeviceId && cleanDeviceId !== '' && user.trustedDeviceId === cleanDeviceId;
+    const isTrustedMatch = user.trustedDeviceId && cleanDeviceId !== '' && (user.trustedDeviceId === cleanDeviceId || (cleanDeviceId.startsWith('td_fp_') && user.trustedDeviceId.includes(cleanDeviceId)));
     const isBypassAttempt = sameDeviceBypass || smscode === 'SAME_DEVICE_BYPASS';
 
     if (isBypassAttempt) {
