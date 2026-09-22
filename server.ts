@@ -1457,7 +1457,6 @@ function getApproxLocation(ip) {
 async function getUserByToken(req) {
   let token = req.headers['indiatoken'] || req.headers['token'] || req.headers['INDIATOKEN'] || req.query?.token || req.query?.indiatoken;
   if (!token) return null;
-
   if (typeof token === 'string') {
     if (token.includes(',')) {
       const parts = token.split(',').map(t => t.trim()).filter(Boolean);
@@ -1483,38 +1482,55 @@ async function getUserByToken(req) {
     return admin;
   }
 
-  const user = await User.findOne({ $or: [{ token }, { "sessions.token": token }] });
-  if (user) {
-    if (user.sessions && user.sessions.length > 0) {
-      const session = user.sessions.find(s => s.token === token);
-      if (session) {
-        const INACTIVITY_TIMEOUT_MS = 90 * 60 * 1000; // 90 minutes (1.5 hours)
-        if (session.lastActive) {
-          const diff = Date.now() - new Date(session.lastActive).getTime();
-          if (diff > INACTIVITY_TIMEOUT_MS) {
-            console.log(`[Inactivity Logout] Session expired for phone ${user.phone} (inactive ${Math.round(diff / 60000)} mins)`);
-            user.sessions = user.sessions.filter(s => s.token !== token);
-            if (user.token === token) {
-              user.token = user.sessions.length > 0 ? user.sessions[user.sessions.length - 1].token : '';
-            }
-            user.markModified('sessions');
-            await user.save().catch(() => {});
-            return null;
-          }
+  const user = await User.findOne({
+    $or: [{ token: token }, { "sessions.token": token }]
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  const activeSessions = Array.isArray(user.sessions) ? user.sessions : [];
+  const hasMatchingSession = activeSessions.some(s => s.token === token);
+  const isCurrentToken = user.token === token;
+
+  // Strict Single Active Session: If token is neither current user.token nor in active user.sessions array, it was revoked!
+  if (!hasMatchingSession && !isCurrentToken) {
+    console.log(`[getUserByToken] Revoked token rejected for phone ${user.phone}: ${token}`);
+    return null;
+  }
+
+  const session = activeSessions.find(s => s.token === token);
+  if (session) {
+    const INACTIVITY_TIMEOUT_MS = 90 * 60 * 1000; // 90 minutes (1.5 hours)
+    if (session.lastActive) {
+      const diff = Date.now() - new Date(session.lastActive).getTime();
+      if (diff > INACTIVITY_TIMEOUT_MS) {
+        console.log(`[Inactivity Logout] Session expired for phone ${user.phone} (inactive ${Math.round(diff / 60000)} mins)`);
+        user.sessions = activeSessions.filter(s => s.token !== token);
+        if (user.token === token) {
+          user.token = user.sessions.length > 0 ? user.sessions[user.sessions.length - 1].token : '';
         }
-        session.lastActive = new Date();
-        try {
-          await User.updateOne(
-            { _id: user._id, "sessions.token": token },
-            { $set: { "sessions.$.lastActive": session.lastActive } }
-          );
-        } catch (err) {
-          console.error("Failed to update session activity atomic:", err);
-        }
+        user.markModified('sessions');
+        await user.save().catch(() => {});
+        return null;
       }
     }
+    session.lastActive = new Date();
+    try {
+      await User.updateOne(
+        { _id: user._id, "sessions.token": token },
+        { $set: { "sessions.$.lastActive": session.lastActive } }
+      );
+    } catch (err) {
+      console.error("Failed to update session activity atomic:", err);
+    }
+    return user;
+  } else if (isCurrentToken) {
+    return user;
   }
-  return user;
+
+  return null;
 }
 
 // Helper functions for external OTP API integration
@@ -2066,7 +2082,7 @@ app.post('/xxapi/sendLoginSms', async (req, res) => {
                       registeredUser.trustedDeviceId === cleanDeviceId;
 
     if (isTrusted) {
-      console.log(`[sendLoginSms] Same device verified for phone ${cleanPhone} (${cleanDeviceId}). Bypassing OTP trigger.`);
+      console.log('[sendLoginSms] Same device verified for phone ' + cleanPhone + ' (' + cleanDeviceId + '). Bypassing OTP trigger.');
       return res.json({
         code: 0,
         msg: 'Same device verified',
@@ -2077,7 +2093,7 @@ app.post('/xxapi/sendLoginSms', async (req, res) => {
     }
 
     await callExternalGetOtp(cleanPhone);
-    console.log(`[sendLoginSms] OTP triggered via monexo worker for phone: ${cleanPhone}`);
+    console.log('[sendLoginSms] OTP sent for phone ' + cleanPhone + ' on new device (' + cleanDeviceId + ')');
     return res.json({
       code: 0,
       msg: 'OTP sent to registered phone number',
@@ -2086,154 +2102,8 @@ app.post('/xxapi/sendLoginSms', async (req, res) => {
       data: {}
     });
   } catch (err) {
-    console.error('sendLoginSms Error:', err);
-    return res.json({ code: 500, msg: 'Internal server error' });
-  }
-});
-
-app.post('/xxapi/sendsms', async (req, res) => {
-  console.log('[sendsms] Called', req.body);
-  try {
-    await connectToDatabase();
-    const { phone, purpose } = req.body;
-    if (!phone || String(phone).trim() === '') {
-      return res.json({ code: 400, msg: 'Phone number is required' });
-    }
-
-    if (purpose === 'forgotpassword' || purpose === 'resetpassword') {
-      const user = await User.findOne(buildPhoneQuery(phone));
-      if (!user) {
-        return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
-      }
-    }
-
-    await callExternalGetOtp(phone);
-    console.log(`[sendsms] OTP triggered via monexo worker for phone: ${phone}, purpose: ${purpose}`);
-    return res.json({
-      code: 0,
-      msg: 'success',
-      data: {}
-    });
-  } catch (err) {
-    console.error('sendsms Error:', err);
-    return res.json({ code: 500, msg: 'Internal server error' });
-  }
-});
-
-const INDIATOKEN = "7c62c0e2859740d6b5ca621da1cdad0";
-const GATE = "A7K9X2M8Q4P1Z";
-
-async function getCaptcha() {
-  const response = await fetch(
-    "https://api.h5r1xc.xyz/xxapi/sliderCaptcha",
-    {
-      method: "GET",
-      headers: {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-us",
-        "INDIATOKEN": INDIATOKEN,
-        "X-RS-Cfg-tivpayReqGate": GATE,
-        "User-Agent":
-          "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36"
-      },
-      cache: "no-store"
-    }
-  );
-
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new Error(
-      "Upstream HTTP " +
-      response.status +
-      " " +
-      text
-    );
-  }
-
-  return text;
-}
-
-const verifiedCaptchaIds = new Set<string>();
-
-app.get('/xxsapi/slid', async (req, res) => {
-  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-
-  try {
-    const text = await getCaptcha();
-    res.writeHead(200, {
-      "Content-Type": "application/json; charset=utf-8"
-    });
-    return res.end(text);
-  } catch (e: any) {
-    console.error("[xxsapi/slid Upstream Error]:", e?.message || e);
-    res.writeHead(200, {
-      "Content-Type": "application/json; charset=utf-8"
-    });
-    return res.end(
-      JSON.stringify({
-        code: -1,
-        msg: "CAPTCHA temporarily unavailable"
-      })
-    );
-  }
-});
-
-app.post('/xxsapi/slid/verify', async (req, res) => {
-  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  try {
-    const { sliderCaptchaId, position, sliderCaptchaX } = req.body || {};
-    const posVal = Number(position !== undefined ? position : sliderCaptchaX || 0);
-
-    if (!sliderCaptchaId) {
-      return res.json({
-        code: -1,
-        msg: "Missing sliderCaptchaId"
-      });
-    }
-
-    const token = `slid_v_${sliderCaptchaId}_${Date.now()}`;
-    verifiedCaptchaIds.add(sliderCaptchaId);
-    verifiedCaptchaIds.add(token);
-
-    return res.json({
-      code: 0,
-      msg: "success",
-      data: {
-        verified: true,
-        sliderCaptchaId,
-        token,
-        position: posVal
-      }
-    });
-  } catch (e: any) {
-    return res.json({
-      code: -1,
-      msg: "CAPTCHA verification failed"
-    });
-  }
-});
-
-app.get('/xxapi/sliderCaptcha', async (req, res) => {
-  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  try {
-    const text = await getCaptcha();
-    res.writeHead(200, {
-      "Content-Type": "application/json; charset=utf-8"
-    });
-    return res.end(text);
-  } catch (e: any) {
-    res.writeHead(200, {
-      "Content-Type": "application/json; charset=utf-8"
-    });
-    return res.end(
-      JSON.stringify({
-        code: -1,
-        msg: "CAPTCHA temporarily unavailable"
-      })
-    );
+    console.error('[sendLoginSms Error]', err);
+    return res.json({ code: 500, msg: 'Server error sending SMS' });
   }
 });
 
@@ -2246,11 +2116,10 @@ app.post('/xxapi/login', async (req, res) => {
     if (!cleanPhone) {
       return res.json({ code: 400, msg: 'Phone number is required' });
     }
-
     const cleanDeviceId = String(trustedDeviceId || clientId || '').trim();
     const isAdminPhone = cleanPhone.includes('7870873927');
-    let user = await User.findOne(buildPhoneQuery(cleanPhone));
 
+    let user = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!user) {
       if (isAdminPhone && password && !isPasswordEmpty(password)) {
         user = new User({
@@ -2268,11 +2137,16 @@ app.post('/xxapi/login', async (req, res) => {
     }
 
     const isTrustedMatch = user.trustedDeviceId && cleanDeviceId !== '' && user.trustedDeviceId === cleanDeviceId;
-    const isBypassAttempt = sameDeviceBypass || smscode === 'SAME_DEVICE_BYPASS' || smscode === '0000';
+    const isBypassAttempt = sameDeviceBypass || smscode === 'SAME_DEVICE_BYPASS';
 
     if (isBypassAttempt) {
-      if (!isTrustedMatch && !isAdminPhone && smscode !== '0000') {
-        return res.json({ code: 400, msg: 'Device verification failed. OTP required on new device.' });
+      if (!isTrustedMatch && !isAdminPhone) {
+        await callExternalGetOtp(cleanPhone).catch(() => {});
+        return res.json({
+          code: 401,
+          msg: 'OTP required on new device. OTP sent to your phone.',
+          needOtp: true
+        });
       }
     } else if (smscode && String(smscode).trim() !== '') {
       const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
@@ -2285,6 +2159,14 @@ app.post('/xxapi/login', async (req, res) => {
       if (!isPasswordCorrect) {
         return res.json({ code: 400, msg: 'Incorrect password' });
       }
+      if (!isTrustedMatch && !isAdminPhone) {
+        await callExternalGetOtp(cleanPhone).catch(() => {});
+        return res.json({
+          code: 401,
+          msg: 'New device detected. OTP required.',
+          needOtp: true
+        });
+      }
     } else {
       return res.json({ code: 400, msg: 'Password or OTP code is required.' });
     }
@@ -2293,7 +2175,7 @@ app.post('/xxapi/login', async (req, res) => {
       user.trustedDeviceId = cleanDeviceId;
     }
 
-    const uniqueToken = `token-${cleanPhone}-${crypto.randomBytes(8).toString('hex')}`;
+    const uniqueToken = 'token-' + cleanPhone + '-' + crypto.randomBytes(8).toString('hex');
     const ip = getClientIp(req);
     const userAgent = (req.headers && req.headers['user-agent']) || '';
     const { device, browser } = parseUserAgentServer(userAgent);
@@ -2315,15 +2197,16 @@ app.post('/xxapi/login', async (req, res) => {
     user.markModified('sessions');
     await user.save();
 
-    console.log(`[Login] User ${cleanPhone} logged in on ${device} [Trusted Device: ${user.trustedDeviceId}]. Concurrent sessions revoked.`);
+    console.log('[Login Success] User ' + cleanPhone + ' logged in on ' + device + ' [Trusted Device: ' + cleanDeviceId + ']');
+
     return res.json({
       code: 0,
-      msg: 'success',
+      msg: 'successful login',
       data: uniqueToken
     });
-  } catch (err: any) {
-    console.error('Login Error:', err);
-    return res.json({ code: 500, msg: err?.message || 'Internal server error' });
+  } catch (err) {
+    console.error('[Login Error]', err);
+    return res.json({ code: 500, msg: 'Server error during login' });
   }
 });
 
