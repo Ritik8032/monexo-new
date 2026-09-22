@@ -3052,24 +3052,24 @@ app.get('/xxapi/simpConfig', async (req, res) => {
 
 // Helper function to generate newbie rules with frontUrl and status
 const buildNewbieRules = (params: any, totalBought: number = 0, hasLinkedUpi: boolean = false) => [
-  { id: 1, name: 'Subscribe to Official Channel', activityCode: 'newbie_tg_channel', title: 'Subscribe to Official Channel', reward: 40, status: params.newbie_tg_channel ? 'done' : 'undone', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
-  { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: params.newbie_tg_customer ? 'done' : 'undone', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
-  { id: 3, name: 'Watch Beginner Tutorial', activityCode: 'newbie_watch_video', title: 'Watch Beginner Tutorial', reward: 40, status: params.newbie_watch_video ? 'done' : 'undone', frontd_url: '/newbie_watch_video', frontUrl: '/newbie_watch_video' },
-  { id: 4, name: 'Add UPI reward', activityCode: 'newbie_newct', title: 'Add UPI reward', reward: 40, status: (params.newbie_newct || hasLinkedUpi) ? 'done' : 'undone', frontd_url: '/collectiontool', frontUrl: '/collectiontool' },
-  { id: 5, name: 'Purchase 1000 IToken', activityCode: 'newbie_buyitoken', title: 'Purchase 1000 IToken', reward: 200, status: (totalBought >= 1000) ? 'done' : 'undone', frontd_url: '/buy', frontUrl: '/buy' }
+  { id: 1, name: 'Subscribe to Official Channel', activityCode: 'newbie_tg_channel', title: 'Subscribe to Official Channel', reward: 40, status: 'done', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
+  { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: 'done', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
+  { id: 3, name: 'Watch Beginner Tutorial', activityCode: 'newbie_watch_video', title: 'Watch Beginner Tutorial', reward: 40, status: 'done', frontd_url: '/newbie_watch_video', frontUrl: '/newbie_watch_video' },
+  { id: 4, name: 'Add UPI reward', activityCode: 'newbie_newct', title: 'Add UPI reward', reward: 40, status: 'done', frontd_url: '/collectiontool', frontUrl: '/collectiontool' },
+  { id: 5, name: 'Purchase 1000 IToken', activityCode: 'newbie_buyitoken', title: 'Purchase 1000 IToken', reward: 200, status: 'done', frontd_url: '/buy', frontUrl: '/buy' }
 ];
 
 const getNewbieUserData = async (req: any) => {
   const user = await getUserByToken(req);
   let userParams: any = {
-    newbie_tg_channel: 0,
-    newbie_tg_customer: 0,
-    newbie_watch_video: 0,
-    newbie_newct: 0,
-    newbie_buyitoken: 0
+    newbie_tg_channel: 1,
+    newbie_tg_customer: 1,
+    newbie_watch_video: 1,
+    newbie_newct: 1,
+    newbie_buyitoken: 1
   };
   let totalBought = 0;
-  let hasLinkedUpi = false;
+  let hasLinkedUpi = true;
 
   if (user) {
     if ((user as any).newbieParams) {
@@ -3077,16 +3077,6 @@ const getNewbieUserData = async (req: any) => {
         const parsed = JSON.parse((user as any).newbieParams);
         userParams = { ...userParams, ...parsed };
       } catch (e) {}
-    }
-
-    // Auto-detect if user has linked any valid UPI tool or bank/upi account
-    const tools = user.collectionTools || [];
-    hasLinkedUpi = tools.some((t: any) => 
-      t && t.state !== 7 && ((t.upi && typeof t.upi === 'string' && t.upi.includes('@')) || (t.account && typeof t.account === 'string' && t.account.includes('@')))
-    ) || (Array.isArray(user.zoopayUpis) && user.zoopayUpis.length > 0) || (Array.isArray(user.upiDetails) && user.upiDetails.length > 0) || Boolean((user as any).upi && typeof (user as any).upi === 'string' && (user as any).upi.includes('@'));
-
-    if (hasLinkedUpi) {
-      userParams.newbie_newct = 1;
     }
 
     const boughtTxs = await Transaction.find({
@@ -3099,23 +3089,18 @@ const getNewbieUserData = async (req: any) => {
       type: { $ne: 'sell' }
     });
     totalBought = boughtTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
-    if (totalBought >= 1000) {
-      userParams.newbie_buyitoken = 1;
-    }
-
-    const allDoneVal = (userParams.newbie_tg_channel && userParams.newbie_tg_customer && userParams.newbie_watch_video && userParams.newbie_newct && userParams.newbie_buyitoken) || totalBought >= 1000 ? 1 : 0;
-    if (allDoneVal) {
-      (user as any).newbieDone = 1;
-    }
 
     (user as any).newbieParams = JSON.stringify(userParams);
     user.markModified('newbieParams');
-    user.markModified('newbieDone');
     await user.save().catch(() => {});
   }
 
   const rules = buildNewbieRules(userParams, totalBought, hasLinkedUpi);
-  const isDone = (user as any)?.newbieDone || (userParams.newbie_tg_channel && userParams.newbie_tg_customer && userParams.newbie_watch_video && userParams.newbie_newct && userParams.newbie_buyitoken) || totalBought >= 1000 ? 1 : 0;
+  // 1 = Done & Claimable, 2 = Already Claimed
+  let isDone = 1;
+  if (user && ((user as any).newbieDone === true || (user as any).newbieDone === 2)) {
+    isDone = 2;
+  }
   return { user, userParams, rules, isDone, totalBought };
 };
 
@@ -3125,11 +3110,12 @@ app.get('/xxapi/newbieDayStep/init', async (req, res) => {
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone ? 200 : 0, params: JSON.stringify(userParams) },
+      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: JSON.stringify(userParams) },
       activityRules: rules,
       guides: rules,
-      allDone: isDone === 1,
-      buyToken: String(Math.min(1000, totalBought))
+      allDone: true,
+      finishNewbie: isDone,
+      buyToken: String(Math.max(1000, totalBought))
     }
   });
 });
@@ -3140,14 +3126,14 @@ app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone ? 200 : 0, params: JSON.stringify(userParams) },
-      newbieStepRecord: { done: isDone, condition: 1000, settleAmt: 200, params: "{}" },
+      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: JSON.stringify(userParams) },
+      newbieStepRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: "{}" },
       activityRules: rules,
       guides: rules,
       tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
       newbieReward: 200,
-      buyToken: String(Math.min(1000, totalBought)),
-      allDone: isDone === 1,
+      buyToken: String(Math.max(1000, totalBought)),
+      allDone: true,
       finishNewbie: isDone
     }
   });
@@ -3276,12 +3262,19 @@ app.post('/xxapi/oldRptNew/reward', async (req, res) => {
   return res.json({ code: 0, msg: "success", data: { rewardAmt } });
 });
 
-app.post('/xxapi/newbieDayStep/reward', async (req, res) => {
+app.all([
+  '/xxapi/newbieDayStep/reward',
+  '/xxapi/newbieStepTotal/reward',
+  '/xxapi/newbieDayStep/settle',
+  '/xxapi/newbieStepTotal/settle',
+  '/xxapi/bguide/reward',
+  '/xxapi/bguide/settle'
+], async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: "Unauthorized" });
 
-  if (!(user as any).newbieDone) {
-    (user as any).newbieDone = true;
+  if (!(user as any).newbieDone || (user as any).newbieDone === 1) {
+    (user as any).newbieDone = 2; // Marked as claimed
     user.balance = (user.balance || 0) + 200;
     await user.save();
 
@@ -3293,15 +3286,15 @@ app.post('/xxapi/newbieDayStep/reward', async (req, res) => {
       amount: 200,
       type: 'transfer_in',
       payer_status: 3,
-      reason_for_rejection: 'Newbie Reward (1000 iTokens)',
+      reason_for_rejection: 'Newbie Reward (₹200)',
       ctime: Math.floor(Date.now() / 1000),
       currentStep: 2
     });
-    await newTx.save();
+    await newTx.save().catch(() => {});
 
-    console.log(`[Newbie Reward] User ${user.phone} received ₹200 newbie reward for buying 1000 iTokens.`);
+    console.log(`[Newbie Reward] User ${user.phone} successfully claimed ₹200 newbie reward.`);
   }
-  return res.json({ code: 0, msg: "success", data: { reward: 200 } });
+  return res.json({ code: 0, msg: "success", data: { reward: 200, rewardAmt: 200, settleAmt: 200 } });
 });
 
 app.get('/xxapi/inviteDayStep/init', async (req, res) => {
@@ -5511,16 +5504,22 @@ app.get('/xxapi/collectiontool', async (req, res) => {
       if (resolvedType === 9) resolvedType = 8;
       if (resolvedType === 3) resolvedType = 2;
       if (resolvedType === 33) resolvedType = -10;
-      const resolvedAccount = specificTool.upi;
+      const isRelinking = req.query.mode === 'relink' || req.query.relink === '1' || req.query.action === 'relink' || specificTool.state === 5 || specificTool.state === 7;
+      const resolvedUpi = isRelinking ? "" : specificTool.upi;
+      const phoneNum = specificTool.linkedPhone || specificTool.phone || specificTool.account || user.phone || "";
+      const userName = specificTool.pnname || user.phone || "Merchant Partner";
       return res.json({
         code: 0,
         msg: 'success',
         data: {
           ...specificTool,
-          account: specificTool.linkedPhone || specificTool.account || resolvedAccount,
-          upi: resolvedAccount,
-          ctAccount: resolvedAccount,
-          ct_account: resolvedAccount,
+          pnname: userName,
+          name: userName,
+          account: phoneNum,
+          phone: phoneNum,
+          upi: resolvedUpi,
+          ctAccount: resolvedUpi,
+          ct_account: resolvedUpi,
           ctType: resolvedType,
           ct_type: resolvedType,
           type: resolvedType,
@@ -5920,6 +5919,18 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       user.collectionTools.push(tool);
     } else {
       tool.id = toolId;
+      if (!tool.savedOriginalState) {
+        tool.savedOriginalState = {
+          upi: tool.upi,
+          backup_upi: tool.backup_upi ? [...tool.backup_upi] : [],
+          account: tool.account,
+          phone: tool.phone,
+          pnname: tool.pnname,
+          state: tool.state === 7 ? 2 : (tool.state || 2),
+          status: tool.status !== undefined ? tool.status : 1,
+          inSell: tool.inSell !== undefined ? tool.inSell : 1
+        };
+      }
       if (tool.upi && tool.upi.includes('@') && tool.upi !== 'Pending verification') {
         tool.savedUpi = tool.upi;
       }
@@ -6604,11 +6615,23 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       }
 
       if (tool) {
-        if (tool.savedUpi) tool.upi = tool.savedUpi;
-        if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
-        if (tool.upi && tool.upi !== 'Pending verification' && tool.upi.includes('@')) {
-          tool.state = 2;
-          tool.status = 1;
+        if (tool.savedOriginalState) {
+          tool.upi = tool.savedOriginalState.upi;
+          tool.backup_upi = tool.savedOriginalState.backup_upi;
+          tool.account = tool.savedOriginalState.account;
+          tool.phone = tool.savedOriginalState.phone;
+          if (tool.savedOriginalState.pnname) tool.pnname = tool.savedOriginalState.pnname;
+          tool.state = tool.savedOriginalState.state;
+          tool.status = tool.savedOriginalState.status;
+          tool.inSell = tool.savedOriginalState.inSell;
+        } else {
+          if (tool.savedUpi) tool.upi = tool.savedUpi;
+          if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
+          if (tool.upi && tool.upi !== 'Pending verification' && tool.upi.includes('@')) {
+            tool.state = 2;
+            tool.status = 1;
+            tool.inSell = 1;
+          }
         }
         user.markModified('collectionTools');
         await user.save().catch(() => {});
@@ -6626,11 +6649,23 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
     if (!upis || upis.length === 0) {
       console.warn(`[Automation API] No real UPI IDs returned from server for ${targetPhone}`);
       if (tool) {
-        if (tool.savedUpi) tool.upi = tool.savedUpi;
-        if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
-        if (tool.upi && tool.upi !== 'Pending verification' && tool.upi.includes('@')) {
-          tool.state = 2;
-          tool.status = 1;
+        if (tool.savedOriginalState) {
+          tool.upi = tool.savedOriginalState.upi;
+          tool.backup_upi = tool.savedOriginalState.backup_upi;
+          tool.account = tool.savedOriginalState.account;
+          tool.phone = tool.savedOriginalState.phone;
+          if (tool.savedOriginalState.pnname) tool.pnname = tool.savedOriginalState.pnname;
+          tool.state = tool.savedOriginalState.state;
+          tool.status = tool.savedOriginalState.status;
+          tool.inSell = tool.savedOriginalState.inSell;
+        } else {
+          if (tool.savedUpi) tool.upi = tool.savedUpi;
+          if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
+          if (tool.upi && tool.upi !== 'Pending verification' && tool.upi.includes('@')) {
+            tool.state = 2;
+            tool.status = 1;
+            tool.inSell = 1;
+          }
         }
         user.markModified('collectionTools');
         await user.save().catch(() => {});
