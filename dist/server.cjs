@@ -3218,16 +3218,16 @@ app.get("/xxapi/buyitoken/waitconfirm", async (req, res) => {
       if (methodLower.includes("freecharge") || ctTypeVal === 2 || ctTypeVal === 3) {
         selectedUpi = `${phone}@freecharge`;
       } else if (methodLower.includes("paytm") || ctTypeVal === 8 || ctTypeVal === 9) {
-        selectedUpi = `${phone}@paytm`;
+        selectedUpi = "";
       } else if (methodLower.includes("mobikwik") || ctTypeVal === 4) {
         selectedUpi = `${phone}@ikwik`;
       } else if (methodLower.includes("navi") || ctTypeVal === 13) {
         selectedUpi = `${phone}@navi`;
       } else {
-        selectedUpi = `${phone}@ybl`;
+        selectedUpi = "";
       }
     }
-    const payeeUpi = activeTx.payee_bank_account || "monexo@paytm";
+    const payeeUpi = activeTx.payee_bank_account || "";
     const ctAccountVal = phone || (selectedUpi ? selectedUpi.split("@")[0] : "");
     const payAccountVal = selectedUpi || payeeUpi;
     return res.json({
@@ -3339,7 +3339,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
         }
         const tools = (u.collectionTools || []).filter((t) => t && t.state !== 0 && t.state !== 5);
         for (const tool of tools) {
-          const upiVal = tool.upi || tool.backup_upi && tool.backup_upi[0] || `${u.phone}@paytm`;
+          const upiVal = tool.upi || tool.backup_upi && tool.backup_upi[0];
           let pName = tool.pnname || "";
           if (!pName || ["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "BharatPe", "Merchant Partner", "PayTM Business", "PhonePe Business"].includes(pName)) {
             pName = u.phone || "Merchant Partner";
@@ -3367,7 +3367,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
         if (activeTools.length > 0) {
           const matchingTool = (reqCtType !== void 0 ? activeTools.find((t) => t.type === reqCtType || t.ctType === reqCtType || t.ct_type === reqCtType) : void 0) || activeTools[0];
           const primaryTool = matchingTool;
-          const upiId = primaryTool.upi || primaryTool.backup_upi && primaryTool.backup_upi[0] || seller.zoopayUpis && seller.zoopayUpis[0] || `${seller.phone}@paytm`;
+          const upiId = primaryTool.upi || primaryTool.backup_upi && primaryTool.backup_upi[0] || seller.zoopayUpis && seller.zoopayUpis[0];
           const toolCtType = primaryTool.ct_type || primaryTool.ctType || primaryTool.type || reqCtType || 1;
           let partnerName = primaryTool.pnname || "";
           if (upiId && upiId.includes("@")) {
@@ -3462,7 +3462,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
         sampleAmounts.forEach((amt, idx) => {
           const rptNo = generate15DigitRptNo();
           const toolItem = realToolsPool.length > 0 ? realToolsPool[idx % realToolsPool.length] : null;
-          const upiVal = toolItem ? toolItem.upi : "9199604613@ybl";
+          const upiVal = toolItem ? toolItem.upi : "";
           const nameVal = toolItem ? toolItem.pnname : "Rahul";
           const sellerIdVal = toolItem ? toolItem.sellerId : "";
           const sellerPhoneVal = toolItem ? toolItem.sellerPhone : "9199604613";
@@ -3549,10 +3549,10 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
             payment_method: 1,
             ctType: 1,
             ct_type: 1,
-            upi: "9199604613@ybl",
-            account: "9199604613@ybl",
-            ctAccount: "9199604613@ybl",
-            payAccount: "9199604613@ybl",
+            upi: "",
+            account: "",
+            ctAccount: "",
+            payAccount: "",
             pnname: "Rahul",
             name: "Rahul"
           };
@@ -3577,12 +3577,12 @@ app.get("/xxapi/buyitoken/paymentslipdetail", async (req, res) => {
   let isUpi = true;
   let payee_recipients_name = "Monexo Merchant";
   let payee_ifsc = "";
-  let payee_bank_account = "monexo@paytm";
+  let payee_bank_account = "";
   let payee_bankname = "";
   if (tx) {
     isUpi = tx.payment_method === 1;
     payee_recipients_name = tx.payee_recipients_name || "Monexo Merchant";
-    payee_bank_account = tx.payee_bank_account || "monexo@paytm";
+    payee_bank_account = tx.payee_bank_account || "";
     if (isUpi) {
       payee_ifsc = "";
       payee_bankname = "";
@@ -3593,7 +3593,7 @@ app.get("/xxapi/buyitoken/paymentslipdetail", async (req, res) => {
   } else if (slipData) {
     isUpi = slipData.method === 1;
     payee_recipients_name = slipData.pnname || "Monexo Merchant";
-    payee_bank_account = slipData.upi || "monexo@paytm";
+    payee_bank_account = slipData ? slipData.upi : "";
     if (isUpi) {
       payee_ifsc = "";
       payee_bankname = "";
@@ -3663,7 +3663,7 @@ app.get("/xxapi/buyitoken/paymentslipdetail", async (req, res) => {
     if (!selectedPayerUpi) {
       const phone = userObj.phone || "user";
       if (ctTypeVal === 8 || ctTypeVal === 9 || ctTypeVal === 16) {
-        selectedPayerUpi = `${phone}@paytm`;
+        selectedPayerUpi = "";
       } else if (ctTypeVal === 4) {
         selectedPayerUpi = `${phone}@ikwik`;
       } else if (ctTypeVal === 2 || ctTypeVal === 3) {
@@ -3671,7 +3671,7 @@ app.get("/xxapi/buyitoken/paymentslipdetail", async (req, res) => {
       } else if (ctTypeVal === 13) {
         selectedPayerUpi = `${phone}@navi`;
       } else if (ctTypeVal === 14) {
-        selectedPayerUpi = `${phone}@ybl`;
+        selectedPayerUpi = "";
       } else if (ctTypeVal === 17) {
         selectedPayerUpi = `${phone}@supermoney`;
       } else if (ctTypeVal === 18) {
@@ -3679,12 +3679,12 @@ app.get("/xxapi/buyitoken/paymentslipdetail", async (req, res) => {
       } else if (ctTypeVal === -10 || ctTypeVal === 33) {
         selectedPayerUpi = `${phone}@apl`;
       } else {
-        selectedPayerUpi = `${phone}@ybl`;
+        selectedPayerUpi = "";
       }
     }
   }
   if (!selectedPayerUpi) {
-    selectedPayerUpi = "user@ybl";
+    selectedPayerUpi = "";
   }
   if (!selectedPayerTool) {
     selectedPayerTool = mapCtTypeToName(ctTypeVal);
@@ -3831,7 +3831,7 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
   }
   let amount = slipData ? slipData.amount : req.body.amount ? Number(req.body.amount) : 200;
   let payee_recipients_name = slipData ? slipData.pnname : "Monexo Merchant";
-  let payee_bank_account = slipData ? slipData.upi : "monexo@paytm";
+  let payee_bank_account = slipData ? slipData.upi : "";
   if (slipData && slipData.isAdminNode && slipData.nodeId) {
     await PaymentNode.findByIdAndUpdate(slipData.nodeId, {
       orderState: "CLAIMED",
@@ -3920,7 +3920,7 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
   if (!selectedUpi) {
     const toolIdStr = String(ct_id || "");
     if (toolIdStr.includes("paytm") || chosenCtType === 8 || chosenCtType === 9 || chosenCtType === 16) {
-      selectedUpi = `${phone}@paytm`;
+      selectedUpi = "";
       chosenCtType = 8;
     } else if (toolIdStr.includes("mobikwik") || chosenCtType === 4) {
       selectedUpi = `${phone}@ikwik`;
@@ -3932,7 +3932,7 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
       selectedUpi = `${phone}@navi`;
       chosenCtType = 13;
     } else if (toolIdStr.includes("phonepebusiness") || chosenCtType === 14) {
-      selectedUpi = `${phone}@ybl`;
+      selectedUpi = "";
       chosenCtType = 14;
     } else if (toolIdStr.includes("supermoney") || chosenCtType === 17) {
       selectedUpi = `${phone}@supermoney`;
@@ -3946,7 +3946,7 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
     } else if (toolIdStr.includes("@")) {
       selectedUpi = toolIdStr;
     } else {
-      selectedUpi = `${phone}@ybl`;
+      selectedUpi = "";
       chosenCtType = 1;
     }
   }
@@ -4151,7 +4151,7 @@ app.post("/xxapi/buyitoken/changecttype", async (req, res) => {
   if (!newUpi) {
     const toolIdStr = String(ct_id || "");
     if (toolIdStr.includes("paytm") || chosenType === 8 || chosenType === 16) {
-      newUpi = `${phone}@paytm`;
+      newUpi = "";
       chosenType = 8;
     } else if (toolIdStr.includes("mobikwik") || chosenType === 4) {
       newUpi = `${phone}@ikwik`;
@@ -4163,7 +4163,7 @@ app.post("/xxapi/buyitoken/changecttype", async (req, res) => {
       newUpi = `${phone}@navi`;
       chosenType = 13;
     } else if (toolIdStr.includes("phonepebusiness") || chosenType === 14) {
-      newUpi = `${phone}@ybl`;
+      newUpi = "";
       chosenType = 14;
     } else if (toolIdStr.includes("supermoney") || chosenType === 17) {
       newUpi = `${phone}@supermoney`;
@@ -4177,7 +4177,7 @@ app.post("/xxapi/buyitoken/changecttype", async (req, res) => {
     } else if (toolIdStr.includes("@")) {
       newUpi = toolIdStr;
     } else {
-      newUpi = `${phone}@ybl`;
+      newUpi = "";
       chosenType = 1;
     }
   }
@@ -4577,7 +4577,7 @@ app.post(["/xxapi/linkUpi/verifySms", "/xxapi/linkUpi/verify", "/xxapi/authupi"]
   const { ctid, ct_id, upi, phone, smscode, otp, account, pnname } = req.body || {};
   const inputOtp = smscode || otp || req.body?.code;
   const targetPhone = phone || account || user.phone;
-  const targetUpi = upi || (targetPhone.includes("@") ? targetPhone : `${targetPhone}@ybl`);
+  const targetUpi = upi || (targetPhone.includes("@") ? targetPhone : "Pending verification");
   if (!inputOtp || String(inputOtp).trim().length < 4) {
     return res.json({
       code: 400,
@@ -4778,7 +4778,8 @@ async function healAndGetCleanTools(user) {
     if (typeVal === 33) typeVal = -10;
     const isVerified = t.state === 2 && t.upi && typeof t.upi === "string" && t.upi.includes("@") && t.upi !== "Pending verification";
     const resolvedState = t.state !== void 0 ? t.state : isVerified ? 2 : 5;
-    const finalUpi = t.upi && t.upi !== "Pending verification" && t.upi.includes("@") ? t.upi : t.savedUpi && t.savedUpi.includes("@") ? t.savedUpi : "";
+    const currentUpi = t.upi && t.upi !== "Pending verification" ? t.upi : t.savedUpi || "Pending verification";
+    const finalUpi = currentUpi && currentUpi !== "Pending verification" && currentUpi.includes("@") ? currentUpi : "Pending verification";
     const buyAllowedTypes = [1, 4, 8];
     const isBuyAllowed = buyAllowedTypes.includes(Number(typeVal));
     const onlyPaymentFlagVal = isBuyAllowed ? 3 : 2;
@@ -4789,7 +4790,7 @@ async function healAndGetCleanTools(user) {
       inSell: 1,
       onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
-      account: t.linkedPhone || t.account || finalUpi || user.phone || "",
+      account: t.linkedPhone || t.account || finalUpi || user.phone,
       ctType: typeVal,
       ct_type: typeVal,
       type: typeVal
@@ -4975,7 +4976,7 @@ app.post("/xxapi/collectiontoolStatus", async (req, res) => {
       }
       tool.state = 5;
       if (!tool.upi || tool.upi === "Pending verification") {
-        tool.upi = tool.savedUpi && tool.savedUpi.includes("@") ? tool.savedUpi : "";
+        tool.upi = tool.savedUpi || tool.upi || "Pending verification";
       }
       user.markModified("collectionTools");
       await user.save();
@@ -5064,7 +5065,7 @@ app.get("/xxapi/availablect", async (req, res) => {
     if (resolvedType === 9) resolvedType = 8;
     if (resolvedType === 3) resolvedType = 2;
     if (resolvedType === 33) resolvedType = -10;
-    const resolvedUpi = t.upi && t.upi.includes("@") && t.upi !== "Pending verification" ? t.upi : t.savedUpi && t.savedUpi.includes("@") ? t.savedUpi : "";
+    const resolvedUpi = t.upi && t.upi.includes("@") && t.upi !== "Pending verification" ? t.upi : t.savedUpi || "Pending verification";
     return {
       ...t,
       upi: resolvedUpi,
@@ -5202,7 +5203,7 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
         inSell: 1,
         ctGuide: "If you Change your upi id, please relink right now!",
         account: targetPhone,
-        upi: targetPhone && targetPhone.includes("@") ? targetPhone : "",
+        upi: tool && tool.savedUpi ? tool.savedUpi : "Pending verification",
         backup_upi: [],
         phone: targetPhone,
         pnname: pnname || "Merchant Partner",
@@ -5239,7 +5240,7 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
       tool.state = 7;
       tool.inSell = 1;
       if (!tool.upi || tool.upi === "Pending verification") {
-        tool.upi = tool.savedUpi && tool.savedUpi.includes("@") ? tool.savedUpi : "";
+        tool.upi = tool.savedUpi || tool.upi || "Pending verification";
       }
       tool.channelType = config.channelType;
       tool.engine = config.engine;
@@ -6212,7 +6213,7 @@ async function cancelTransactionHandler(req, res) {
         payer_status: 4,
         payment_method: slipData ? slipData.method : 1,
         payee_recipients_name: slipData ? slipData.pnname : "Monexo Merchant",
-        payee_bank_account: slipData ? slipData.upi : "monexo@paytm",
+        payee_bank_account: slipData ? slipData.upi : "",
         ctime: slipData ? slipData.ctime : Math.floor(Date.now() / 1e3),
         type: "recharge",
         currency: 3
@@ -6329,7 +6330,7 @@ async function getRechargeHistory(req, res) {
     const obj = tx.toObject ? tx.toObject() : { ...tx };
     const ctTypeVal = tx.ctType || tx.ct_type || tx.payer_tool_type || 1;
     const isUpi = tx.payment_method === 1;
-    const buyerSelectedUpi = tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || (user && user.phone ? `${user.phone}@ybl` : "");
+    const buyerSelectedUpi = tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || "";
     const payeeUpi = tx.payee_bank_account || tx.upi || "";
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1e3);
     const dealTimeSec = tx.dealTime || tx.utime || (tx.payer_status >= 2 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : debitTimeSec);
@@ -6528,8 +6529,6 @@ async function getSellHistory(req, res) {
   if (user.upiId) upiAccounts.push(user.upiId);
   if (user.upi_id) upiAccounts.push(user.upi_id);
   if (user.phone) {
-    upiAccounts.push(`${user.phone}@ybl`);
-    upiAccounts.push(`${user.phone}@paytm`);
   }
   if (user.collectionTools && Array.isArray(user.collectionTools)) {
     user.collectionTools.forEach((t) => {
