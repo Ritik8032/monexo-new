@@ -1602,39 +1602,41 @@ async function callExternalVerifyOtp(phone: string, otp: string, deviceIdParam?:
     const cleanOtp = String(otp).trim();
     const deviceId = deviceIdParam || phoneDeviceIds[cleanPhone] || '';
 
-    console.log(`[callExternalVerifyOtp] Fast verifying OTP for phone: ${cleanPhone}, otp: ${cleanOtp}, deviceId: ${deviceId}`);
+    console.log(`[callExternalVerifyOtp] Verifying OTP for phone: ${cleanPhone}, otp: ${cleanOtp}, deviceId: ${deviceId}`);
     
-    // Fire requests to both primary and fallback workers concurrently with 4s timeouts for ultra-fast verification
-    const primaryPromise = fetch('https://api-otp-xxapi.guruarning.workers.dev/api/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phone: cleanPhone,
-        otp: cleanOtp,
-        deviceId: deviceId
-      }),
-      signal: AbortSignal.timeout(4000)
-    }).then(res => res.json()).catch(() => null);
+    // First try primary worker with 4s timeout
+    try {
+      const primaryRes = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          otp: cleanOtp,
+          deviceId: deviceId
+        }),
+        signal: AbortSignal.timeout(4000)
+      }).then(res => res.json()).catch(() => null);
 
-    const fallbackPromise = fetch('https://monexo.guruarning.workers.dev/verify-reset', {
+      console.log('[callExternalVerifyOtp] Primary Worker Response:', JSON.stringify(primaryRes));
+
+      if (primaryRes && checkWorkerOtpResult(primaryRes, cleanOtp)) {
+        return primaryRes;
+      }
+    } catch (e) {
+      console.error('[callExternalVerifyOtp] Primary worker exception:', e);
+    }
+
+    // Secondary fallback to monexo worker if primary failed or was rejected
+    console.log('[callExternalVerifyOtp] Primary failed or rejected, trying fallback worker...');
+    const fallbackRes = await fetch('https://monexo.guruarning.workers.dev/verify-reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: cleanPhone, otp: cleanOtp }),
       signal: AbortSignal.timeout(4000)
     }).then(res => res.json()).catch(() => null);
 
-    const [primaryRes, fallbackRes] = await Promise.all([primaryPromise, fallbackPromise]);
-    console.log('[callExternalVerifyOtp] Primary Res:', primaryRes);
-    console.log('[callExternalVerifyOtp] Fallback Res:', fallbackRes);
-
-    if (primaryRes && checkWorkerOtpResult(primaryRes, cleanOtp)) {
-      return primaryRes;
-    }
-    if (fallbackRes && checkWorkerOtpResult(fallbackRes, cleanOtp)) {
-      return fallbackRes;
-    }
-
-    return primaryRes || fallbackRes;
+    console.log('[callExternalVerifyOtp] Fallback Worker Response:', JSON.stringify(fallbackRes));
+    return fallbackRes;
   } catch (err) {
     console.error('[callExternalVerifyOtp] Failed:', err);
     return null;
@@ -1650,73 +1652,64 @@ function checkWorkerOtpResult(verifyRes: any, cleanDigits: string, sessionPendin
     return false;
   }
 
-  // 1. Check nested data structure returned by new worker
-  const innerData = verifyRes.data;
-  if (innerData) {
-    if (innerData.success === false || innerData.error || (innerData.data && innerData.data.success === false)) {
-      console.log(`[checkWorkerOtpResult] Verification rejected by worker inner data:`, innerData.error || innerData);
-      return false;
-    }
+  const msg = String(
+    verifyRes.msg || verifyRes.message || 
+    verifyRes.data?.msg || verifyRes.data?.message || 
+    verifyRes.data?.data?.msg || verifyRes.data?.data?.message || 
+    verifyRes.resetResponse?.msg || verifyRes.resetResponse?.message || ""
+  ).toLowerCase();
 
-    if (innerData.success === true) {
-      const subData = innerData.data;
-      if (subData) {
-        if (subData.verified === true || subData.accessToken || subData.message?.toLowerCase().includes('success')) {
-          return true;
-        }
-        if (subData.verified === false || subData.error) {
-          return false;
-        }
-      }
-      if (innerData.verified === true) {
-        return true;
-      }
-    }
+  const isSamePasswordError = msg.includes("old password") ||
+                              msg.includes("same as") ||
+                              msg.includes("same password") ||
+                              msg.includes("cannot be the same") ||
+                              msg.includes("not be same") ||
+                              msg.includes("purana password");
+  if (isSamePasswordError) {
+    console.log(`[checkWorkerOtpResult] OTP verified (Worker reported same password message: "${msg}").`);
+    return true;
   }
 
-  // 2. Direct top-level checks
-  if (verifyRes.success === false || verifyRes.error) {
+  // Explicit failure checks
+  if (
+    verifyRes.error ||
+    verifyRes.data?.error ||
+    verifyRes.data?.data?.error ||
+    verifyRes.data?.success === false ||
+    verifyRes.data?.data?.success === false ||
+    verifyRes.success === false ||
+    (verifyRes.code !== undefined && verifyRes.code !== 0 && verifyRes.code !== 200) ||
+    (verifyRes.resetResponse?.code !== undefined && verifyRes.resetResponse.code !== 200 && verifyRes.resetResponse.code !== 0) ||
+    msg.includes("incorrect") ||
+    msg.includes("invalid") ||
+    msg.includes("expired") ||
+    msg.includes("failed") ||
+    msg.includes("error")
+  ) {
+    console.log(`[checkWorkerOtpResult] OTP verification rejected for digits="${cleanDigits}". Response:`, JSON.stringify(verifyRes));
     return false;
   }
 
-  if (verifyRes.success === true && (verifyRes.verified === true || verifyRes.data?.verified === true)) {
+  // Explicit success checks
+  if (
+    verifyRes.data?.success === true ||
+    verifyRes.data?.data?.success === true ||
+    verifyRes.data?.verified === true ||
+    verifyRes.data?.data?.verified === true ||
+    verifyRes.verified === true ||
+    verifyRes.data?.accessToken ||
+    verifyRes.data?.data?.accessToken ||
+    verifyRes.accessToken ||
+    verifyRes.code === 0 || verifyRes.code === 200 ||
+    verifyRes.data?.code === 0 || verifyRes.data?.code === 200 ||
+    verifyRes.resetResponse?.code === 200 || verifyRes.resetResponse?.code === 0 ||
+    msg.includes("success") || msg.includes("verified") || msg.includes("ok")
+  ) {
+    console.log(`[checkWorkerOtpResult] OTP successfully verified for digits="${cleanDigits}".`);
     return true;
   }
 
-  // 3. Fallback worker check
-  const resetResp = verifyRes.resetResponse;
-  if (resetResp) {
-    if (resetResp.code === 200 || resetResp.code === 0 || resetResp.msg?.toLowerCase().includes('success')) {
-      return true;
-    }
-    if (resetResp.code !== 200 && resetResp.code !== 0) {
-      console.log(`[checkWorkerOtpResult] Fallback worker rejected OTP with code ${resetResp.code}: ${resetResp.msg}`);
-      return false;
-    }
-  }
-
-  // 4. Status and code checks for legacy or alternative formats
-  const code = verifyRes.code !== undefined ? verifyRes.code : (innerData?.code);
-  const status = verifyRes.status || innerData?.status;
-  const msg = String(verifyRes.msg || verifyRes.message || innerData?.msg || innerData?.message || '').toLowerCase();
-
-  if (code === 0 || code === 200 || code === '200' || status === 'success' || status === true) {
-    return true;
-  }
-
-  const isSamePasswordError = msg.includes('old password') ||
-                              msg.includes('same as') ||
-                              msg.includes('same password') ||
-                              msg.includes('cannot be the same') ||
-                              msg.includes('not be same') ||
-                              msg.includes('purana password');
-
-  if (isSamePasswordError) {
-    console.log(`[checkWorkerOtpResult] OTP verified successfully (Worker reported same password message: "${msg}").`);
-    return true;
-  }
-
-  console.log(`[checkWorkerOtpResult] OTP verification failed for digits="${cleanDigits}". Response:`, JSON.stringify(verifyRes));
+  console.log(`[checkWorkerOtpResult] OTP verification unconfirmed for digits="${cleanDigits}". Response:`, JSON.stringify(verifyRes));
   return false;
 }
 
