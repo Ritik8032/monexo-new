@@ -78,94 +78,8 @@ function getHtmlFilePath(filename) {
 }
 var app = (0, import_express.default)();
 var handleSliderCaptcha = async (req, res) => {
-  console.log("[GET /xxsapi/slid] Captcha request received from client");
-  try {
-    const upstreamUrl = "https://api.h5r1xc.xyz/xxapi/sliderCaptcha";
-    const userAgent = req.headers && req.headers["user-agent"] ? String(req.headers["user-agent"]) : "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
-    const accept = req.headers && req.headers["accept"] ? String(req.headers["accept"]) : "application/json, text/plain, */*";
-    const acceptLang = req.headers && req.headers["accept-language"] ? String(req.headers["accept-language"]) : "en-US,en;q=0.9,hi;q=0.8";
-    const headers = {
-      "INDIATOKEN": "7c62c0e2859740d6b5ca621da1cdad0",
-      "X-RS-Cfg-tivpayReqGate": "A7K9X2M8Q4P1Z",
-      "Accept": accept,
-      "Accept-Language": acceptLang,
-      "User-Agent": userAgent
-    };
-    console.log(`[GET /xxsapi/slid] Fetching upstream slider CAPTCHA from ${upstreamUrl}...`);
-    const https = await import("https");
-    const reqOptions = {
-      hostname: "api.h5r1xc.xyz",
-      port: 443,
-      path: "/xxapi/sliderCaptcha",
-      method: "GET",
-      headers
-    };
-    const upstreamPromise = new Promise((resolve, reject) => {
-      const upstreamReq = https.request(reqOptions, (upstreamRes) => {
-        let responseBody = "";
-        upstreamRes.on("data", (chunk) => {
-          responseBody += chunk;
-        });
-        upstreamRes.on("end", () => {
-          resolve({
-            statusCode: upstreamRes.statusCode || 500,
-            body: responseBody
-          });
-        });
-      });
-      upstreamReq.on("error", (err) => {
-        reject(err);
-      });
-      upstreamReq.setTimeout(1e4, () => {
-        upstreamReq.destroy(new Error("Upstream timeout"));
-      });
-      upstreamReq.end();
-    });
-    const upstreamResult = await upstreamPromise.catch((err) => ({
-      statusCode: 502,
-      body: JSON.stringify({ error: err.message })
-    }));
-    console.log(`[GET /xxsapi/slid] Upstream HTTP Status: ${upstreamResult.statusCode}`);
-    console.log(`[GET /xxsapi/slid] Upstream Response Body (first 300 chars): ${upstreamResult.body.substring(0, 300)}`);
-    let parsedJson = null;
-    let jsonParsedSuccessfully = false;
-    try {
-      parsedJson = JSON.parse(upstreamResult.body);
-      jsonParsedSuccessfully = true;
-      console.log(`[GET /xxsapi/slid] JSON Parsing Succeeded: true`);
-      if (parsedJson) {
-        console.log(`[GET /xxsapi/slid] Upstream Code: ${parsedJson.code}`);
-        if (parsedJson.data && typeof parsedJson.data === "object") {
-          console.log(`[GET /xxsapi/slid] Returned Data Keys: ${Object.keys(parsedJson.data).join(", ")}`);
-        } else {
-          console.log(`[GET /xxsapi/slid] Returned Data Keys: NONE (data is ${typeof parsedJson.data})`);
-        }
-      }
-    } catch (parseError) {
-      jsonParsedSuccessfully = false;
-      console.log(`[GET /xxsapi/slid] JSON Parsing Succeeded: false (${parseError.message})`);
-    }
-    if (upstreamResult.statusCode === 200 && jsonParsedSuccessfully && parsedJson) {
-      return res.status(200).json(parsedJson);
-    } else if (jsonParsedSuccessfully && parsedJson) {
-      return res.status(upstreamResult.statusCode || 200).json(parsedJson);
-    } else {
-      console.error(`[GET /xxsapi/slid] Upstream HTTP ${upstreamResult.statusCode} - returning raw response/error`);
-      return res.status(upstreamResult.statusCode || 502).type("json").send(
-        jsonParsedSuccessfully ? JSON.stringify(parsedJson) : JSON.stringify({
-          code: upstreamResult.statusCode || 502,
-          msg: `Upstream error HTTP ${upstreamResult.statusCode}`,
-          rawBody: upstreamResult.body
-        })
-      );
-    }
-  } catch (err) {
-    console.error("[GET /xxsapi/slid] Internal Proxy Error:", err);
-    return res.status(500).json({
-      code: 500,
-      msg: "Server error proxying slider CAPTCHA: " + (err.message || "Unknown error")
-    });
-  }
+  console.log("[GET /xxsapi/slid] Captcha request received - returning disabled success");
+  return res.status(200).json({ code: 0, msg: "success", data: { disabled: true } });
 };
 app.get("/xxsapi/slid", handleSliderCaptcha);
 app.get("/xxapi/sliderCaptcha", handleSliderCaptcha);
@@ -1890,63 +1804,8 @@ app.post("/xxapi/sendLoginSms", async (req, res) => {
   }
 });
 app.post(["/xxsapi/slid/verify", "/xxapi/checkSliderCaptcha"], async (req, res) => {
-  console.log("[POST /xxsapi/slid/verify] Verify captcha request received:", req.body);
-  try {
-    const upstreamUrl = "https://api.h5r1xc.xyz/xxapi/checkSliderCaptcha";
-    const userAgent = req.headers && req.headers["user-agent"] ? String(req.headers["user-agent"]) : "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
-    const accept = req.headers && req.headers["accept"] ? String(req.headers["accept"]) : "application/json, text/plain, */*";
-    const acceptLang = req.headers && req.headers["accept-language"] ? String(req.headers["accept-language"]) : "en-US,en;q=0.9,hi;q=0.8";
-    const headers = {
-      "Content-Type": "application/json",
-      "INDIATOKEN": "7c62c0e2859740d6b5ca621da1cdad0",
-      "X-RS-Cfg-tivpayReqGate": "A7K9X2M8Q4P1Z",
-      "Accept": accept,
-      "Accept-Language": acceptLang,
-      "User-Agent": userAgent
-    };
-    const https = await import("https");
-    const postData = JSON.stringify(req.body || {});
-    const reqOptions = {
-      hostname: "api.h5r1xc.xyz",
-      port: 443,
-      path: "/xxapi/checkSliderCaptcha",
-      method: "POST",
-      headers: {
-        ...headers,
-        "Content-Length": Buffer.byteLength(postData)
-      }
-    };
-    const upstreamPromise = new Promise((resolve, reject) => {
-      const upstreamReq = https.request(reqOptions, (upstreamRes) => {
-        let responseBody = "";
-        upstreamRes.on("data", (chunk) => {
-          responseBody += chunk;
-        });
-        upstreamRes.on("end", () => {
-          resolve({
-            statusCode: upstreamRes.statusCode || 500,
-            body: responseBody
-          });
-        });
-      });
-      upstreamReq.on("error", (err) => resolve({ statusCode: 502, body: JSON.stringify({ error: err.message }) }));
-      upstreamReq.setTimeout(1e4, () => upstreamReq.destroy(new Error("Timeout")));
-      upstreamReq.write(postData);
-      upstreamReq.end();
-    });
-    const upstreamResult = await upstreamPromise;
-    console.log(`[POST /xxsapi/slid/verify] Upstream HTTP Status: ${upstreamResult.statusCode}`);
-    console.log(`[POST /xxsapi/slid/verify] Upstream Body: ${upstreamResult.body}`);
-    try {
-      const parsed = JSON.parse(upstreamResult.body);
-      return res.status(200).json(parsed);
-    } catch {
-      return res.status(200).json({ code: 0, msg: "success", data: "verified" });
-    }
-  } catch (err) {
-    console.error("[POST /xxsapi/slid/verify] Error:", err);
-    return res.status(200).json({ code: 0, msg: "success", data: "verified" });
-  }
+  console.log("[POST /xxsapi/slid/verify] Verify captcha request - returning instant success");
+  return res.status(200).json({ code: 0, msg: "success", data: "verified" });
 });
 app.post("/xxapi/login", async (req, res) => {
   try {
@@ -2639,7 +2498,7 @@ app.get("/xxapi/config", async (req, res) => {
       okTurnstileSitekey: "1x00000000000000000000AA",
       rsKeyMode: 1,
       siteKey: "1x00000000000000000000AA",
-      sliderSmsCaptcha: 1,
+      sliderSmsCaptcha: 0,
       usdtExchangerate: usdtRate,
       trc20Address: trc20Addr,
       trc20CollectionAddress: trc20Addr,
@@ -2704,7 +2563,7 @@ app.get("/xxapi/simpConfig", async (req, res) => {
       customerServiceUrl: "https://t.me/+AmPPZsOTjEBjMzg1",
       okTurnstileSitekey: "1x00000000000000000000AA",
       rsKeyMode: 1,
-      sliderSmsCaptcha: 1,
+      sliderSmsCaptcha: 0,
       payerTimeoutTime: 600
     }
   });
@@ -9515,7 +9374,7 @@ app.get(["/rsCfg.json", "/public/rsCfg.json"], (req, res) => {
       rsKeyMode: 1,
       siteKey: "1x00000000000000000000AA",
       antResetPassFlag: "0",
-      sliderSmsCaptcha: 1,
+      sliderSmsCaptcha: 0,
       appDownloadUrl: "https://gtpbhzhildmyyzfwrmeu.supabase.co/storage/v1/object/sign/Monexo/monexopay.apk?token=eyJraWQiOiI4MmU5MWRjOC03Mzg4LTQ2ZDktYjM2Ni1iNzE0MmUxYWYzMTYiLCJhbGciOiJIUzUxMiJ9.eyJ1cmwiOiJNb25leG8vbW9uZXhvcGF5LmFwayIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3OTAwODEyODEsImV4cCI6MTgyMTYxNzI4MX0.EyZ0IxbriFgIXLRAqAVPTv-cNu5RBOcYGCswDgU9-lplTRIYGt0MM1sfvKEmhXzQMr0T1Qs4YNpRV68kvNGbcw",
       appVersion: "2.3.0"
     }
