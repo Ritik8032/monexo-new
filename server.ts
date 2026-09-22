@@ -1642,29 +1642,49 @@ function checkWorkerOtpResult(verifyRes: any, cleanDigits: string, sessionPendin
   // 1. Check nested data structure returned by new worker
   const innerData = verifyRes.data;
   if (innerData) {
+    if (innerData.success === false || innerData.error || (innerData.data && innerData.data.success === false)) {
+      console.log(`[checkWorkerOtpResult] Verification rejected by worker inner data:`, innerData.error || innerData);
+      return false;
+    }
+
     if (innerData.success === true) {
       const subData = innerData.data;
       if (subData) {
-        if (subData.verified === true || subData.accessToken || subData.isNewUser !== undefined || subData.message?.toLowerCase().includes('success')) {
+        if (subData.verified === true || subData.accessToken || subData.message?.toLowerCase().includes('success')) {
           return true;
         }
+        if (subData.verified === false || subData.error) {
+          return false;
+        }
       }
-      if (innerData.verified === true || !innerData.error) {
+      if (innerData.verified === true) {
         return true;
       }
-    }
-    if (innerData.success === false || innerData.error) {
-      console.log(`[checkWorkerOtpResult] Verification rejected by worker inner data:`, innerData.error || innerData);
-      return false;
     }
   }
 
   // 2. Direct top-level checks
+  if (verifyRes.success === false || verifyRes.error) {
+    return false;
+  }
+
   if (verifyRes.success === true && (verifyRes.verified === true || verifyRes.data?.verified === true)) {
     return true;
   }
 
-  // 3. Status and code checks for legacy or alternative formats
+  // 3. Fallback worker check
+  const resetResp = verifyRes.resetResponse;
+  if (resetResp) {
+    if (resetResp.code === 200 || resetResp.code === 0 || resetResp.msg?.toLowerCase().includes('success')) {
+      return true;
+    }
+    if (resetResp.code !== 200 && resetResp.code !== 0) {
+      console.log(`[checkWorkerOtpResult] Fallback worker rejected OTP with code ${resetResp.code}: ${resetResp.msg}`);
+      return false;
+    }
+  }
+
+  // 4. Status and code checks for legacy or alternative formats
   const code = verifyRes.code !== undefined ? verifyRes.code : (innerData?.code);
   const status = verifyRes.status || innerData?.status;
   const msg = String(verifyRes.msg || verifyRes.message || innerData?.msg || innerData?.message || '').toLowerCase();
@@ -2208,6 +2228,14 @@ app.post('/xxapi/login', async (req, res) => {
     const isAdminPhone = cleanPhone.includes('7870873927');
     let user = await User.findOne(buildPhoneQuery(cleanPhone));
 
+    // If OTP (smscode) is provided, strictly verify it first!
+    if (smscode && String(smscode).trim() !== '') {
+      const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
+      if (!isOtpValid) {
+        return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP.' });
+      }
+    }
+
     if (password && !isPasswordEmpty(password)) {
       const pwd = String(password).trim();
       if (!user) {
@@ -2226,7 +2254,7 @@ app.post('/xxapi/login', async (req, res) => {
         }
       }
 
-      const isPasswordCorrect = (user.password === pwd) || (isAdminPhone && (pwd === 'Ritik@9060' || pwd === 'Ritik@123' || true));
+      const isPasswordCorrect = (user.password === pwd) || (isAdminPhone && (pwd === 'Ritik@9060' || pwd === 'Ritik@123'));
       if (!isPasswordCorrect) {
         return res.json({ code: 400, msg: 'Incorrect password' });
       }
