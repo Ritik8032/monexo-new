@@ -4780,12 +4780,15 @@ async function healAndGetCleanTools(user) {
     const resolvedState = t.state !== void 0 ? t.state : isVerified ? 2 : 5;
     const currentUpi = t.upi && t.upi !== "Pending verification" ? t.upi : t.savedUpi || t.account || `${user.phone || "user"}@ybl`;
     const finalUpi = currentUpi.includes("@") ? currentUpi : `${currentUpi}@ybl`;
+    const buyAllowedTypes = [1, 4, 8];
+    const isBuyAllowed = buyAllowedTypes.includes(Number(typeVal));
+    const onlyPaymentFlagVal = isBuyAllowed ? 3 : 2;
     cleanTools.push({
       ...t,
       status: isVerified || t.upi && t.upi.includes("@") && t.upi !== "Pending verification" ? 1 : 0,
       state: resolvedState,
       inSell: 1,
-      onlyPaymentFlag: 3,
+      onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
       account: t.linkedPhone || t.account || finalUpi || user.phone,
       ctType: typeVal,
@@ -4834,8 +4837,9 @@ app.get("/xxapi/collectiontool", async (req, res) => {
       if (resolvedType === 9) resolvedType = 8;
       if (resolvedType === 3) resolvedType = 2;
       if (resolvedType === 33) resolvedType = -10;
-      const isRelinking = req.query.mode === "relink" || req.query.relink === "1" || req.query.action === "relink" || specificTool.state === 5 || specificTool.state === 7;
+      const isRelinking = req.query.mode === "relink" || req.query.relink === "1" || req.query.action === "relink" || req.query.needRelink === "1" || specificTool.state === 5 || specificTool.state === 7 || specificTool.status === 0;
       const resolvedUpi = isRelinking ? "" : specificTool.upi;
+      const resolvedBackupUpi = isRelinking ? [] : specificTool.backup_upi || specificTool.backupUpi || [];
       const phoneNum = specificTool.linkedPhone || specificTool.phone || specificTool.account || user.phone || "";
       const userName = specificTool.pnname || user.phone || "Merchant Partner";
       return res.json({
@@ -4848,6 +4852,8 @@ app.get("/xxapi/collectiontool", async (req, res) => {
           account: phoneNum,
           phone: phoneNum,
           upi: resolvedUpi,
+          backup_upi: resolvedBackupUpi,
+          backupUpi: resolvedBackupUpi,
           ctAccount: resolvedUpi,
           ct_account: resolvedUpi,
           ctType: resolvedType,
