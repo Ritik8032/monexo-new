@@ -981,15 +981,15 @@ function getAutomationConfig(ct_type) {
   let channelType = 1;
   let engine = "legacy";
   let platform = 3;
-  if (typeStr.includes("mobikwik") || typeNum === 4) {
+  if (typeStr.includes("mobikwik") || typeNum === 4 || typeNum === 2) {
     channelType = 2;
     engine = "dtpay";
     platform = 2;
-  } else if (typeStr.includes("freecharge") || typeNum === 3 || typeNum === 2) {
+  } else if (typeStr.includes("freecharge") || typeNum === 3) {
     channelType = 3;
     engine = "dtpay";
     platform = 1;
-  } else if (typeStr.includes("amazon") || typeNum === 33) {
+  } else if (typeStr.includes("amazon") || typeNum === 33 || typeNum === -10) {
     channelType = 33;
     engine = "dtpay";
     platform = 18;
@@ -1022,15 +1022,9 @@ function getAutomationConfig(ct_type) {
     engine = "legacy";
     platform = 18;
   } else {
-    if (typeNum === 8 || typeNum === 9) {
-      channelType = 9;
-      engine = "dtpay";
-      platform = 4;
-    } else {
-      channelType = isNaN(typeNum) ? 1 : typeNum;
-      engine = [1, 2, 3, 9, 33].includes(channelType) ? "dtpay" : "legacy";
-      platform = mapCtTypeToPlatform(ct_type);
-    }
+    channelType = isNaN(typeNum) ? 1 : typeNum;
+    engine = [1, 2, 3, 9, 33].includes(channelType) ? "dtpay" : "legacy";
+    platform = mapCtTypeToPlatform(ct_type);
   }
   return { channelType, engine, platform };
 }
