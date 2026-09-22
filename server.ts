@@ -5442,8 +5442,7 @@ async function healAndGetCleanTools(user) {
     const isVerified = t.state === 2 && t.upi && typeof t.upi === 'string' && t.upi.includes('@') && t.upi !== 'Pending verification';
     const resolvedState = t.state !== undefined ? t.state : (isVerified ? 2 : 5);
 
-    const currentUpi = (t.upi && t.upi !== 'Pending verification') ? t.upi : (t.savedUpi || t.account || `${user.phone || 'user'}@ybl`);
-    const finalUpi = currentUpi.includes('@') ? currentUpi : `${currentUpi}@ybl`;
+    const finalUpi = (t.upi && t.upi !== 'Pending verification' && t.upi.includes('@')) ? t.upi : ((t.savedUpi && t.savedUpi.includes('@')) ? t.savedUpi : '');
 
     const buyAllowedTypes = [1, 4, 8];
     const isBuyAllowed = buyAllowedTypes.includes(Number(typeVal));
@@ -5456,7 +5455,7 @@ async function healAndGetCleanTools(user) {
       inSell: 1,
       onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
-      account: t.linkedPhone || t.account || finalUpi || user.phone,
+      account: t.linkedPhone || t.account || finalUpi || user.phone || '',
       ctType: typeVal,
       ct_type: typeVal,
       type: typeVal
@@ -5668,7 +5667,7 @@ app.post('/xxapi/collectiontoolStatus', async (req, res) => {
       }
       tool.state = 5; // loginerror (UnLink status + Please relink alert)
       if (!tool.upi || tool.upi === 'Pending verification') {
-        tool.upi = tool.savedUpi || `${user.phone || 'user'}@ybl`;
+        tool.upi = (tool.savedUpi && tool.savedUpi.includes('@')) ? tool.savedUpi : '';
       }
       user.markModified('collectionTools');
       await user.save();
@@ -5765,7 +5764,7 @@ app.get('/xxapi/availablect', async (req, res) => {
     if (resolvedType === 9) resolvedType = 8;
     if (resolvedType === 3) resolvedType = 2;
     if (resolvedType === 33) resolvedType = -10;
-    const resolvedUpi = t.upi || t.account || `${user.phone || 'user'}@ybl`;
+    const resolvedUpi = (t.upi && t.upi.includes('@') && t.upi !== 'Pending verification') ? t.upi : ((t.savedUpi && t.savedUpi.includes('@')) ? t.savedUpi : '');
     return {
       ...t,
       upi: resolvedUpi,
@@ -5919,7 +5918,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
         inSell: 1,
         ctGuide: "If you Change your upi id, please relink right now!",
         account: targetPhone,
-        upi: targetPhone.includes('@') ? targetPhone : `${targetPhone}@ybl`,
+        upi: (targetPhone && targetPhone.includes('@')) ? targetPhone : '',
         backup_upi: [],
         phone: targetPhone,
         pnname: pnname || "Merchant Partner",
@@ -5956,7 +5955,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       tool.state = 7; // 7 = waiting_authupi state while waiting for OTP verification
       tool.inSell = 1;
       if (!tool.upi || tool.upi === 'Pending verification') {
-        tool.upi = tool.savedUpi || `${targetPhone}@ybl`;
+        tool.upi = (tool.savedUpi && tool.savedUpi.includes('@')) ? tool.savedUpi : '';
       }
       tool.channelType = config.channelType;
       tool.engine = config.engine;
