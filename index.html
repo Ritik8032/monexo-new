@@ -223,6 +223,34 @@
       };
 
       // 2. High-fidelity Turnstile Loader & Callback
+      window.turnstile = window.turnstile || {
+        render: function(container, options) {
+          console.log("[Turnstile Mock] render called:", container, options);
+          if (options && typeof options.callback === 'function') {
+            setTimeout(() => {
+              try {
+                options.callback("mock-turnstile-token-1x00000000000000000000AA");
+              } catch (e) {
+                console.error("[Turnstile Mock] callback error:", e);
+              }
+            }, 100);
+          }
+          return "mock-turnstile-widget-id";
+        },
+        reset: function(widgetId) {
+          console.log("[Turnstile Mock] reset called:", widgetId);
+        },
+        remove: function(widgetId) {
+          console.log("[Turnstile Mock] remove called:", widgetId);
+        },
+        getResponse: function(widgetId) {
+          return "mock-turnstile-token-1x00000000000000000000AA";
+        },
+        isExpired: function(widgetId) {
+          return false;
+        }
+      };
+
       let turnstileCallback = null;
       Object.defineProperty(window, 'onloadTurnstileCallback', {
         get() {
