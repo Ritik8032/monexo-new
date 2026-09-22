@@ -10825,8 +10825,8 @@ app.get(['/rsCfg.json', '/public/rsCfg.json'], (req, res) => {
       siteKey: "1x00000000000000000000AA",
       antResetPassFlag: "0",
       sliderSmsCaptcha: 1,
-      appDownloadUrl: "",
-      appVersion: "1.0.0"
+      appDownloadUrl: "https://gtpbhzhildmyyzfwrmeu.supabase.co/storage/v1/object/sign/Monexo/monexopay.apk?token=eyJraWQiOiI4MmU5MWRjOC03Mzg4LTQ2ZDktYjM2Ni1iNzE0MmUxYWYzMTYiLCJhbGciOiJIUzUxMiJ9.eyJ1cmwiOiJNb25leG8vbW9uZXhvcGF5LmFwayIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3OTAwODEyODEsImV4cCI6MTgyMTYxNzI4MX0.EyZ0IxbriFgIXLRAqAVPTv-cNu5RBOcYGCswDgU9-lplTRIYGt0MM1sfvKEmhXzQMr0T1Qs4YNpRV68kvNGbcw",
+      appVersion: "2.3.0"
     }
   });
 });
