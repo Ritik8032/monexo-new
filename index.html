@@ -223,6 +223,51 @@
       };
 
       // 2. High-fidelity Turnstile Loader & Callback
+      (function() {
+        // Global Brand Name Rewriter (Vivi Pay / Tiwara Pay / Flow Pay -> Monexo Pay)
+        const brandRegex = /vivi\s*pay|tiwara\s*pay|flow\s*pay|vivipay|tiwarapay|flowpay/gi;
+        
+        // Intercept fetch API responses
+        const origFetch = window.fetch;
+        if (origFetch) {
+          window.fetch = async function(...args) {
+            const res = await origFetch.apply(this, args);
+            try {
+              const clone = res.clone();
+              const text = await clone.text();
+              if (brandRegex.test(text)) {
+                const newText = text.replace(brandRegex, "Monexo Pay");
+                return new Response(newText, {
+                  status: res.status,
+                  statusText: res.statusText,
+                  headers: res.headers
+                });
+              }
+            } catch(e) {}
+            return res;
+          };
+        }
+
+        // Intercept XMLHttpRequest responses
+        const origSend = XMLHttpRequest.prototype.send;
+        if (origSend) {
+          XMLHttpRequest.prototype.send = function(...args) {
+            this.addEventListener('readystatechange', function() {
+              if (this.readyState === 4 && this.responseText) {
+                if (brandRegex.test(this.responseText)) {
+                  try {
+                    const newText = this.responseText.replace(brandRegex, "Monexo Pay");
+                    Object.defineProperty(this, 'responseText', { value: newText, writable: true });
+                    Object.defineProperty(this, 'response', { value: newText, writable: true });
+                  } catch(e) {}
+                }
+              }
+            });
+            return origSend.apply(this, args);
+          };
+        }
+      })();
+
       window.turnstile = window.turnstile || {
         render: function(container, options) {
           console.log("[Turnstile Mock] render called:", container, options);
