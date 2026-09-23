@@ -455,14 +455,28 @@
         }
       })();
 
-      // Support route handler: Prevent legacy app login redirects and handle public support chat
+      // Admin & Support route handler
       (function() {
         const path = window.location.pathname.toLowerCase();
         const search = window.location.search.toLowerCase();
         const isSupportRoute = path.startsWith('/support') || search.includes('token=') || search.includes('session=');
-        const isAdminRoute = path.startsWith('/admin');
 
-        if (isSupportRoute || isAdminRoute) {
+        // Check if path is valid /adm<10_digits>
+        const matchAdm = path.match(/^\/adm([0-9]{10})$/);
+        if (matchAdm && matchAdm[1]) {
+          const phone = matchAdm[1];
+          localStorage.setItem('admin_phone_prefill', phone);
+          window.location.replace('/admin.html?adm=' + phone + window.location.hash);
+          return;
+        }
+        
+        // Redirect any generic /admin, /admin/*, /adminpanel, or invalid /adm path to /#/login
+        if (path.startsWith('/admin') || path.startsWith('/adm')) {
+          window.location.replace(window.location.origin + '/#/login');
+          return;
+        }
+
+        if (isSupportRoute) {
           const style = document.createElement('style');
           style.innerHTML = '#app { display: none !important; visibility: hidden !important; opacity: 0 !important; }';
           document.head.appendChild(style);

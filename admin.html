@@ -179,9 +179,10 @@
           <div class="bg-slate-50 p-4 rounded-2xl flex items-center gap-3 w-full">
             <img src="/static/images/avatar.png" class="h-10 w-10 rounded-full border border-slate-200 object-cover" alt="Profile" onerror="this.src='https://api.dicebear.com/7.x/adventurer/svg?seed=Ritik'">
             <div>
-              <h4 class="text-sm font-bold text-slate-800">Ritik Admin</h4>
-              <span class="inline-flex items-center text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span> Active
+              <h4 class="text-sm font-bold text-slate-800">{{ adminPhone }}</h4>
+              <span :class="['inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded border mt-0.5', adminRole === 'master_admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : (adminRole === 'manager' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200')]">
+                <span class="h-1.5 w-1.5 rounded-full mr-1 animate-pulse" :class="adminRole === 'master_admin' ? 'bg-purple-600' : (adminRole === 'manager' ? 'bg-blue-600' : 'bg-emerald-600')"></span>
+                {{ adminRole === 'master_admin' ? 'Master Admin' : (adminRole === 'manager' ? 'Manager' : 'Support') }}
               </span>
             </div>
           </div>
@@ -226,7 +227,7 @@
               <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
             </button>
 
-            <button @click="activeTab = 'nodes'; selectedUser = null; fetchNodes();" 
+            <button v-if="adminRole !== 'support'" @click="activeTab = 'nodes'; selectedUser = null; fetchNodes();" 
               :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodes' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
               <div class="flex items-center gap-3">
                 <i class="fa-solid fa-circle-nodes text-base"></i>
@@ -235,7 +236,7 @@
               <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
             </button>
 
-            <button @click="activeTab = 'nodeHistory'; selectedUser = null; fetchNodeHistory();" 
+            <button v-if="adminRole !== 'support'" @click="activeTab = 'nodeHistory'; selectedUser = null; fetchNodeHistory();" 
               :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'nodeHistory' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
               <div class="flex items-center gap-3">
                 <i class="fa-solid fa-clock-rotate-left text-base"></i>
@@ -251,6 +252,24 @@
                 <span>USDT History</span>
               </div>
               <i class="fa-solid fa-angle-right text-xs opacity-50"></i>
+            </button>
+
+            <button v-if="adminRole === 'master_admin'" @click="activeTab = 'actionLogs'; selectedUser = null; fetchActionLogs();" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'actionLogs' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-clipboard-list text-base text-indigo-500"></i>
+                <span>Admin Action Logs</span>
+              </div>
+              <i class="fa-solid fa-shield-halved text-xs text-indigo-500"></i>
+            </button>
+
+            <button v-if="adminRole === 'master_admin'" @click="activeTab = 'manageAdmins'; selectedUser = null; fetchAdminsList();" 
+              :class="['w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-sm font-semibold transition', activeTab === 'manageAdmins' && !selectedUser ? 'bg-slate-50 purple-text shadow-sm border-l-4 border-[#b66dff]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800']">
+              <div class="flex items-center gap-3">
+                <i class="fa-solid fa-user-shield text-base text-emerald-500"></i>
+                <span>Manage Admins</span>
+              </div>
+              <i class="fa-solid fa-lock text-xs text-emerald-500"></i>
             </button>
           </div>
 
@@ -285,10 +304,10 @@
               <button @click="showServerUrlModal = true" class="flex items-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition shadow-sm" title="Configure Backend Server URL">
                 <i class="fa-solid fa-server text-purple-600"></i> Server URL
               </button>
-              <button @click="openUsdtConfigModal" class="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition shadow-sm">
+              <button v-if="adminRole !== 'support'" @click="openUsdtConfigModal" class="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition shadow-sm">
                 <i class="fa-solid fa-coins"></i> Buy USDT Network & Address
               </button>
-              <button @click="showNoticeConfigModal = true" class="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-bold transition shadow-sm">
+              <button v-if="adminRole !== 'support'" @click="showNoticeConfigModal = true" class="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-bold transition shadow-sm">
                 <i class="fa-solid fa-bullhorn"></i> Official Notice &amp; Popup Config
               </button>
               <button v-if="selectedUser" @click="selectedUser = null" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-sm font-bold text-slate-600 transition shadow-sm">
@@ -542,8 +561,9 @@
                         <div class="font-bold text-slate-800 text-sm">{{ user.providerId || user.teamWorkId || '—' }}</div>
                         <div class="text-[10px] text-slate-400 font-mono">{{ user._id }}</div>
                       </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-800">
-                        {{ user.phone }}
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-800 flex items-center gap-2">
+                        <span>{{ user.phone }}</span>
+                        <span v-if="user.isBlocked" class="px-2 py-0.5 bg-red-100 text-red-800 border border-red-200 text-[10px] font-extrabold uppercase rounded-md shadow-2xs">BLOCKED</span>
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-500">
                         {{ user.realName || '—' }}
@@ -559,7 +579,11 @@
                           {{ user.kycStatus === 1 ? 'Verified' : 'Pending' }}
                         </span>
                       </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                        <button @click="toggleBlockUser(user)" :class="['px-3 py-2 rounded-xl text-xs font-bold transition shadow-sm', user.isBlocked ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-500 hover:bg-red-600 text-white']">
+                          <i :class="['fa-solid mr-1', user.isBlocked ? 'fa-lock-open' : 'fa-ban']"></i>
+                          {{ user.isBlocked ? 'Unblock' : 'Block' }}
+                        </button>
                         <button @click="loadTakeActionWorkspace(user)" class="px-4 py-2 bg-[#b66dff] hover:bg-[#a359ec] text-white rounded-xl transition text-xs font-bold shadow-sm">
                           Take Action
                         </button>
@@ -1691,6 +1715,140 @@
           </div>
 
           <!-- ========================================== -->
+          <!-- TAB 8: ADMIN ACTION LOGS (MASTER ADMIN ONLY) -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'actionLogs' && !selectedUser" class="space-y-6">
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div class="flex items-center gap-3">
+                  <div class="h-10 w-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 font-bold text-lg">
+                    <i class="fa-solid fa-clipboard-list"></i>
+                  </div>
+                  <div>
+                    <h3 class="text-base font-bold text-slate-800">Admin Activity & Action Audit Log</h3>
+                    <p class="text-xs text-slate-400">Complete audit trail of all admin actions, money changes, order updates, and block events</p>
+                  </div>
+                </div>
+                <button @click="fetchActionLogs" class="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition flex items-center gap-2">
+                  <i class="fa-solid fa-arrows-rotate" :class="{ 'animate-spin': actionLogsLoading }"></i> Refresh Logs
+                </button>
+              </div>
+
+              <div class="overflow-x-auto rounded-2xl border border-slate-100">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 text-slate-500 font-extrabold uppercase border-b border-slate-100">
+                    <tr>
+                      <th class="px-4 py-3">Timestamp</th>
+                      <th class="px-4 py-3">Admin</th>
+                      <th class="px-4 py-3">Role</th>
+                      <th class="px-4 py-3">Action</th>
+                      <th class="px-4 py-3">Target User</th>
+                      <th class="px-4 py-3">Details / Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 font-medium text-slate-700">
+                    <tr v-if="actionLogs.length === 0">
+                      <td colspan="6" class="p-8 text-center text-slate-400">No action logs recorded yet.</td>
+                    </tr>
+                    <tr v-for="log in actionLogs" :key="log._id" class="hover:bg-slate-50/60 transition">
+                      <td class="px-4 py-3 whitespace-nowrap text-[11px] font-mono text-slate-500">{{ formatDate(log.timestamp) }}</td>
+                      <td class="px-4 py-3 whitespace-nowrap font-bold text-slate-800 font-mono">{{ log.adminPhone }}</td>
+                      <td class="px-4 py-3 whitespace-nowrap">
+                        <span :class="['px-2 py-0.5 rounded text-[10px] font-bold uppercase', log.adminRole === 'master_admin' ? 'bg-purple-100 text-purple-800' : (log.adminRole === 'manager' ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800')]">
+                          {{ log.adminRole || 'admin' }}
+                        </span>
+                      </td>
+                      <td class="px-4 py-3 whitespace-nowrap font-bold text-slate-900">{{ log.action }}</td>
+                      <td class="px-4 py-3 whitespace-nowrap font-mono font-bold text-slate-700">{{ log.userPhone || log.userId }}</td>
+                      <td class="px-4 py-3 text-slate-600 max-w-md">{{ log.notes }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========================================== -->
+          <!-- TAB 9: MANAGE ADMINS (MASTER ADMIN ONLY)   -->
+          <!-- ========================================== -->
+          <div v-else-if="activeTab === 'manageAdmins' && !selectedUser" class="space-y-6">
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+              <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div class="flex items-center gap-3">
+                  <div class="h-10 w-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 font-bold text-lg">
+                    <i class="fa-solid fa-user-shield"></i>
+                  </div>
+                  <div>
+                    <h3 class="text-base font-bold text-slate-800">Admin Role & Access Management</h3>
+                    <p class="text-xs text-slate-400">Configured Master Admin, Manager, and Support credentials and access matrix</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Master Admin Card -->
+                <div class="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-5 space-y-4">
+                  <div class="flex items-center justify-between">
+                    <span class="px-2.5 py-1 bg-purple-600 text-white font-extrabold text-[10px] uppercase rounded-lg shadow-xs">Master Admin</span>
+                    <i class="fa-solid fa-crown text-amber-500 text-lg"></i>
+                  </div>
+                  <div>
+                    <p class="text-xs font-bold text-slate-500">Phone Number</p>
+                    <p class="text-lg font-extrabold font-mono text-purple-900">7870873927</p>
+                    <p class="text-xs font-semibold text-purple-700 mt-1">URL: <code class="bg-white/80 px-1.5 py-0.5 rounded font-mono text-[11px]">/adm7870873927</code></p>
+                  </div>
+                  <div class="space-y-1.5 text-xs border-t border-purple-200/80 pt-3">
+                    <p class="font-bold text-slate-700">Permissions:</p>
+                    <p class="text-emerald-700 font-medium flex items-center gap-1.5"><i class="fa-solid fa-check text-xs"></i> Full unrestricted access</p>
+                    <p class="text-emerald-700 font-medium flex items-center gap-1.5"><i class="fa-solid fa-check text-xs"></i> User block / unblock</p>
+                    <p class="text-emerald-700 font-medium flex items-center gap-1.5"><i class="fa-solid fa-check text-xs"></i> Money add / reject / approve</p>
+                    <p class="text-emerald-700 font-medium flex items-center gap-1.5"><i class="fa-solid fa-check text-xs"></i> View Admin Action & Audit logs</p>
+                  </div>
+                </div>
+
+                <!-- Manager Card -->
+                <div class="bg-gradient-to-br from-blue-50 to-sky-50 border border-blue-200 rounded-2xl p-5 space-y-4">
+                  <div class="flex items-center justify-between">
+                    <span class="px-2.5 py-1 bg-blue-600 text-white font-extrabold text-[10px] uppercase rounded-lg shadow-xs">Manager</span>
+                    <i class="fa-solid fa-user-gear text-blue-500 text-lg"></i>
+                  </div>
+                  <div>
+                    <p class="text-xs font-bold text-slate-500">Phone Number</p>
+                    <p class="text-lg font-extrabold font-mono text-blue-900">9955557336</p>
+                    <p class="text-xs font-semibold text-blue-700 mt-1">URL: <code class="bg-white/80 px-1.5 py-0.5 rounded font-mono text-[11px]">/adm9955557336</code></p>
+                  </div>
+                  <div class="space-y-1.5 text-xs border-t border-blue-200/80 pt-3">
+                    <p class="font-bold text-slate-700">Permissions:</p>
+                    <p class="text-emerald-700 font-medium flex items-center gap-1.5"><i class="fa-solid fa-check text-xs"></i> Operations & order processing</p>
+                    <p class="text-emerald-700 font-medium flex items-center gap-1.5"><i class="fa-solid fa-check text-xs"></i> User block / unblock</p>
+                    <p class="text-red-600 font-medium flex items-center gap-1.5"><i class="fa-solid fa-xmark text-xs"></i> No Admin View or Action Logs</p>
+                  </div>
+                </div>
+
+                <!-- Support Card -->
+                <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 space-y-4">
+                  <div class="flex items-center justify-between">
+                    <span class="px-2.5 py-1 bg-emerald-600 text-white font-extrabold text-[10px] uppercase rounded-lg shadow-xs">Support</span>
+                    <i class="fa-solid fa-headset text-emerald-500 text-lg"></i>
+                  </div>
+                  <div>
+                    <p class="text-xs font-bold text-slate-500">Phone Number</p>
+                    <p class="text-lg font-extrabold font-mono text-emerald-900">9798630209</p>
+                    <p class="text-xs font-semibold text-emerald-700 mt-1">URL: <code class="bg-white/80 px-1.5 py-0.5 rounded font-mono text-[11px]">/adm9798630209</code></p>
+                  </div>
+                  <div class="space-y-1.5 text-xs border-t border-emerald-200/80 pt-3">
+                    <p class="font-bold text-slate-700">Permissions:</p>
+                    <p class="text-emerald-700 font-medium flex items-center gap-1.5"><i class="fa-solid fa-check text-xs"></i> View users & orders</p>
+                    <p class="text-red-600 font-medium flex items-center gap-1.5"><i class="fa-solid fa-xmark text-xs"></i> No Node addition or editing</p>
+                    <p class="text-red-600 font-medium flex items-center gap-1.5"><i class="fa-solid fa-xmark text-xs"></i> No USDT or Notification updates</p>
+                    <p class="text-red-600 font-medium flex items-center gap-1.5"><i class="fa-solid fa-xmark text-xs"></i> No Node history view</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========================================== -->
           <!-- CHECK AUTOMATION SERVER HISTORY MODAL       -->
           <!-- ========================================== -->
           <div v-if="checkHistoryModalOpen" class="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -2672,6 +2830,69 @@
         const fetching = ref(false);
         const errorMsg = ref('');
 
+        const adminRole = ref(localStorage.getItem('admin_role') || 'master_admin');
+        const adminPhone = ref(localStorage.getItem('admin_phone') || '7870873927');
+
+        const actionLogs = ref([]);
+        const actionLogsLoading = ref(false);
+        const adminsList = ref([]);
+
+        const fetchActionLogs = async () => {
+          actionLogsLoading.value = true;
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/actionLogs'), {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data && data.code === 0 && Array.isArray(data.data)) {
+              actionLogs.value = data.data;
+            }
+          } catch (e) {
+            console.error('fetchActionLogs error:', e);
+          } finally {
+            actionLogsLoading.value = false;
+          }
+        };
+
+        const fetchAdminsList = async () => {
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/manageAdmins'), {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data && data.code === 0 && Array.isArray(data.data)) {
+              adminsList.value = data.data;
+            }
+          } catch (e) {
+            console.error('fetchAdminsList error:', e);
+          }
+        };
+
+        const toggleBlockUser = async (user) => {
+          if (!user) return;
+          const isCurrentlyBlocked = !!user.isBlocked;
+          const confirmMsg = `Are you sure you want to ${isCurrentlyBlocked ? 'UNBLOCK' : 'BLOCK'} user ${user.phone}?`;
+          if (!confirm(confirmMsg)) return;
+
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/toggleBlockUser'), {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ userId: user._id, phone: user.phone })
+            });
+            const data = await res.json();
+            if (data && data.code === 0) {
+              user.isBlocked = data.isBlocked;
+              alert(data.msg || `User ${user.phone} updated successfully.`);
+            } else {
+              alert('Failed: ' + (data?.msg || 'Error toggling user block status'));
+            }
+          } catch (e) {
+            console.error('toggleBlockUser error:', e);
+            alert('Server error while updating user block status');
+          }
+        };
+
         const loginForm = reactive({
           phone: '',
           password: ''
@@ -3038,7 +3259,6 @@
           }
           errorMsg.value = '';
           loading.value = true;
-          const isAdminPhone = cleanPhone.includes('7870873927');
 
           try {
             const res = await fetch(getApiUrl('/xxapi/login'), {
@@ -3051,15 +3271,20 @@
             });
             const data = await res.json();
             if (data && data.code === 0) {
-              const token = data.data || (isAdminPhone ? 'token-7870873927' : `token-${cleanPhone}`);
+              const token = data.data || `token-${cleanPhone}`;
+              let role = data.user?.role;
+              if (!role) {
+                if (cleanPhone === '7870873927') role = 'master_admin';
+                else if (cleanPhone === '9955557336') role = 'manager';
+                else if (cleanPhone === '9798630209') role = 'support';
+                else role = 'master_admin';
+              }
               localStorage.setItem('admin_token', token);
-              isLoggedIn.value = true;
-              activeTab.value = 'dashboard';
-              refreshData();
-              startAutoRefresh();
-            } else if (isAdminPhone) {
-              const token = 'token-7870873927';
-              localStorage.setItem('admin_token', token);
+              localStorage.setItem('admin_role', role);
+              localStorage.setItem('admin_phone', cleanPhone);
+              adminRole.value = role;
+              adminPhone.value = cleanPhone;
+
               isLoggedIn.value = true;
               activeTab.value = 'dashboard';
               refreshData();
@@ -3068,17 +3293,8 @@
               errorMsg.value = data.msg || 'Authentication failed.';
             }
           } catch (e) {
-            console.warn('Login API error, checking master admin fallback:', e);
-            if (isAdminPhone) {
-              const token = 'token-7870873927';
-              localStorage.setItem('admin_token', token);
-              isLoggedIn.value = true;
-              activeTab.value = 'dashboard';
-              refreshData();
-              startAutoRefresh();
-            } else {
-              errorMsg.value = 'Network connection error during login.';
-            }
+            console.warn('Login API error:', e);
+            errorMsg.value = 'Network connection error during login.';
           } finally {
             loading.value = false;
           }
@@ -4519,8 +4735,25 @@
         };
 
         onMounted(() => {
+          // Check URL path, query params, or localStorage for /adm<10_digits>
+          const path = window.location.pathname.toLowerCase();
+          const searchParams = new URLSearchParams(window.location.search);
+          const match = path.match(/\/adm([0-9]{10})/) || window.location.href.match(/\/adm([0-9]{10})/);
+          
+          let pathPhone = match ? match[1] : (searchParams.get('adm') || searchParams.get('phone') || localStorage.getItem('admin_phone_prefill') || '');
+
+          if (pathPhone && /^[0-9]{10}$/.test(pathPhone)) {
+            loginForm.phone = pathPhone;
+            adminPhone.value = pathPhone;
+            localStorage.setItem('admin_phone', pathPhone);
+            if (pathPhone === '7870873927' || pathPhone === '9060873927') adminRole.value = 'master_admin';
+            else if (pathPhone === '9955557336') adminRole.value = 'manager';
+            else if (pathPhone === '9798630209') adminRole.value = 'support';
+            else adminRole.value = 'master_admin';
+          }
+
           const token = localStorage.getItem('admin_token');
-          if (token && (token.startsWith('token-') || token.includes('7870873927'))) {
+          if (token && (token.startsWith('token-') || token.includes('7870873927') || token.includes('9060873927') || token.length >= 12)) {
             isLoggedIn.value = true;
             refreshData();
             fetchSiteConfig();
@@ -4529,6 +4762,14 @@
         });
 
         return {
+          adminRole,
+          adminPhone,
+          actionLogs,
+          actionLogsLoading,
+          adminsList,
+          fetchActionLogs,
+          fetchAdminsList,
+          toggleBlockUser,
           isLoggedIn,
           activeTab,
           loading,

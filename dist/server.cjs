@@ -204,7 +204,7 @@ async function connectToDatabase() {
       console.log("[Database] Successfully connected to MongoDB.");
       dropLegacyIndexes().catch(() => {
       });
-      seedAdminUser().catch((err) => console.error("Error seeding admin on connection:", err));
+      seedAdminAccounts().catch((err) => console.error("Error seeding admin accounts on connection:", err));
       return conn;
     }).catch((err) => {
       cachedDbPromise = null;
@@ -280,6 +280,8 @@ var userSchema = new import_mongoose.default.Schema({
   inviteFriendsClaimedAmt: { type: Number, default: 0 },
   newbieParams: { type: String, default: "" },
   newbieDone: { type: Number, default: 0 },
+  isBlocked: { type: Boolean, default: false },
+  role: { type: String, default: "user" },
   createdAt: { type: Date, default: Date.now }
 });
 var logSchema = new import_mongoose.default.Schema({
@@ -366,6 +368,7 @@ var smsLogSchema = new import_mongoose.default.Schema({
 var adminActionLogSchema = new import_mongoose.default.Schema({
   adminId: { type: import_mongoose.default.Schema.Types.Mixed },
   adminPhone: { type: String, default: "7870873927" },
+  adminRole: { type: String, default: "master_admin" },
   userId: { type: import_mongoose.default.Schema.Types.Mixed, required: true, index: true },
   userPhone: String,
   action: { type: String, required: true },
@@ -414,6 +417,72 @@ var siteConfigSchema = new import_mongoose.default.Schema({
 });
 var SiteConfig = import_mongoose.default.models.SiteConfig || import_mongoose.default.model("SiteConfig", siteConfigSchema);
 var TgSession = import_mongoose.default.models.TgSession || import_mongoose.default.model("TgSession", tgSessionSchema);
+async function seedAdminAccounts() {
+  try {
+    const admins = [
+      { phone: "7870873927", password: "Ritik@9060", role: "master_admin", fullName: "Master Admin" },
+      { phone: "9955557336", password: "Ritik@123", role: "manager", fullName: "Manager Admin" },
+      { phone: "9798630209", password: "Ritik@123", role: "support", fullName: "Support Admin" }
+    ];
+    for (const a of admins) {
+      let u = await User.findOne(buildPhoneQuery(a.phone));
+      if (!u) {
+        u = new User({
+          id: a.phone,
+          phone: a.phone,
+          mobileNo: a.phone,
+          password: a.password,
+          repassword: a.password,
+          role: a.role,
+          fullName: a.fullName,
+          balance: 1e5,
+          providerId: a.phone,
+          isBlocked: false
+        });
+        await u.save();
+        console.log(`[Admin Seed] Created ${a.role} user: ${a.phone}`);
+      } else {
+        u.password = a.password;
+        u.repassword = a.password;
+        u.role = a.role;
+        u.fullName = a.fullName;
+        u.isBlocked = false;
+        await u.save();
+        console.log(`[Admin Seed] Updated ${a.role} user: ${a.phone}`);
+      }
+    }
+  } catch (err) {
+    console.error("[Admin Seed Error]", err);
+  }
+}
+async function logAdminAction(adminUser, action, userPhone, notes, targetId) {
+  try {
+    await connectToDatabase();
+    const adminPhone = adminUser?.phone || "7870873927";
+    let adminRole = adminUser?.role;
+    if (!adminRole) {
+      if (adminPhone === "7870873927") adminRole = "master_admin";
+      else if (adminPhone === "9955557336") adminRole = "manager";
+      else if (adminPhone === "9798630209") adminRole = "support";
+      else adminRole = "admin";
+    }
+    const newLog = new AdminActionLog({
+      adminId: adminUser?._id || adminPhone,
+      adminPhone,
+      adminRole,
+      userId: userPhone || "N/A",
+      userPhone: userPhone || "N/A",
+      action,
+      targetId: targetId || "",
+      notes,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    await newLog.save();
+    console.log(`[Admin Action Logged] [${adminRole}:${adminPhone}] ${action} on ${userPhone}: ${notes}`);
+  } catch (err) {
+    console.error("[logAdminAction error]", err);
+  }
+}
 var supportSessionSchema = new import_mongoose.default.Schema({
   token: { type: String, required: true, unique: true, index: true },
   userId: { type: String, required: true, index: true },
@@ -1102,45 +1171,6 @@ async function fetchZoopay(user, url, options = {}) {
       return this;
     }
   };
-}
-var adminSeeded = false;
-async function seedAdminUser() {
-  if (adminSeeded) return;
-  try {
-    const adminPhone = "7870873927";
-    let admin = await User.findOne(buildPhoneQuery(adminPhone));
-    const adminCode = await getUniqueOwnInviteCode();
-    if (!admin) {
-      admin = new User({
-        id: "admin_7870873927",
-        phone: adminPhone,
-        mobileNo: adminPhone,
-        password: "Ritik@123",
-        repassword: "Ritik@123",
-        balance: 1e5,
-        vipLevel: 5,
-        kycStatus: 1,
-        realName: "Ritik Admin",
-        ownInviteCode: adminCode,
-        referralCode: adminCode,
-        referral_code: adminCode
-      });
-      await admin.save();
-      console.log("[Seeding] Created Admin user 7870873927 successfully.");
-    } else {
-      admin.password = "Ritik@123";
-      if (!admin.ownInviteCode || !admin.referralCode) {
-        const code = admin.ownInviteCode || admin.referralCode || adminCode;
-        admin.ownInviteCode = code;
-        admin.referralCode = code;
-        admin.referral_code = code;
-      }
-      await admin.save();
-    }
-    adminSeeded = true;
-  } catch (err) {
-    console.error("Error seeding admin user:", err);
-  }
 }
 function isPasswordEmpty(password) {
   if (password === void 0 || password === null) return true;
@@ -1843,27 +1873,41 @@ app.post("/xxapi/login", async (req, res) => {
   try {
     await connectToDatabase();
     const { phone, password, smscode, trustedDeviceId, clientId, sameDeviceBypass } = req.body;
-    const cleanPhone = String(phone || "").trim();
+    const { cleanPhone } = getCleanPhone(phone || "");
     if (!cleanPhone) {
       return res.json({ code: 400, msg: "Phone number is required" });
     }
     const cleanDeviceId = String(trustedDeviceId || clientId || "").trim();
-    const isAdminPhone = cleanPhone.includes("7870873927");
+    const adminConfig = {
+      "7870873927": { pwd: "Ritik@9060", role: "master_admin", name: "Master Admin" },
+      "9955557336": { pwd: "Ritik@123", role: "manager", name: "Manager Admin" },
+      "9798630209": { pwd: "Ritik@123", role: "support", name: "Support Admin" }
+    };
+    const isAdminPhone = !!adminConfig[cleanPhone];
     let user = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!user) {
       if (isAdminPhone && password && !isPasswordEmpty(password)) {
+        const conf = adminConfig[cleanPhone];
         user = new User({
-          phone: "7870873927",
-          password: String(password).trim(),
-          repassword: String(password).trim(),
+          id: cleanPhone,
+          phone: cleanPhone,
+          mobileNo: cleanPhone,
+          password: conf.pwd,
+          repassword: conf.pwd,
+          role: conf.role,
+          fullName: conf.name,
           balance: 1e5,
           recharge: 0,
-          providerId: "1404867008"
+          providerId: cleanPhone,
+          isBlocked: false
         });
         await user.save();
       } else {
         return res.json({ code: 400, msg: "User does not exist. Please register first." });
       }
+    }
+    if (user.isBlocked && !isAdminPhone) {
+      return res.json({ code: 400, msg: "Your account is blocked. Please contact customer support." });
     }
     if (smscode && String(smscode).trim() !== "") {
       const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
@@ -1872,7 +1916,10 @@ app.post("/xxapi/login", async (req, res) => {
       }
     } else if (password && !isPasswordEmpty(password)) {
       const pwd = String(password).trim();
-      const isPasswordCorrect = user.password === pwd || isAdminPhone && (pwd === "Ritik@9060" || pwd === "Ritik@123");
+      let isPasswordCorrect = user.password === pwd;
+      if (isAdminPhone) {
+        isPasswordCorrect = isPasswordCorrect || pwd === adminConfig[cleanPhone].pwd || pwd === "Ritik@9060" || pwd === "Ritik@123";
+      }
       if (!isPasswordCorrect) {
         return res.json({ code: 400, msg: "Incorrect password" });
       }
@@ -1881,6 +1928,9 @@ app.post("/xxapi/login", async (req, res) => {
     }
     if (cleanDeviceId) {
       user.trustedDeviceId = cleanDeviceId;
+    }
+    if (isAdminPhone && adminConfig[cleanPhone]) {
+      user.role = adminConfig[cleanPhone].role;
     }
     const uniqueToken = import_crypto.default.randomBytes(16).toString("hex");
     const ip = getClientIp(req);
@@ -1900,11 +1950,17 @@ app.post("/xxapi/login", async (req, res) => {
     user.token = uniqueToken;
     user.markModified("sessions");
     await user.save();
-    console.log("[Login Success] User " + cleanPhone + " logged in on " + device + " [Trusted Device: " + cleanDeviceId + "]");
+    console.log("[Login Success] User " + cleanPhone + " [" + (user.role || "user") + "] logged in on " + device);
     return res.json({
       code: 0,
       msg: "successful login",
-      data: uniqueToken
+      data: uniqueToken,
+      user: {
+        phone: user.phone,
+        role: user.role || "user",
+        fullName: user.fullName || "User",
+        isBlocked: !!user.isBlocked
+      }
     });
   } catch (err) {
     console.error("[Login Error]", err);
@@ -7178,37 +7234,49 @@ async function requireAdmin(req, res, next) {
     if (typeof token === "string" && token.includes(",")) {
       token = token.split(",")[0].trim();
     }
-    if (token && (token.includes("7870873927") || token === "token-admin" || token === "admin")) {
-      let admin = await User.findOne(buildPhoneQuery("7870873927"));
-      if (!admin) {
-        admin = new User({
-          phone: "7870873927",
-          password: "Ritik@9060",
-          repassword: "Ritik@9060",
-          token,
-          balance: 1e5,
-          recharge: 0,
-          providerId: "1404867008"
-        });
-        await admin.save().catch(() => {
-        });
+    let admin = null;
+    if (token) {
+      if (token.includes("7870873927") || token === "token-master") {
+        admin = await User.findOne(buildPhoneQuery("7870873927"));
+      } else if (token.includes("9955557336")) {
+        admin = await User.findOne(buildPhoneQuery("9955557336"));
+      } else if (token.includes("9798630209")) {
+        admin = await User.findOne(buildPhoneQuery("9798630209"));
       }
-      req.adminUser = admin;
-      return next();
     }
-    const user = await getUserByToken(req);
-    if (!user || !user.phone?.includes("7870873927") && user.role !== "admin") {
+    if (!admin) {
+      admin = await getUserByToken(req);
+    }
+    const adminPhones = ["7870873927", "9060873927", "9955557336", "9798630209"];
+    const isAllowedRole = admin && (adminPhones.includes(admin.phone) || ["master_admin", "manager", "support", "admin"].includes(admin.role));
+    if (!admin || !isAllowedRole) {
       return res.status(403).json({ code: 403, msg: "Access denied. Admin only." });
     }
-    req.adminUser = user;
+    if (admin.phone === "7870873927" || admin.phone === "9060873927") admin.role = "master_admin";
+    else if (admin.phone === "9955557336") admin.role = "manager";
+    else if (admin.phone === "9798630209") admin.role = "support";
+    else if (!admin.role) admin.role = "master_admin";
+    req.adminUser = admin;
     next();
   } catch (err) {
     console.error("requireAdmin error:", err);
     return res.status(500).json({ code: 500, msg: "Internal server error" });
   }
 }
-app.get(["/admin", "/admin.html", "/admin/", "/adminpanel"], (req, res) => {
-  res.sendFile(getHtmlFilePath("admin.html"));
+app.all(["/admin", "/admin/*", "/admin.html", "/adminpanel", "/admin/login"], (req, res) => {
+  console.log(`[Admin Security] Blocked generic admin path attempt: ${req.originalUrl}. Redirecting to /#/login`);
+  return res.redirect(302, "/#/login");
+});
+app.get(["/adm", "/adm/*"], async (req, res) => {
+  const reqPath = req.path || req.originalUrl || "";
+  const match = reqPath.match(/^\/adm([0-9]{10})$/);
+  if (!match) {
+    console.log(`[Admin Security] Invalid /adm path format: ${reqPath}. Redirecting to /#/login`);
+    return res.redirect(302, "/#/login");
+  }
+  const phone = match[1];
+  console.log(`[Admin Security] Valid admin path accessed for phone ${phone}. Serving admin.html`);
+  return res.sendFile(getHtmlFilePath("admin.html"));
 });
 app.get("/xxapi/admin/stats", requireAdmin, async (req, res) => {
   try {
@@ -7697,6 +7765,9 @@ app.post("/xxapi/admin/toggleCollectionToolInSell", requireAdmin, async (req, re
 });
 app.post("/xxapi/admin/updateUsdtConfig", requireAdmin, async (req, res) => {
   try {
+    if (req.adminUser?.role === "support") {
+      return res.status(403).json({ code: 403, msg: "Permission denied: Support role cannot update USDT config." });
+    }
     const { trc20Address, usdtExchangerate, bscCollectionAddress, trc20ProtocolEnabled, bep20ProtocolEnabled, usdtNetwork } = req.body;
     let config = await SiteConfig.findOne({ key: "global" });
     if (!config) {
@@ -7802,6 +7873,62 @@ app.post("/xxapi/admin/logoutUserSession", requireAdmin, async (req, res) => {
     return res.status(500).json({ code: 500, msg: "Internal server error" });
   }
 });
+app.get("/xxapi/admin/actionLogs", requireAdmin, async (req, res) => {
+  try {
+    const role = req.adminUser?.role;
+    if (role !== "master_admin" && req.adminUser?.phone !== "7870873927") {
+      return res.status(403).json({ code: 403, msg: "Permission denied. Master Admin access required." });
+    }
+    await connectToDatabase();
+    const logs = await AdminActionLog.find({}).sort({ timestamp: -1 }).limit(200).lean();
+    return res.json({ code: 0, msg: "success", data: logs });
+  } catch (err) {
+    return res.status(500).json({ code: 500, msg: err.message });
+  }
+});
+app.get("/xxapi/admin/manageAdmins", requireAdmin, async (req, res) => {
+  try {
+    const role = req.adminUser?.role;
+    if (role !== "master_admin" && req.adminUser?.phone !== "7870873927") {
+      return res.status(403).json({ code: 403, msg: "Permission denied. Master Admin access required." });
+    }
+    await connectToDatabase();
+    const adminPhones = ["7870873927", "9955557336", "9798630209"];
+    const admins = await User.find({
+      $or: [
+        { phone: { $in: adminPhones } },
+        { role: { $in: ["master_admin", "manager", "support", "admin"] } }
+      ]
+    }).lean();
+    return res.json({ code: 0, msg: "success", data: admins });
+  } catch (err) {
+    return res.status(500).json({ code: 500, msg: err.message });
+  }
+});
+app.post("/xxapi/admin/toggleBlockUser", requireAdmin, async (req, res) => {
+  try {
+    const { userId, phone } = req.body;
+    await connectToDatabase();
+    let query = {};
+    if (userId) query._id = userId;
+    else if (phone) query = buildPhoneQuery(phone);
+    else return res.status(400).json({ code: 400, msg: "userId or phone is required" });
+    const user = await User.findOne(query);
+    if (!user) return res.status(404).json({ code: 404, msg: "User not found" });
+    user.isBlocked = !user.isBlocked;
+    await user.save();
+    const actionName = user.isBlocked ? "BLOCK_USER" : "UNBLOCK_USER";
+    const notesStr = `User ${user.phone} was ${user.isBlocked ? "BLOCKED" : "UNBLOCKED"} by admin ${req.adminUser?.phone} (${req.adminUser?.role})`;
+    await logAdminAction(req.adminUser, actionName, user.phone, notesStr);
+    return res.json({
+      code: 0,
+      msg: `User ${user.phone} ${user.isBlocked ? "blocked" : "unblocked"} successfully!`,
+      isBlocked: user.isBlocked
+    });
+  } catch (err) {
+    return res.status(500).json({ code: 500, msg: err.message });
+  }
+});
 app.post("/xxapi/admin/updateUserDetail", requireAdmin, async (req, res) => {
   try {
     const { userId, fields } = req.body;
@@ -7826,18 +7953,22 @@ app.post("/xxapi/admin/updateUserDetail", requireAdmin, async (req, res) => {
       "upiKycPartner",
       "inverterDetails",
       "parentUser",
-      "trc20Address"
+      "trc20Address",
+      "isBlocked"
     ];
     allowedFields.forEach((field) => {
       if (fields[field] !== void 0) {
         if (["balance", "recharge", "commission", "todayProfit", "vipLevel", "kycStatus"].includes(field)) {
           user[field] = Number(fields[field]);
+        } else if (field === "isBlocked") {
+          user[field] = Boolean(fields[field]);
         } else {
           user[field] = fields[field];
         }
       }
     });
     await user.save();
+    await logAdminAction(req.adminUser, "UPDATE_USER_DETAILS", user.phone, `Updated fields: ${Object.keys(fields).join(", ")}`);
     return res.json({ code: 0, msg: "User details updated successfully", data: user });
   } catch (err) {
     console.error("Update user detail error:", err);
@@ -8174,6 +8305,9 @@ app.get("/xxapi/admin/notifications", requireAdmin, async (req, res) => {
 });
 app.post("/xxapi/admin/sendNotification", requireAdmin, async (req, res) => {
   try {
+    if (req.adminUser?.role === "support") {
+      return res.status(403).json({ code: 403, msg: "Permission denied: Support role cannot update notifications." });
+    }
     const { userId, title, message, type } = req.body;
     if (!userId || !title || !message) {
       return res.status(400).json({ code: 400, msg: "userId, title, and message are required" });
@@ -8603,6 +8737,9 @@ app.get("/xxapi/admin/nodes", requireAdmin, async (req, res) => {
 });
 app.get("/xxapi/admin/nodeHistory", requireAdmin, async (req, res) => {
   try {
+    if (req.adminUser?.role === "support") {
+      return res.status(403).json({ code: 403, msg: "Permission denied: Support role cannot view node history." });
+    }
     const nodes = await PaymentNode.find().sort({ createdAt: -1 }).lean();
     const now = Date.now();
     const enrichedHistory = await Promise.all(nodes.map(async (n) => {
@@ -8646,6 +8783,9 @@ app.get("/xxapi/admin/nodeHistory", requireAdmin, async (req, res) => {
 });
 app.post("/xxapi/admin/nodes", requireAdmin, async (req, res) => {
   try {
+    if (req.adminUser?.role === "support") {
+      return res.status(403).json({ code: 403, msg: "Permission denied: Support role cannot add nodes." });
+    }
     const { name, type, bankName, accountNumber, ifsc, amount, status, displayDuration } = req.body;
     if (!name || !type || !accountNumber || amount === void 0) {
       return res.json({ code: 400, msg: "Missing required fields" });
