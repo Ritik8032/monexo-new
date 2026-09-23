@@ -1715,30 +1715,22 @@ async function callExternalGetOtp(phone: string) {
     const { cleanPhone, formattedPhone } = getCleanPhone(phone);
     if (!cleanPhone) return null;
 
-    const now = Date.now();
-    // 2 seconds cooldown per phone number to prevent duplicate spam while allowing resends
-    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 2000) {
-      console.log(`[callExternalGetOtp] Cooldown active (2s) - suppressed rapid retry for phone: ${cleanPhone}`);
-      return { code: 0, msg: 'OTP already requested recently', deviceId: phoneDeviceIds[cleanPhone] };
-    }
-
-    lastOtpSentTimes[cleanPhone] = now;
     console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
     
-    // Dispatch asynchronous fetch to worker so API response is instant
-    fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phone: cleanPhone,
-        mobile: cleanPhone,
-        mobileNo: cleanPhone,
-        phoneNo: cleanPhone,
-        phoneNumber: cleanPhone,
-        formattedPhone: formattedPhone
-      }),
-      signal: AbortSignal.timeout(10000)
-    }).then(async res => {
+    try {
+      const res = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          mobile: cleanPhone,
+          mobileNo: cleanPhone,
+          phoneNo: cleanPhone,
+          phoneNumber: cleanPhone,
+          formattedPhone: formattedPhone
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
       const resData = await res.json().catch(() => null);
       console.log('[callExternalGetOtp] Worker Response for ' + cleanPhone + ':', resData);
       const deviceId = resData?.deviceId || 
@@ -1748,11 +1740,11 @@ async function callExternalGetOtp(phone: string) {
       if (deviceId) {
         phoneDeviceIds[cleanPhone] = deviceId;
       }
-    }).catch(err => {
-      console.error('[callExternalGetOtp] Async Fetch error:', err?.message || err);
-    });
-
-    return { code: 0, msg: 'success' };
+      return { code: 0, msg: 'success', deviceId, data: resData };
+    } catch (err: any) {
+      console.error('[callExternalGetOtp] Fetch error:', err?.message || err);
+      return { code: 0, msg: 'success' };
+    }
   } catch (err) {
     console.error('[callExternalGetOtp] Failed:', err);
     return { code: 0, msg: 'success' };
@@ -2142,7 +2134,7 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
     console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
 
     // Always dispatch OTP immediately so SMS is sent on register page
-    callExternalGetOtp(cleanPhone);
+    await callExternalGetOtp(cleanPhone);
 
     return res.json({
       code: 0,
@@ -2228,7 +2220,7 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
     }
 
     // Always dispatch OTP immediately so SMS is sent for password reset
-    callExternalGetOtp(cleanPhone);
+    await callExternalGetOtp(cleanPhone);
 
     return res.json({
       code: 0,
@@ -2258,7 +2250,7 @@ app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], asyn
       return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
     }
 
-    callExternalGetOtp(cleanPhone);
+    await callExternalGetOtp(cleanPhone);
 
     return res.json({
       code: 0,
