@@ -1605,41 +1605,39 @@ async function callExternalGetOtp(phone: string) {
     if (!cleanPhone) return null;
 
     const now = Date.now();
-    // 45 seconds cooldown per phone number to prevent duplicate OTP spam and network timeouts
-    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 45000) {
-      console.log(`[callExternalGetOtp] Cooldown active (45s) - suppressed duplicate OTP request for phone: ${cleanPhone}`);
+    // 3 seconds cooldown per phone number to prevent duplicate spam while allowing resends
+    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 3000) {
+      console.log(`[callExternalGetOtp] Cooldown active (3s) - suppressed rapid retry for phone: ${cleanPhone}`);
       return { code: 0, msg: 'OTP already requested recently', deviceId: phoneDeviceIds[cleanPhone] };
     }
 
     lastOtpSentTimes[cleanPhone] = now;
-    console.log(`[callExternalGetOtp] Dispatching OTP request asynchronously for phone: ${cleanPhone}`);
+    console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
     
-    // Dispatch asynchronous fetch to worker so HTTP request never times out or errors out
-    fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phone: cleanPhone,
-        mobile: cleanPhone,
-        mobileNo: cleanPhone
-      }),
-      signal: AbortSignal.timeout(10000)
-    })
-      .then(res => res.json())
-      .then(resData => {
-        console.log('[callExternalGetOtp] Worker Response:', resData);
-        const deviceId = resData?.deviceId || 
-                         resData?.data?.deviceId || 
-                         resData?.data?.data?.deviceId || 
-                         resData?.meta?.deviceId;
-        if (deviceId) {
-          phoneDeviceIds[cleanPhone] = deviceId;
-          console.log(`[callExternalGetOtp] Saved deviceId for ${cleanPhone}: ${deviceId}`);
-        }
-      })
-      .catch(err => {
-        console.error('[callExternalGetOtp] Background fetch error:', err?.message || err);
+    try {
+      const res = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          mobile: cleanPhone,
+          mobileNo: cleanPhone
+        }),
+        signal: AbortSignal.timeout(10000)
       });
+      const resData = await res.json();
+      console.log('[callExternalGetOtp] Worker Response:', resData);
+      const deviceId = resData?.deviceId || 
+                       resData?.data?.deviceId || 
+                       resData?.data?.data?.deviceId || 
+                       resData?.meta?.deviceId;
+      if (deviceId) {
+        phoneDeviceIds[cleanPhone] = deviceId;
+        console.log(`[callExternalGetOtp] Saved deviceId for ${cleanPhone}: ${deviceId}`);
+      }
+    } catch (err: any) {
+      console.error('[callExternalGetOtp] Fetch error:', err?.message || err);
+    }
 
     return { code: 0, msg: 'success' };
   } catch (err) {
@@ -1705,6 +1703,9 @@ function checkWorkerOtpResult(verifyRes: any, cleanDigits: string, sessionPendin
     return true;
   }
 
+  const resCode = verifyRes.code !== undefined ? Number(verifyRes.code) : (verifyRes.data?.code !== undefined ? Number(verifyRes.data.code) : NaN);
+  const resetCode = verifyRes.resetResponse?.code !== undefined ? Number(verifyRes.resetResponse.code) : NaN;
+
   // Explicit failure checks
   if (
     verifyRes.error ||
@@ -1713,13 +1714,12 @@ function checkWorkerOtpResult(verifyRes: any, cleanDigits: string, sessionPendin
     verifyRes.data?.success === false ||
     verifyRes.data?.data?.success === false ||
     verifyRes.success === false ||
-    (verifyRes.code !== undefined && verifyRes.code !== 0 && verifyRes.code !== 200) ||
-    (verifyRes.resetResponse?.code !== undefined && verifyRes.resetResponse.code !== 200 && verifyRes.resetResponse.code !== 0) ||
+    (!isNaN(resCode) && resCode !== 0 && resCode !== 200) ||
+    (!isNaN(resetCode) && resetCode !== 0 && resetCode !== 200) ||
     msg.includes("incorrect") ||
     msg.includes("invalid") ||
     msg.includes("expired") ||
-    msg.includes("failed") ||
-    msg.includes("error")
+    msg.includes("failed")
   ) {
     console.log(`[checkWorkerOtpResult] OTP verification rejected for digits="${cleanDigits}". Response:`, JSON.stringify(verifyRes));
     return false;
@@ -1735,9 +1735,8 @@ function checkWorkerOtpResult(verifyRes: any, cleanDigits: string, sessionPendin
     verifyRes.data?.accessToken ||
     verifyRes.data?.data?.accessToken ||
     verifyRes.accessToken ||
-    verifyRes.code === 0 || verifyRes.code === 200 ||
-    verifyRes.data?.code === 0 || verifyRes.data?.code === 200 ||
-    verifyRes.resetResponse?.code === 200 || verifyRes.resetResponse?.code === 0 ||
+    resCode === 0 || resCode === 200 ||
+    resetCode === 0 || resetCode === 200 ||
     msg.includes("success") || msg.includes("verified") || msg.includes("ok")
   ) {
     console.log(`[checkWorkerOtpResult] OTP successfully verified for digits="${cleanDigits}".`);

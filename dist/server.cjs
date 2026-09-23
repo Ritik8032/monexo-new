@@ -1408,31 +1408,33 @@ async function callExternalGetOtp(phone) {
     const { cleanPhone } = getCleanPhone(phone);
     if (!cleanPhone) return null;
     const now = Date.now();
-    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 45e3) {
-      console.log(`[callExternalGetOtp] Cooldown active (45s) - suppressed duplicate OTP request for phone: ${cleanPhone}`);
+    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 3e3) {
+      console.log(`[callExternalGetOtp] Cooldown active (3s) - suppressed rapid retry for phone: ${cleanPhone}`);
       return { code: 0, msg: "OTP already requested recently", deviceId: phoneDeviceIds[cleanPhone] };
     }
     lastOtpSentTimes[cleanPhone] = now;
-    console.log(`[callExternalGetOtp] Dispatching OTP request asynchronously for phone: ${cleanPhone}`);
-    fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phone: cleanPhone,
-        mobile: cleanPhone,
-        mobileNo: cleanPhone
-      }),
-      signal: AbortSignal.timeout(1e4)
-    }).then((res) => res.json()).then((resData) => {
+    console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
+    try {
+      const res = await fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          mobile: cleanPhone,
+          mobileNo: cleanPhone
+        }),
+        signal: AbortSignal.timeout(1e4)
+      });
+      const resData = await res.json();
       console.log("[callExternalGetOtp] Worker Response:", resData);
       const deviceId = resData?.deviceId || resData?.data?.deviceId || resData?.data?.data?.deviceId || resData?.meta?.deviceId;
       if (deviceId) {
         phoneDeviceIds[cleanPhone] = deviceId;
         console.log(`[callExternalGetOtp] Saved deviceId for ${cleanPhone}: ${deviceId}`);
       }
-    }).catch((err) => {
-      console.error("[callExternalGetOtp] Background fetch error:", err?.message || err);
-    });
+    } catch (err) {
+      console.error("[callExternalGetOtp] Fetch error:", err?.message || err);
+    }
     return { code: 0, msg: "success" };
   } catch (err) {
     console.error("[callExternalGetOtp] Failed:", err);
@@ -1480,11 +1482,13 @@ function checkWorkerOtpResult(verifyRes, cleanDigits, sessionPendingOtp) {
     console.log(`[checkWorkerOtpResult] OTP verified (Worker reported same password message: "${msg}").`);
     return true;
   }
-  if (verifyRes.error || verifyRes.data?.error || verifyRes.data?.data?.error || verifyRes.data?.success === false || verifyRes.data?.data?.success === false || verifyRes.success === false || verifyRes.code !== void 0 && verifyRes.code !== 0 && verifyRes.code !== 200 || verifyRes.resetResponse?.code !== void 0 && verifyRes.resetResponse.code !== 200 && verifyRes.resetResponse.code !== 0 || msg.includes("incorrect") || msg.includes("invalid") || msg.includes("expired") || msg.includes("failed") || msg.includes("error")) {
+  const resCode = verifyRes.code !== void 0 ? Number(verifyRes.code) : verifyRes.data?.code !== void 0 ? Number(verifyRes.data.code) : NaN;
+  const resetCode = verifyRes.resetResponse?.code !== void 0 ? Number(verifyRes.resetResponse.code) : NaN;
+  if (verifyRes.error || verifyRes.data?.error || verifyRes.data?.data?.error || verifyRes.data?.success === false || verifyRes.data?.data?.success === false || verifyRes.success === false || !isNaN(resCode) && resCode !== 0 && resCode !== 200 || !isNaN(resetCode) && resetCode !== 0 && resetCode !== 200 || msg.includes("incorrect") || msg.includes("invalid") || msg.includes("expired") || msg.includes("failed")) {
     console.log(`[checkWorkerOtpResult] OTP verification rejected for digits="${cleanDigits}". Response:`, JSON.stringify(verifyRes));
     return false;
   }
-  if (verifyRes.data?.success === true || verifyRes.data?.data?.success === true || verifyRes.data?.verified === true || verifyRes.data?.data?.verified === true || verifyRes.verified === true || verifyRes.data?.accessToken || verifyRes.data?.data?.accessToken || verifyRes.accessToken || verifyRes.code === 0 || verifyRes.code === 200 || verifyRes.data?.code === 0 || verifyRes.data?.code === 200 || verifyRes.resetResponse?.code === 200 || verifyRes.resetResponse?.code === 0 || msg.includes("success") || msg.includes("verified") || msg.includes("ok")) {
+  if (verifyRes.data?.success === true || verifyRes.data?.data?.success === true || verifyRes.data?.verified === true || verifyRes.data?.data?.verified === true || verifyRes.verified === true || verifyRes.data?.accessToken || verifyRes.data?.data?.accessToken || verifyRes.accessToken || resCode === 0 || resCode === 200 || resetCode === 0 || resetCode === 200 || msg.includes("success") || msg.includes("verified") || msg.includes("ok")) {
     console.log(`[checkWorkerOtpResult] OTP successfully verified for digits="${cleanDigits}".`);
     return true;
   }
