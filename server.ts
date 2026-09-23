@@ -2146,11 +2146,11 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
 
     console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
 
-    // Check if user is ALREADY registered before sending OTP or opening OTP popup!
+    // Check if user is ALREADY registered before allowing captcha to open
     await connectToDatabase();
     const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
     if (existingUser) {
-      console.log(`[checkSmsNew] Phone ${cleanPhone} is ALREADY registered. Rejecting registration request before sending OTP.`);
+      console.log(`[checkSmsNew] Phone ${cleanPhone} is ALREADY registered. Rejecting registration request.`);
       return res.json({
         code: 400,
         status: 400,
@@ -2159,14 +2159,12 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
       });
     }
 
-    // Dispatch OTP immediately for NEW users
-    await callExternalGetOtp(cleanPhone);
-
+    // Return success without sending OTP here (OTP will be sent when captcha completes and calls /xxapi/sendsms)
     return res.json({
       code: 0,
       status: 200,
       msg: 'success',
-      message: 'OTP sent successfully to mobile number',
+      message: 'Validated',
       data: {
         sendtoken: `sendtoken-${cleanPhone}-${Date.now()}`
       }
@@ -2224,7 +2222,7 @@ app.post('/xxapi/resetpassword', async (req, res) => {
 });
 
 app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '/xxapi/getResetOtp'], async (req, res) => {
-  console.log('[getsendtken / Reset OTP] Called body:', req.body, 'query:', req.query);
+  console.log('[getsendtken / Captcha Token] Called body:', req.body, 'query:', req.query);
   try {
     let cleanPhone = extractPhoneFromReq(req);
 
@@ -2236,35 +2234,13 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
       }
     }
 
-    if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({
-        code: 400,
-        status: 400,
-        msg: 'Please enter a valid 10-digit mobile number'
-      });
-    }
-
-    await connectToDatabase();
-    const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    if (!registeredUser) {
-      console.log(`[getsendtken] User ${cleanPhone} does not exist in DB for password reset.`);
-      return res.json({
-        code: 400,
-        status: 400,
-        msg: 'User does not exist. Please register first.'
-      });
-    }
-
-    // Dispatch OTP immediately so SMS is sent for password reset
-    const otpDispatchResult = await callExternalGetOtp(cleanPhone);
-    console.log(`[getsendtken] OTP dispatch result for ${cleanPhone}:`, otpDispatchResult);
+    const phoneToken = cleanPhone && cleanPhone.length >= 10 ? cleanPhone : 'default';
 
     return res.json({
       code: 0,
       status: 200,
       msg: 'success',
-      message: 'OTP sent successfully to registered phone number',
-      data: `sendtoken-${cleanPhone}-${Date.now()}`
+      data: `sendtoken-${phoneToken}-${Date.now()}`
     });
   } catch (err: any) {
     console.error('[getsendtken Error]', err);
@@ -2272,8 +2248,8 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
   }
 });
 
-app.post(['/xxapi/sendsms', '/xxapi/sendSms', '/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], async (req, res) => {
-  console.log('[sendsms / sendLoginSms] Called body:', req.body, 'query:', req.query);
+app.post(['/xxapi/sendsms', '/xxapi/sendSms'], async (req, res) => {
+  console.log('[sendsms] Called body:', req.body, 'query:', req.query);
   try {
     const rawPhone = extractPhoneFromReq(req);
     const { cleanPhone } = getCleanPhone(rawPhone);
@@ -2284,8 +2260,8 @@ app.post(['/xxapi/sendsms', '/xxapi/sendSms', '/xxapi/sendLoginSms', '/xxapi/sen
     const purpose = String(req.body?.purpose || req.query?.purpose || '').toLowerCase();
     await connectToDatabase();
 
-    // If purpose is registration ('reg' or 'register'):
-    if (purpose === 'reg' || purpose === 'register') {
+    // If purpose is registration ('register' or 'reg'):
+    if (purpose.includes('reg')) {
       const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
       if (existingUser) {
         console.log(`[sendsms] Registration check: Phone ${cleanPhone} is ALREADY registered.`);
@@ -2298,10 +2274,11 @@ app.post(['/xxapi/sendsms', '/xxapi/sendSms', '/xxapi/sendLoginSms', '/xxapi/sen
       }
     }
 
-    // For login or reset/forgot password, verify user exists
-    if (purpose === 'login' || purpose === 'reset' || purpose === 'forgot') {
+    // For forgotpassword / reset / securitypassword:
+    if (purpose.includes('forgot') || purpose.includes('reset') || purpose.includes('security')) {
       const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
       if (!registeredUser) {
+        console.log(`[sendsms] Phone ${cleanPhone} is NOT registered for password reset.`);
         return res.json({
           code: 400,
           status: 400,
@@ -2310,13 +2287,53 @@ app.post(['/xxapi/sendsms', '/xxapi/sendSms', '/xxapi/sendLoginSms', '/xxapi/sen
       }
     }
 
+    console.log(`[sendsms] Dispatching OTP for phone: ${cleanPhone}, purpose: ${purpose}`);
     await callExternalGetOtp(cleanPhone);
 
     return res.json({
       code: 0,
       status: 200,
       msg: 'success',
-      message: 'OTP sent successfully to registered phone number',
+      message: 'OTP sent successfully to mobile number',
+      data: {
+        sendtoken: `sendtoken-${cleanPhone}-${Date.now()}`
+      }
+    });
+  } catch (err: any) {
+    console.error('[sendsms Error]', err);
+    return res.json({ code: 500, msg: 'Internal server error' });
+  }
+});
+
+app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], async (req, res) => {
+  console.log('[sendLoginSms] Called body:', req.body, 'query:', req.query);
+  try {
+    const rawPhone = extractPhoneFromReq(req);
+    const { cleanPhone } = getCleanPhone(rawPhone);
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return res.json({ code: 400, msg: 'Phone number is required' });
+    }
+
+    await connectToDatabase();
+
+    const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (!registeredUser) {
+      console.log(`[sendLoginSms] Phone ${cleanPhone} is NOT registered.`);
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: 'User does not exist. Please register first.'
+      });
+    }
+
+    console.log(`[sendLoginSms] Dispatching Login OTP for phone: ${cleanPhone}`);
+    await callExternalGetOtp(cleanPhone);
+
+    return res.json({
+      code: 0,
+      status: 200,
+      msg: 'success',
+      message: 'OTP sent to registered phone number',
       sameDevice: false,
       autoBypassOtp: false,
       data: {
@@ -2324,7 +2341,7 @@ app.post(['/xxapi/sendsms', '/xxapi/sendSms', '/xxapi/sendLoginSms', '/xxapi/sen
       }
     });
   } catch (err) {
-    console.error('[sendsms Error]', err);
+    console.error('[sendLoginSms Error]', err);
     return res.json({ code: 500, msg: 'Server error sending SMS' });
   }
 });
