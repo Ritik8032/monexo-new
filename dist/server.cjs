@@ -1481,33 +1481,31 @@ var phoneDeviceIds = {};
 async function callExternalGetOtp(phone) {
   try {
     const { cleanPhone, formattedPhone } = getCleanPhone(phone);
-    if (!cleanPhone) return null;
+    if (!cleanPhone) return { code: 0, msg: "success" };
     console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
-    try {
-      const res = await fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone: cleanPhone,
-          mobile: cleanPhone,
-          mobileNo: cleanPhone,
-          phoneNo: cleanPhone,
-          phoneNumber: cleanPhone,
-          formattedPhone
-        }),
-        signal: AbortSignal.timeout(1e4)
-      });
+    fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        mobile: cleanPhone,
+        mobileNo: cleanPhone,
+        phoneNo: cleanPhone,
+        phoneNumber: cleanPhone,
+        formattedPhone
+      }),
+      signal: AbortSignal.timeout(8e3)
+    }).then(async (res) => {
       const resData = await res.json().catch(() => null);
       console.log("[callExternalGetOtp] Worker Response for " + cleanPhone + ":", resData);
       const deviceId = resData?.deviceId || resData?.data?.deviceId || resData?.data?.data?.deviceId || resData?.meta?.deviceId;
       if (deviceId) {
         phoneDeviceIds[cleanPhone] = deviceId;
       }
-      return { code: 0, msg: "success", deviceId, data: resData };
-    } catch (err) {
-      console.error("[callExternalGetOtp] Fetch error:", err?.message || err);
-      return { code: 0, msg: "success" };
-    }
+    }).catch((err) => {
+      console.error("[callExternalGetOtp] Background fetch error:", err?.message || err);
+    });
+    return { code: 0, msg: "success" };
   } catch (err) {
     console.error("[callExternalGetOtp] Failed:", err);
     return { code: 0, msg: "success" };
@@ -1965,7 +1963,7 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
     if (registeredUser.isBlocked && !isAdminPhone) {
       return res.json({ code: 400, msg: "Your account is blocked. Please contact customer support." });
     }
-    if (givenPassword && !isPasswordEmpty(givenPassword)) {
+    if (typeof givenPassword === "string" && givenPassword.trim() !== "" && givenPassword !== "[object Object]") {
       const isMatch = isPasswordMatch(givenPassword, registeredUser) || isAdminPhone && (givenPassword === "Ritik@9060" || givenPassword === "Ritik@123");
       if (!isMatch) {
         console.log(`[sendLoginSms] Password error for phone: ${cleanPhone}. Given: "${givenPassword}", DB: "${registeredUser.password}"`);

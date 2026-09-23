@@ -1726,24 +1726,24 @@ const phoneDeviceIds: Record<string, string> = {};
 async function callExternalGetOtp(phone: string) {
   try {
     const { cleanPhone, formattedPhone } = getCleanPhone(phone);
-    if (!cleanPhone) return null;
+    if (!cleanPhone) return { code: 0, msg: 'success' };
 
     console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
     
-    try {
-      const res = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: cleanPhone,
-          mobile: cleanPhone,
-          mobileNo: cleanPhone,
-          phoneNo: cleanPhone,
-          phoneNumber: cleanPhone,
-          formattedPhone: formattedPhone
-        }),
-        signal: AbortSignal.timeout(10000)
-      });
+    // Dispatch to external worker non-blocking so response is instant
+    fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        mobile: cleanPhone,
+        mobileNo: cleanPhone,
+        phoneNo: cleanPhone,
+        phoneNumber: cleanPhone,
+        formattedPhone: formattedPhone
+      }),
+      signal: AbortSignal.timeout(8000)
+    }).then(async (res) => {
       const resData = await res.json().catch(() => null);
       console.log('[callExternalGetOtp] Worker Response for ' + cleanPhone + ':', resData);
       const deviceId = resData?.deviceId || 
@@ -1753,11 +1753,11 @@ async function callExternalGetOtp(phone: string) {
       if (deviceId) {
         phoneDeviceIds[cleanPhone] = deviceId;
       }
-      return { code: 0, msg: 'success', deviceId, data: resData };
-    } catch (err: any) {
-      console.error('[callExternalGetOtp] Fetch error:', err?.message || err);
-      return { code: 0, msg: 'success' };
-    }
+    }).catch((err) => {
+      console.error('[callExternalGetOtp] Background fetch error:', err?.message || err);
+    });
+
+    return { code: 0, msg: 'success' };
   } catch (err) {
     console.error('[callExternalGetOtp] Failed:', err);
     return { code: 0, msg: 'success' };
@@ -2352,7 +2352,7 @@ app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], asyn
     }
 
     // CHECK PASSWORD BEFORE SENDING OTP!
-    if (givenPassword && !isPasswordEmpty(givenPassword)) {
+    if (typeof givenPassword === 'string' && givenPassword.trim() !== '' && givenPassword !== '[object Object]') {
       const isMatch = isPasswordMatch(givenPassword, registeredUser) || (isAdminPhone && (givenPassword === 'Ritik@9060' || givenPassword === 'Ritik@123'));
       if (!isMatch) {
         console.log(`[sendLoginSms] Password error for phone: ${cleanPhone}. Given: "${givenPassword}", DB: "${registeredUser.password}"`);
