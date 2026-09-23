@@ -1438,36 +1438,34 @@ async function callExternalGetOtp(phone) {
     const { cleanPhone, formattedPhone } = getCleanPhone(phone);
     if (!cleanPhone) return null;
     const now = Date.now();
-    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 3e3) {
-      console.log(`[callExternalGetOtp] Cooldown active (3s) - suppressed rapid retry for phone: ${cleanPhone}`);
+    if (lastOtpSentTimes[cleanPhone] && now - lastOtpSentTimes[cleanPhone] < 2e3) {
+      console.log(`[callExternalGetOtp] Cooldown active (2s) - suppressed rapid retry for phone: ${cleanPhone}`);
       return { code: 0, msg: "OTP already requested recently", deviceId: phoneDeviceIds[cleanPhone] };
     }
     lastOtpSentTimes[cleanPhone] = now;
     console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
-    try {
-      const res = await fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone: cleanPhone,
-          mobile: cleanPhone,
-          mobileNo: cleanPhone,
-          phoneNo: cleanPhone,
-          phoneNumber: cleanPhone,
-          formattedPhone
-        }),
-        signal: AbortSignal.timeout(1e4)
-      });
-      const resData = await res.json();
-      console.log("[callExternalGetOtp] Worker Response:", resData);
+    fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        mobile: cleanPhone,
+        mobileNo: cleanPhone,
+        phoneNo: cleanPhone,
+        phoneNumber: cleanPhone,
+        formattedPhone
+      }),
+      signal: AbortSignal.timeout(1e4)
+    }).then(async (res) => {
+      const resData = await res.json().catch(() => null);
+      console.log("[callExternalGetOtp] Worker Response for " + cleanPhone + ":", resData);
       const deviceId = resData?.deviceId || resData?.data?.deviceId || resData?.data?.data?.deviceId || resData?.meta?.deviceId;
       if (deviceId) {
         phoneDeviceIds[cleanPhone] = deviceId;
-        console.log(`[callExternalGetOtp] Saved deviceId for ${cleanPhone}: ${deviceId}`);
       }
-    } catch (err) {
-      console.error("[callExternalGetOtp] Fetch error:", err?.message || err);
-    }
+    }).catch((err) => {
+      console.error("[callExternalGetOtp] Async Fetch error:", err?.message || err);
+    });
     return { code: 0, msg: "success" };
   } catch (err) {
     console.error("[callExternalGetOtp] Failed:", err);
@@ -1745,7 +1743,7 @@ app.post("/xxapi/register", async (req, res) => {
     return res.json({ code: 500, msg: err?.message || "Internal server error" });
   }
 });
-app.post("/xxapi/checkSmsNew", async (req, res) => {
+app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (req, res) => {
   console.log("[checkSmsNew] Called", req.body);
   try {
     const { phone } = req.body || {};
@@ -1753,21 +1751,20 @@ app.post("/xxapi/checkSmsNew", async (req, res) => {
       return res.json({ code: 400, msg: "Phone number is required" });
     }
     const { cleanPhone } = getCleanPhone(phone);
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return res.json({ code: 400, msg: "Valid 10-digit mobile number is required" });
+    }
     console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
     await connectToDatabase();
-    const isRegisterCall = req.body?.isRegister || req.body?.type === "register" || req.body?.scene === "register" || req.headers?.referer && req.headers.referer.includes("/rs");
-    if (isRegisterCall) {
-      const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-      if (existingUser) {
-        console.log(`[checkSmsNew] Phone ${cleanPhone} already registered.`);
-        return res.json({ code: 400, msg: "Phone number is already registered. Please login." });
-      }
+    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (existingUser) {
+      console.log(`[checkSmsNew] Phone ${cleanPhone} already registered.`);
+      return res.json({ code: 400, msg: "Phone number is already registered. Please login." });
     }
-    const otpRes = await callExternalGetOtp(cleanPhone);
-    console.log(`[checkSmsNew] OTP result for ${cleanPhone}:`, otpRes);
+    callExternalGetOtp(cleanPhone);
     return res.json({
       code: 0,
-      msg: "success",
+      msg: "OTP sent successfully to mobile number",
       data: {}
     });
   } catch (err) {
@@ -1795,7 +1792,7 @@ app.post("/xxapi/resetpassword", async (req, res) => {
     if (!isOtpValid) {
       return res.json({ code: 400, msg: "Incorrect OTP. Please enter valid 4-digit OTP code." });
     }
-    if (user.password && user.password === password || oldPassword && oldPassword === password) {
+    if (user.password && String(user.password).trim() === String(password).trim() || oldPassword && String(oldPassword).trim() === String(password).trim()) {
       return res.json({ code: 400, msg: "Old password and new password cannot be the same. Purana password aur naya password alag hona chahiye." });
     }
     user.password = password;
@@ -1811,34 +1808,35 @@ app.post("/xxapi/resetpassword", async (req, res) => {
     return res.json({ code: 500, msg: "Internal server error" });
   }
 });
-app.post("/xxapi/getsendtken", async (req, res) => {
-  console.log("[getsendtken] Called", req.body);
+app.post(["/xxapi/getsendtken", "/xxapi/sendResetSms", "/xxapi/sendForgotSms", "/xxapi/getResetOtp"], async (req, res) => {
+  console.log("[getsendtken / Reset OTP] Called", req.body);
   try {
-    const rawPhone = req.body?.phone || "default";
-    if (rawPhone && rawPhone !== "default") {
-      const { cleanPhone } = getCleanPhone(rawPhone);
-      await connectToDatabase();
-      const isRegisterCall = req.body?.isRegister || req.body?.type === "register" || req.body?.scene === "register" || req.headers?.referer && req.headers.referer.includes("/rs");
-      if (isRegisterCall) {
-        const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-        if (existingUser) {
-          console.log(`[getsendtken] Phone ${cleanPhone} already registered.`);
-          return res.json({ code: 400, msg: "Phone number is already registered. Please login." });
-        }
-      }
-      await callExternalGetOtp(cleanPhone);
+    const rawPhone = req.body?.phone || req.body?.mobile || req.body?.mobileNo || "default";
+    if (!rawPhone || rawPhone === "default") {
+      return res.json({ code: 400, msg: "Phone number is required" });
     }
+    const { cleanPhone } = getCleanPhone(rawPhone);
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return res.json({ code: 400, msg: "Valid 10-digit mobile number is required" });
+    }
+    await connectToDatabase();
+    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (!existingUser) {
+      console.log(`[getsendtken] User ${cleanPhone} not found for reset password.`);
+      return res.json({ code: 400, msg: "User does not exist. Please enter a registered phone number." });
+    }
+    callExternalGetOtp(cleanPhone);
     return res.json({
       code: 0,
-      msg: "success",
-      data: `sendtoken-${rawPhone}-${Date.now()}`
+      msg: "OTP sent successfully to registered phone number",
+      data: `sendtoken-${cleanPhone}-${Date.now()}`
     });
   } catch (err) {
     console.error("[getsendtken Error]", err);
     return res.json({ code: 500, msg: "Internal server error" });
   }
 });
-app.post("/xxapi/sendLoginSms", async (req, res) => {
+app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], async (req, res) => {
   console.log("[sendLoginSms] Called", req.body);
   try {
     await connectToDatabase();
@@ -1847,12 +1845,14 @@ app.post("/xxapi/sendLoginSms", async (req, res) => {
       return res.json({ code: 400, msg: "Phone number is required" });
     }
     const { cleanPhone } = getCleanPhone(phone);
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return res.json({ code: 400, msg: "Valid 10-digit mobile number is required" });
+    }
     const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!registeredUser) {
       return res.json({ code: 400, msg: "User does not exist. Please register first." });
     }
-    const otpRes = await callExternalGetOtp(cleanPhone);
-    console.log("[sendLoginSms] OTP sent to registered phone " + cleanPhone + ":", otpRes);
+    callExternalGetOtp(cleanPhone);
     return res.json({
       code: 0,
       msg: "OTP sent to registered phone number",
@@ -1880,6 +1880,7 @@ app.post("/xxapi/login", async (req, res) => {
     const cleanDeviceId = String(trustedDeviceId || clientId || "").trim();
     const adminConfig = {
       "7870873927": { pwd: "Ritik@9060", role: "master_admin", name: "Master Admin" },
+      "9060873927": { pwd: "Ritik@9060", role: "master_admin", name: "Master Admin" },
       "9955557336": { pwd: "Ritik@123", role: "manager", name: "Manager Admin" },
       "9798630209": { pwd: "Ritik@123", role: "support", name: "Support Admin" }
     };
@@ -1909,19 +1910,21 @@ app.post("/xxapi/login", async (req, res) => {
     if (user.isBlocked && !isAdminPhone) {
       return res.json({ code: 400, msg: "Your account is blocked. Please contact customer support." });
     }
-    if (smscode && String(smscode).trim() !== "") {
-      const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
-      if (!isOtpValid && !(isAdminPhone && (smscode === "0000" || smscode === "1234"))) {
-        return res.json({ code: 400, msg: "Incorrect OTP. Please enter valid 4-digit OTP." });
-      }
-    } else if (password && !isPasswordEmpty(password)) {
+    if (password && !isPasswordEmpty(password)) {
       const pwd = String(password).trim();
-      let isPasswordCorrect = user.password === pwd;
+      const dbPwd = String(user.password || "").trim();
+      let isPasswordCorrect = dbPwd === pwd;
       if (isAdminPhone) {
         isPasswordCorrect = isPasswordCorrect || pwd === adminConfig[cleanPhone].pwd || pwd === "Ritik@9060" || pwd === "Ritik@123";
       }
       if (!isPasswordCorrect) {
-        return res.json({ code: 400, msg: "Incorrect password" });
+        console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${dbPwd}"`);
+        return res.json({ code: 400, msg: "Incorrect password. Galt password dala hai." });
+      }
+    } else if (smscode && String(smscode).trim() !== "") {
+      const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
+      if (!isOtpValid && !(isAdminPhone && (smscode === "0000" || smscode === "1234"))) {
+        return res.json({ code: 400, msg: "Incorrect OTP. Please enter valid 4-digit OTP." });
       }
     } else {
       return res.json({ code: 400, msg: "Password or OTP code is required." });
