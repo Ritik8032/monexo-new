@@ -1788,9 +1788,47 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
     const rawPhone = extractPhoneFromReq(req);
     const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: "Phone number is required" });
+      return res.json({ code: 400, msg: "Please enter a valid 10-digit mobile number" });
     }
-    console.log(`[checkSmsNew] Validated pre-check for phone: ${cleanPhone}`);
+    const password = req.body?.password || req.query?.password || "";
+    await connectToDatabase();
+    const user = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (!user) {
+      console.log(`[checkSmsNew] User ${cleanPhone} does NOT exist.`);
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: "User does not exist. Please register first.",
+        message: "User does not exist. Please register first."
+      });
+    }
+    if (user.isBlocked) {
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: "Your account is blocked. Please contact customer support."
+      });
+    }
+    if (typeof password === "string" && password.trim() !== "" && password !== "[object Object]") {
+      const isMatch = isPasswordMatch(password, user);
+      if (!isMatch) {
+        console.log(`[checkSmsNew] Password error for phone: ${cleanPhone}. Given: "${password}", DB: "${user.password}"`);
+        return res.json({
+          code: 400,
+          status: 400,
+          msg: "Password error",
+          message: "Password error"
+        });
+      }
+    } else {
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: "Please enter password",
+        message: "Please enter password"
+      });
+    }
+    console.log(`[checkSmsNew] ID & Password verified for ${cleanPhone}. Opening OTP popup.`);
     return res.json({
       code: 0,
       status: 200,
