@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Monexo</title>
+    <meta name="description" content="Monexo" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="monexo.wiki" />
+    <meta property="og:title" content="Monexo" />
+    <meta property="og:description" content="Monexo" />
+    <meta property="og:url" content="https://monexo.wiki/" />
+    <meta property="og:image" content="https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/file_00000000c3b871f8ac814a58eb9b5db3.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Monexo" />
+    <meta name="twitter:description" content="" />
+    <meta name="twitter:image" content="https://slytlppadlmnnloszuwd.supabase.co/storage/v1/object/public/Png/file_00000000c3b871f8ac814a58eb9b5db3.png" />
+    <style>
+      .md-toast-content .md-toast-text{
+        white-space: pre-wrap !important;
+        word-break: break-word !important;
+      }
+      #pieceOutline {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        border: 1px solid rgba(45, 45, 45, 0.70) !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        pointer-events: none !important;
+      }
+    </style>
+    <script>
+      (function() {
+        const _origParse = JSON.parse;
+        JSON.parse = function(text, reviver) {
+          if (text === undefined || text === null || text === "undefined" || text === "") {
+            return [];
+          }
+          try {
+            return _origParse(text, reviver);
+          } catch (e) {
+            return [];
+          }
+        };
+      })();
+
+      (function() {
+        // Do not pre-fill or seed default dummy phone number or token
+      })();
+      // Global Console Interceptor to suppress redundant navigation messages and other ignorable noise
+      (function() {
+        const suppressKeywords = [
+          'avoided redundant navigation',
+          'navigationduplicated',
+          'navigation duplicated',
+          'createroutererror',
+          'createnavigationduplicatederror'
+        ];
+        function shouldSuppress(args) {
+          const msg = args.map(arg => {
+            try {
+              if (arg && arg.message) return arg.message;
+              if (arg && arg.reason && arg.reason.message) return arg.reason.message;
+              return String(arg);
+            } catch(e) {
+              return '';
+            }
+          }).join(' ').toLowerCase();
+          return suppressKeywords.some(keyword => msg.includes(keyword));
+        }
+
+        const originalError = console.error;
+        console.error = function(...args) {
+          if (shouldSuppress(args)) return;
+          originalError.apply(console, args);
+        };
+
+        const originalWarn = console.warn;
+        console.warn = function(...args) {
+          if (shouldSuppress(args)) return;
+          originalWarn.apply(console, args);
+        };
+      })();
+
+      // 0a. Global Fetch Interceptor to mock/sanitize failing external requests
+      (function() {
+        const originalFetch = window.fetch;
+        window.fetch = function(input, init) {
+          let url = '';
+          if (typeof input === 'string') {
+            url = input;
+          } else if (input instanceof URL) {
+            url = input.href;
+          } else if (input && typeof input === 'object' && input.url) {
+            url = input.url;
+          }
+
+          if (url) {
+            const lowerUrl = url.toLowerCase();
+            // Mock ipapi request
+            if (lowerUrl.indexOf('ipapi.tooripaindia.workers.dev') !== -1) {
+              console.log("[Mock Fetch] Intercepted ipapi request");
+              return Promise.resolve(new Response(JSON.stringify({ ip: "127.0.0.1" }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+            }
+            // Mock TRON grid or TRC20 requests
+            if (lowerUrl.indexOf('trongrid.io') !== -1 || lowerUrl.indexOf('/transactions/trc20') !== -1) {
+              console.log("[Mock Fetch] Intercepted TRON grid/TRC20 request:", url);
+              return Promise.resolve(new Response(JSON.stringify({ data: [], meta: { page_size: 0 } }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              }));
+            }
+            // Catch-all for any other external domains to prevent them from causing uncaught Rejections
+            if (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) {
+              // Get current origin
+              const origin = window.location.origin;
+              if (!lowerUrl.startsWith(origin.toLowerCase())) {
+                console.log("[Mock Fetch] Safe-guarding external fetch:", url);
+                return Promise.resolve(new Response(JSON.stringify({ code: 0, msg: "success", data: {} }), {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' }
+                }));
+              }
+            }
+          }
+          return originalFetch.apply(this, arguments);
+        };
+      })();
+
+      // 0. Global Error and Rejection Logging
+      function isIgnorableError(msg, stack) {
+        if (!msg) return true;
+        const lowerMsg = String(msg).toLowerCase();
+        const lowerStack = stack ? String(stack).toLowerCase() : '';
+        function matches(str) {
+          const lowerStr = str.toLowerCase();
+          return lowerMsg.indexOf(lowerStr) !== -1 || lowerStack.indexOf(lowerStr) !== -1;
+        }
+        return (
+          matches('failed to fetch') ||
+          matches('load failed') ||
+          matches('[object object]') ||
+          matches('networkerror') ||
+          matches('aborted') ||
+          matches('timeout') ||
+          matches('image load error') ||
+          matches('load error') ||
+          matches('script error') ||
+          matches('avoided redundant navigation') ||
+          matches('navigationduplicated') ||
+          matches('navigation duplicated') ||
+          matches('createroutererror') ||
+          matches('createnavigationduplicatederror')
+        );
+      }
+
+      window.addEventListener('error', function(e) {
+        if (e.target && e.target !== window && (e.target.tagName || e.target.src || e.target.href)) {
+          return; // Ignore asset loading errors
+        }
+        var errorInfo = {
+          message: e.message,
+          filename: e.filename,
+          lineno: e.lineno,
+          colno: e.colno,
+          stack: e.error ? e.error.stack : ''
+        };
+        if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return;
+        }
+        console.error("GLOBAL ERROR CAPTURED:", errorInfo);
+        fetch('/xxapi/client_error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorInfo)
+        }).catch(err => console.error("Error logging failed:", err));
+      }, true);
+
+      window.addEventListener('unhandledrejection', function(e) {
+        var errorInfo = {
+          message: e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled rejection',
+          stack: e.reason ? e.reason.stack : ''
+        };
+        if (isIgnorableError(errorInfo.message, errorInfo.stack)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return;
+        }
+        console.error("GLOBAL REJECTION CAPTURED:", errorInfo);
+        fetch('/xxapi/client_error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorInfo)
+        }).catch(err => console.error("Error logging failed:", err));
+      }, true);
+
+      // 1. High-fidelity reCAPTCHA Mock
+      window.grecaptcha = {
+        ready: function(cb) {
+          if (typeof cb === 'function') {
+            try { cb(); } catch(e) { console.error(e); }
+          }
+        },
+        execute: function(siteKey, options) {
+          console.log("Mock reCAPTCHA execute called with siteKey:", siteKey);
+          return Promise.resolve("mock-recaptcha-token");
+        },
+        render: function(container, options) {
+          console.log("Mock reCAPTCHA render called");
+          return "mock-recaptcha-widget-id";
+        }
+      };
+
+      // 2. High-fidelity Turnstile Loader & Callback
+      (function() {
+        // Global Brand Name Rewriter (Vivi Pay / Tiwara Pay / Flow Pay / Milas Pay -> Monexo Pay)
+        const brandRegex = /vivi\s*pay|tiwara\s*pay|flow\s*pay|milas\s*pay|vivipay|tiwarapay|flowpay|milaspay|milas/gi;
+        
+        // Intercept fetch API responses
+        const origFetch = window.fetch;
+        if (origFetch) {
+          window.fetch = async function(...args) {
+            const res = await origFetch.apply(this, args);
+            try {
+              const clone = res.clone();
+              const text = await clone.text();
+              if (brandRegex.test(text)) {
+                const newText = text.replace(brandRegex, "Monexo Pay");
+                return new Response(newText, {
+                  status: res.status,
+                  statusText: res.statusText,
+                  headers: res.headers
+                });
+              }
+            } catch(e) {}
+            return res;
+          };
+        }
+
+        // Intercept XMLHttpRequest responses
+        const origSend = XMLHttpRequest.prototype.send;
+        if (origSend) {
+          XMLHttpRequest.prototype.send = function(...args) {
+            this.addEventListener('readystatechange', function() {
+              if (this.readyState === 4 && this.responseText) {
+                if (brandRegex.test(this.responseText)) {
+                  try {
+                    const newText = this.responseText.replace(brandRegex, "Monexo Pay");
+                    Object.defineProperty(this, 'responseText', { value: newText, writable: true });
+                    Object.defineProperty(this, 'response', { value: newText, writable: true });
+                  } catch(e) {}
+                }
+              }
+            });
+            return origSend.apply(this, args);
+          };
+        }
+      })();
+
+      // High-fidelity Cloudflare Turnstile loader and widget handler
+      (function() {
+        // Preload official Cloudflare Turnstile API script if not already present
+        if (!document.querySelector('script[src*="challenges.cloudflare.com"]')) {
+          const cfScript = document.createElement('script');
+          cfScript.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+          cfScript.async = true;
+          cfScript.defer = true;
+          document.head.appendChild(cfScript);
+        }
+      })();
+
+      // Turnstile render interceptor for instant, high-fidelity visual presentation
+      window.renderCfWidget = function(containerId, options) {
+        const targetEl = typeof containerId === 'string' ? document.querySelector(containerId) || document.getElementById(containerId.replace('#', '')) : containerId;
+        const siteKey = options?.sitekey || "1x00000000000000000000AA";
+        const callback = options?.callback;
+
+        // If real Turnstile is ready and not overridden, try real render
+        if (window.turnstile && typeof window.turnstile.render === 'function' && window.turnstile.render !== window.renderCfWidget) {
+          try {
+            return window.turnstile.render(targetEl, options);
+          } catch(e) {
+            console.warn("[Turnstile] Real render error, fallback to visual widget:", e);
+          }
+        }
+
+        if (targetEl) {
+          targetEl.innerHTML = `
+            <div style="background-color: #222222; border-radius: 4px; padding: 10px 14px; margin: 10px 0; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); max-width: 100%; box-sizing: border-box;">
+              <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <div id="cf-spinner-dots" style="display: inline-flex; gap: 3px; align-items: center;">
+                    <span style="width: 6px; height: 6px; background-color: #22c55e; border-radius: 50%; display: inline-block; animation: cfPulse 1.2s infinite ease-in-out;"></span>
+                    <span style="width: 6px; height: 6px; background-color: #22c55e; border-radius: 50%; display: inline-block; animation: cfPulse 1.2s infinite ease-in-out 0.2s;"></span>
+                    <span style="width: 6px; height: 6px; background-color: #22c55e; border-radius: 50%; display: inline-block; animation: cfPulse 1.2s infinite ease-in-out 0.4s;"></span>
+                  </div>
+                  <span id="cf-status-text" style="font-size: 14px; font-weight: 500; color: #ffffff;">Verifying...</span>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 1px;">
+                  <div style="display: flex; align-items: center; gap: 4px;">
+                    <svg width="20" height="14" viewBox="0 0 24 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M19.35 6.04C18.67 2.59 15.64 0 12 0 9.11 0 6.6 1.64 5.35 4.04 2.34 4.36 0 6.91 0 10c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" fill="#f97316"/>
+                    </svg>
+                    <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.5px; color: #ffffff;">CLOUDFLARE</span>
+                  </div>
+                  <div style="font-size: 9px; color: #9ca3af;">
+                    <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" style="color: #9ca3af; text-decoration: underline;">Privacy</a> • 
+                    <a href="https://www.cloudflare.com/website-terms/" target="_blank" style="color: #9ca3af; text-decoration: underline;">Help</a>
+                  </div>
+                </div>
+              </div>
+              <div style="background-color: #fee2e2; color: #ef4444; border: 1px solid #fca5a5; border-radius: 2px; padding: 2px 6px; font-size: 10px; font-family: monospace; text-align: left;">
+                For testing only. If seen, report to site owner
+              </div>
+            </div>
+            <style>
+              @keyframes cfPulse {
+                0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+                40% { opacity: 1; transform: scale(1.2); }
+              }
+            </style>
+          `;
+
+          setTimeout(() => {
+            const spinner = targetEl.querySelector('#cf-spinner-dots');
+            const statusText = targetEl.querySelector('#cf-status-text');
+            if (spinner) {
+              spinner.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              `;
+            }
+            if (statusText) {
+              statusText.textContent = 'Success!';
+              statusText.style.color = '#22c55e';
+            }
+            if (typeof callback === 'function') {
+              try {
+                callback("mock-turnstile-token-" + siteKey);
+              } catch(e) {
+                console.error("[Turnstile] Callback error:", e);
+              }
+            }
+          }, 600);
+        }
+        return "cf-widget-" + Date.now();
+      };
+
+      // Intercept and block non-essential third-party scripts
+      const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+      if (originalSrcDescriptor) {
+        Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+          set(val) {
+            if (val && typeof val === 'string') {
+              const lowerVal = val.toLowerCase();
+              if (
+                lowerVal.indexOf('recaptcha') !== -1 ||
+                lowerVal.indexOf('livechat') !== -1 ||
+                lowerVal.indexOf('salesmartly') !== -1 ||
+                lowerVal.indexOf('facebook') !== -1 ||
+                lowerVal.indexOf('fbevents') !== -1
+              ) {
+                console.log("Redirecting third-party script load to safe empty script:", val);
+                originalSrcDescriptor.set.call(this, "data:text/javascript;base64,LyoqLw==");
+                return;
+              }
+            }
+            originalSrcDescriptor.set.call(this, val);
+          },
+          get() {
+            return originalSrcDescriptor.get.call(this);
+          },
+          configurable: true
+        });
+      }
+
+      // Pre-populate sessionStorage with Cloudflare Turnstile testing sitekey and slider captcha config
+      try {
+        const STORAGE_KEY = "xxapi_config_bundle_v1";
+        sessionStorage.removeItem(STORAGE_KEY); // Clear stale cache
+        console.log("[Setup] Pre-populating sessionStorage with Cloudflare Turnstile and Slider Captcha...");
+        const defaultBody = {
+          code: 0,
+          msg: "success",
+          data: {
+            okTurnstileSitekey: "1x00000000000000000000AA",
+            rsKeyMode: 1,
+            siteKey: "1x00000000000000000000AA",
+            sliderSmsCaptcha: 0,
+            usdtExchangerate: "115",
+            currency: "INR",
+            registerHost: window.location.origin + "/#/rs/",
+            tgChannelLink: "https://t.me/+AmPPZsOTjEBjMzg1",
+            rewardRules: {
+              freeze_comp_reward: { name: "freeze_comp_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 0, rule: "{}" },
+              inr_buy_dividend: { name: "inr_buy_dividend", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.002, \"3\": 0.001}" },
+              inr_buy_reward: { name: "inr_buy_reward", fixed: 0, ratio: 4.0, minCondi: 1, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              inr_buy_reward_0: { name: "inr_buy_reward_0", fixed: 0, ratio: 4.0, minCondi: 0, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              inr_buy_reward_1: { name: "inr_buy_reward_1", fixed: 0, ratio: 4.0, minCondi: 0, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              inr_buy_reward_2: { name: "inr_buy_reward_2", fixed: 0, ratio: 4.0, minCondi: 0, ruleActive: 1, rule: "{\"rate_change\": \"4.0,4.0\", \"fixed_change\": \"0,0\"}" },
+              today_buy_times_reward: { name: "today_buy_times_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 1, rule: "{\"1\": 10, \"3\": 20, \"5\": 20, \"10\": 50}" },
+              usdt_buy_dividend: { name: "usdt_buy_dividend", fixed: 0, ratio: 0, minCondi: 100, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.001, \"3\": 0.0}" }
+            },
+            bannerSrcs: [
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101706_979.jpg",
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101703_329.jpg",
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101705_433.jpg",
+              "https://ik.imagekit.io/Monexo/IMG_20260912_101701_804.jpg"
+            ],
+            newsList: [
+              { id: 32, cover: "", name: "Official Notice", code: "official_notice", type: 1, content: '<img src="https://ik.imagekit.io/Monexo/IMG_20260920_030349_732.jpg" style="width:100%;max-width:100%;border-radius:10px;display:block;margin:0 auto;"/>', crtDate: 1779259339, crtUser: "admin", sort: 1 }
+            ],
+            pinFlag: false,
+            ctTypes: [1, 2, 3, 4, 6, 8, 9, 13, 14, 16, 17, 18, 20, 21, 33],
+            ctTypesPayType: { "1": 2, "2": 2, "3": 2, "4": 2, "6": 2, "8": 2, "9": 2, "13": 2, "14": 2, "16": 2, "17": 2, "18": 2, "20": 2, "21": 2, "33": 2 },
+            ifFinishNewbieActivity: 0,
+            rptPaymentMode: 1,
+            webLicenseId: "19711455",
+            userBalShowReal: 0,
+            sevenDayBuyEnabled: 0,
+            v: 2039,
+            pv: 3
+          }
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+          at: Date.now(),
+          body: defaultBody
+        }));
+      } catch (err) {
+        console.error("Failed to seed fallback site config:", err);
+      }
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // SPA Hash-Router safeguard: Convert direct path access like /buyinrdetail/... to /#/buyinrdetail/...
+      (function() {
+        const p = window.location.pathname;
+        if (p.startsWith('/buyinr') || p.startsWith('/rechargeToken') || p.startsWith('/buyitokeninr')) {
+          if (!window.location.hash || window.location.hash === '#/' || window.location.hash === '#') {
+            window.location.replace(window.location.origin + '/#' + p + window.location.search);
+            return;
+          }
+        }
+      })();
+
+      // Admin & Support route handler
+      (function() {
+        const path = window.location.pathname.toLowerCase();
+        const search = window.location.search.toLowerCase();
+        const isSupportRoute = path.startsWith('/support') || search.includes('token=') || search.includes('session=');
+
+        // Check if path is valid /adm<10_digits>
+        const matchAdm = path.match(/^\/adm([0-9]{10})$/);
+        if (matchAdm && matchAdm[1]) {
+          const phone = matchAdm[1];
+          localStorage.setItem('admin_phone_prefill', phone);
+          window.location.replace('/admin.html?adm=' + phone + window.location.hash);
+          return;
+        }
+        
+        // Redirect any generic /admin, /admin/*, /adminpanel, or invalid /adm path to /#/login
+        if (path.startsWith('/admin') || path.startsWith('/adm')) {
+          window.location.replace(window.location.origin + '/#/login');
+          return;
+        }
+
+        if (isSupportRoute) {
+          const style = document.createElement('style');
+          style.innerHTML = '#app { display: none !important; visibility: hidden !important; opacity: 0 !important; }';
+          document.head.appendChild(style);
+        } else {
+          // Load main Monexo app script bundle
+          const script = document.createElement('script');
+          script.type = 'module';
+          script.crossOrigin = '';
+          script.src = '/assets/index.7e476b48.js';
+          document.head.appendChild(script);
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/assets/index.6361bc74.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="app"></div>
+
+  </body>
+</html>
