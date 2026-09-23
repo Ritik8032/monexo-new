@@ -1637,6 +1637,44 @@ function getCleanPhone(phone: string): { cleanPhone: string; formattedPhone: str
   return { cleanPhone, formattedPhone };
 }
 
+function extractPhoneFromReq(req: any): string {
+  if (!req) return '';
+  const body = req.body || {};
+  const query = req.query || {};
+  
+  let parsedBody: any = body;
+  if (typeof body === 'string') {
+    try {
+      parsedBody = querystring.parse(body);
+    } catch (e) {
+      parsedBody = {};
+    }
+  }
+
+  const keys = ['phone', 'mobile', 'mobileNo', 'phoneNo', 'phoneNumber', 'account', 'username', 'user', 'tel', 'loginPhone', 'sendtoken'];
+  for (const k of keys) {
+    if (parsedBody && parsedBody[k]) {
+      const val = String(parsedBody[k]).trim();
+      const digits = val.replace(/\D/g, '');
+      if (digits.length >= 10) return digits.slice(-10);
+    }
+    if (query && query[k]) {
+      const val = String(query[k]).trim();
+      const digits = val.replace(/\D/g, '');
+      if (digits.length >= 10) return digits.slice(-10);
+    }
+  }
+
+  // Fallback: search entire body or query string for any 10-digit phone number sequence
+  const bodyStr = typeof body === 'string' ? body : JSON.stringify(body || {});
+  const queryStr = JSON.stringify(query || {});
+  const combined = bodyStr + ' ' + queryStr;
+  const match = combined.match(/\b[6-9]\d{9}\b/);
+  if (match) return match[0];
+
+  return '';
+}
+
 function buildPhoneQuery(inputPhone: string) {
   const raw = String(inputPhone || '').trim();
   if (!raw) return { _id: null };
@@ -2093,24 +2131,22 @@ app.post('/xxapi/register', async (req, res) => {
 
 // SMS and Registration flow helpers
 app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (req, res) => {
-  console.log('[checkSmsNew] Called', req.body);
+  console.log('[checkSmsNew] Called body:', req.body, 'query:', req.query);
   try {
-    const { phone } = req.body || {};
-    if (!phone || String(phone).trim() === '') {
-      return res.json({ code: 400, msg: 'Phone number is required' });
-    }
-
-    const { cleanPhone } = getCleanPhone(phone);
+    const rawPhone = extractPhoneFromReq(req);
+    const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: 'Valid 10-digit mobile number is required' });
+      return res.json({ code: 400, msg: 'Phone number is required' });
     }
 
     console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
     await connectToDatabase();
 
     const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    if (existingUser) {
-      console.log(`[checkSmsNew] Phone ${cleanPhone} already registered.`);
+    const isRegisterCall = req.body?.isRegister || req.body?.type === 'register' || req.body?.scene === 'register' || (req.headers?.referer && (req.headers.referer.includes('/rs') || req.headers.referer.includes('/register')));
+
+    if (isRegisterCall && existingUser) {
+      console.log(`[checkSmsNew] Phone ${cleanPhone} already registered for register flow.`);
       return res.json({ code: 400, msg: 'Phone number is already registered. Please login.' });
     }
 
@@ -2119,8 +2155,12 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
 
     return res.json({
       code: 0,
-      msg: 'OTP sent successfully to mobile number',
-      data: {}
+      status: 200,
+      msg: 'success',
+      message: 'OTP sent successfully to mobile number',
+      data: {
+        sendtoken: `sendtoken-${cleanPhone}-${Date.now()}`
+      }
     });
   } catch (err: any) {
     console.error('[checkSmsNew Error]', err);
@@ -2132,8 +2172,9 @@ app.post('/xxapi/resetpassword', async (req, res) => {
   console.log('[resetpassword] Called', req.body);
   try {
     await connectToDatabase();
-    const { phone, password, oldPassword, sendtoken, smscode } = req.body;
-    const { cleanPhone } = getCleanPhone(phone);
+    const rawPhone = extractPhoneFromReq(req);
+    const { cleanPhone } = getCleanPhone(rawPhone);
+    const { password, oldPassword, smscode } = req.body || {};
     if (!cleanPhone) {
       return res.json({ code: 400, msg: 'Phone number is required' });
     }
@@ -2174,16 +2215,25 @@ app.post('/xxapi/resetpassword', async (req, res) => {
 });
 
 app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '/xxapi/getResetOtp'], async (req, res) => {
-  console.log('[getsendtken / Reset OTP] Called', req.body);
+  console.log('[getsendtken / Reset OTP] Called body:', req.body, 'query:', req.query);
   try {
-    const rawPhone = req.body?.phone || req.body?.mobile || req.body?.mobileNo || 'default';
-    if (!rawPhone || rawPhone === 'default') {
-      return res.json({ code: 400, msg: 'Phone number is required' });
+    let cleanPhone = extractPhoneFromReq(req);
+
+    // If phone not in body/query, try getting user from token
+    if (!cleanPhone || cleanPhone.length < 10) {
+      const user = await getUserByToken(req);
+      if (user && user.phone) {
+        cleanPhone = getCleanPhone(user.phone).cleanPhone;
+      }
     }
 
-    const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: 'Valid 10-digit mobile number is required' });
+      return res.json({
+        code: 0,
+        status: 200,
+        msg: 'success',
+        data: `sendtoken-default-${Date.now()}`
+      });
     }
 
     await connectToDatabase();
@@ -2198,7 +2248,9 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
 
     return res.json({
       code: 0,
-      msg: 'OTP sent successfully to registered phone number',
+      status: 200,
+      msg: 'success',
+      message: 'OTP sent successfully to registered phone number',
       data: `sendtoken-${cleanPhone}-${Date.now()}`
     });
   } catch (err: any) {
@@ -2208,17 +2260,14 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
 });
 
 app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], async (req, res) => {
-  console.log('[sendLoginSms] Called', req.body);
+  console.log('[sendLoginSms] Called body:', req.body, 'query:', req.query);
   try {
-    await connectToDatabase();
-    const { phone } = req.body;
-    if (!phone || String(phone).trim() === '') {
+    const cleanPhone = extractPhoneFromReq(req);
+    if (!cleanPhone || cleanPhone.length < 10) {
       return res.json({ code: 400, msg: 'Phone number is required' });
     }
-    const { cleanPhone } = getCleanPhone(phone);
-    if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: 'Valid 10-digit mobile number is required' });
-    }
+
+    await connectToDatabase();
 
     const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!registeredUser) {
