@@ -2141,10 +2141,54 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
     const rawPhone = extractPhoneFromReq(req);
     const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: 'Phone number is required' });
+      return res.json({ code: 400, msg: 'Please enter a valid 10-digit mobile number' });
     }
 
-    console.log(`[checkSmsNew] Validated pre-check for phone: ${cleanPhone}`);
+    const password = req.body?.password || req.query?.password || '';
+
+    await connectToDatabase();
+    const user = await User.findOne(buildPhoneQuery(cleanPhone));
+    
+    if (!user) {
+      console.log(`[checkSmsNew] User ${cleanPhone} does NOT exist.`);
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: 'User does not exist. Please register first.',
+        message: 'User does not exist. Please register first.'
+      });
+    }
+
+    if (user.isBlocked) {
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: 'Your account is blocked. Please contact customer support.'
+      });
+    }
+
+    // Verify Password before opening OTP fill popup
+    if (typeof password === 'string' && password.trim() !== '' && password !== '[object Object]') {
+      const isMatch = isPasswordMatch(password, user);
+      if (!isMatch) {
+        console.log(`[checkSmsNew] Password error for phone: ${cleanPhone}. Given: "${password}", DB: "${user.password}"`);
+        return res.json({
+          code: 400,
+          status: 400,
+          msg: 'Password error',
+          message: 'Password error'
+        });
+      }
+    } else {
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: 'Please enter password',
+        message: 'Please enter password'
+      });
+    }
+
+    console.log(`[checkSmsNew] ID & Password verified for ${cleanPhone}. Opening OTP popup.`);
 
     return res.json({
       code: 0,
@@ -3179,9 +3223,9 @@ app.get('/xxapi/config', async (req, res) => {
     code: 0,
     msg: "success",
     data: {
-      okTurnstileSitekey: "1x00000000000000000000AA",
-      rsKeyMode: 1,
-      siteKey: "1x00000000000000000000AA",
+      okTurnstileSitekey: "0",
+      rsKeyMode: 0,
+      siteKey: "0",
       sliderSmsCaptcha: 0,
       usdtExchangerate: usdtRate,
       trc20Address: trc20Addr,
@@ -3247,8 +3291,8 @@ app.get('/xxapi/simpConfig', async (req, res) => {
       siteName: "Monexo",
       logo: "favicon.ico",
       customerServiceUrl: "https://t.me/+AmPPZsOTjEBjMzg1",
-      okTurnstileSitekey: "1x00000000000000000000AA",
-      rsKeyMode: 1,
+      okTurnstileSitekey: "0",
+      rsKeyMode: 0,
       sliderSmsCaptcha: 0,
       payerTimeoutTime: 600
     }
@@ -11137,9 +11181,9 @@ app.get(['/rsCfg.json', '/public/rsCfg.json'], (req, res) => {
     code: 0,
     msg: "success",
     data: {
-      okTurnstileSitekey: "1x00000000000000000000AA",
-      rsKeyMode: 1,
-      siteKey: "1x00000000000000000000AA",
+      okTurnstileSitekey: "0",
+      rsKeyMode: 0,
+      siteKey: "0",
       antResetPassFlag: "0",
       sliderSmsCaptcha: 0,
       appDownloadUrl: "https://gtpbhzhildmyyzfwrmeu.supabase.co/storage/v1/object/sign/Monexo/monexopay.apk?token=eyJraWQiOiI4MmU5MWRjOC03Mzg4LTQ2ZDktYjM2Ni1iNzE0MmUxYWYzMTYiLCJhbGciOiJIUzUxMiJ9.eyJ1cmwiOiJNb25leG8vbW9uZXhvcGF5LmFwayIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3OTAwODEyODEsImV4cCI6MTgyMTYxNzI4MX0.EyZ0IxbriFgIXLRAqAVPTv-cNu5RBOcYGCswDgU9-lplTRIYGt0MM1sfvKEmhXzQMr0T1Qs4YNpRV68kvNGbcw",
