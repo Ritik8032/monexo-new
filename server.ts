@@ -5805,7 +5805,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
     // Create or locate the tool strictly for this partner type (typeNum)
     let tool;
     const toolId = ct_id || `tool-${typeNum}-${Date.now()}`;
-    tool = user.collectionTools.find(t => t.id === toolId || t.type === typeNum || t.ctType === typeNum || t.ct_type === typeNum);
+    tool = user.collectionTools.find(t => t.id === toolId || Number(t.type || t.ctType || t.ct_type) === typeNum);
 
     if (!tool) {
       tool = {
@@ -5821,13 +5821,14 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
         inSell: 1,
         ctGuide: "If you Change your upi id, please relink right now!",
         account: targetPhone,
-        upi: (tool && tool.savedUpi) ? tool.savedUpi : 'Pending verification',
+        upi: 'Pending verification',
         backup_upi: [],
         phone: targetPhone,
         pnname: pnname || "Merchant Partner",
         remark: "Verified partner",
         channelType: config.channelType,
-        engine: config.engine
+        engine: config.engine,
+        isNewDraft: true
       };
       user.collectionTools.push(tool);
     } else {
@@ -5857,9 +5858,6 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       tool.ct_type = typeNum;
       tool.state = 7; // 7 = waiting_authupi state while waiting for OTP verification
       tool.inSell = 1;
-      if (!tool.upi || tool.upi === 'Pending verification') {
-        tool.upi = tool.savedUpi || tool.upi || 'Pending verification';
-      }
       tool.channelType = config.channelType;
       tool.engine = config.engine;
       if (pnname) tool.pnname = pnname;
@@ -6528,7 +6526,9 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       }
 
       if (tool) {
-        if (tool.savedOriginalState) {
+        if (tool.isNewDraft) {
+          user.collectionTools = user.collectionTools.filter((t: any) => t.id !== tool.id);
+        } else if (tool.savedOriginalState) {
           tool.upi = tool.savedOriginalState.upi;
           tool.backup_upi = tool.savedOriginalState.backup_upi;
           tool.account = tool.savedOriginalState.account;
@@ -6537,6 +6537,7 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
           tool.state = tool.savedOriginalState.state;
           tool.status = tool.savedOriginalState.status;
           tool.inSell = tool.savedOriginalState.inSell;
+          delete tool.savedOriginalState;
         } else {
           if (tool.savedUpi) tool.upi = tool.savedUpi;
           if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
@@ -6562,7 +6563,9 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
     if (!upis || upis.length === 0) {
       console.warn(`[Automation API] No real UPI IDs returned from server for ${targetPhone}`);
       if (tool) {
-        if (tool.savedOriginalState) {
+        if (tool.isNewDraft) {
+          user.collectionTools = user.collectionTools.filter((t: any) => t.id !== tool.id);
+        } else if (tool.savedOriginalState) {
           tool.upi = tool.savedOriginalState.upi;
           tool.backup_upi = tool.savedOriginalState.backup_upi;
           tool.account = tool.savedOriginalState.account;
@@ -6571,6 +6574,7 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
           tool.state = tool.savedOriginalState.state;
           tool.status = tool.savedOriginalState.status;
           tool.inSell = tool.savedOriginalState.inSell;
+          delete tool.savedOriginalState;
         } else {
           if (tool.savedUpi) tool.upi = tool.savedUpi;
           if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
@@ -6630,6 +6634,10 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       if (upis && upis.length > 0) {
         tool.upi = upis[0];
       }
+      delete tool.isNewDraft;
+      delete tool.savedOriginalState;
+      delete tool.savedUpi;
+      delete tool.savedBackupUpi;
       tool.linkedPhone = targetPhone; // STORE EXACT VERIFIED LINKED PHONE NUMBER!
       tool.account = targetPhone;
       tool.phone = targetPhone;
