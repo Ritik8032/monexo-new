@@ -1955,7 +1955,7 @@ app.post('/xxapi/register', async (req, res) => {
       return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP.' });
     }
 
-    const uniqueToken = `token-${cleanPhone}-${crypto.randomBytes(8).toString('hex')}`;
+    const uniqueToken = crypto.randomBytes(16).toString('hex');
     let user = await User.findOne(buildPhoneQuery(cleanPhone));
 
     if (user) {
@@ -2175,7 +2175,7 @@ app.post('/xxapi/login', async (req, res) => {
       user.trustedDeviceId = cleanDeviceId;
     }
 
-    const uniqueToken = 'token-' + cleanPhone + '-' + crypto.randomBytes(8).toString('hex');
+    const uniqueToken = crypto.randomBytes(16).toString('hex');
     const ip = getClientIp(req);
     const userAgent = (req.headers && req.headers['user-agent']) || '';
     const { device, browser } = parseUserAgentServer(userAgent);

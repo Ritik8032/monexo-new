@@ -1660,7 +1660,7 @@ app.post("/xxapi/register", async (req, res) => {
     if (!isOtpValid) {
       return res.json({ code: 400, msg: "Incorrect OTP. Please enter valid 4-digit OTP." });
     }
-    const uniqueToken = `token-${cleanPhone}-${import_crypto.default.randomBytes(8).toString("hex")}`;
+    const uniqueToken = import_crypto.default.randomBytes(16).toString("hex");
     let user = await User.findOne(buildPhoneQuery(cleanPhone));
     if (user) {
       return res.json({ code: 400, msg: "Phone number is already registered. Please login." });
@@ -1847,7 +1847,7 @@ app.post("/xxapi/login", async (req, res) => {
     if (cleanDeviceId) {
       user.trustedDeviceId = cleanDeviceId;
     }
-    const uniqueToken = "token-" + cleanPhone + "-" + import_crypto.default.randomBytes(8).toString("hex");
+    const uniqueToken = import_crypto.default.randomBytes(16).toString("hex");
     const ip = getClientIp(req);
     const userAgent = req.headers && req.headers["user-agent"] || "";
     const { device, browser } = parseUserAgentServer(userAgent);
