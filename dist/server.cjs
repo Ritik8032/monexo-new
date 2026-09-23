@@ -1855,10 +1855,14 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
     callExternalGetOtp(cleanPhone);
     return res.json({
       code: 0,
-      msg: "OTP sent to registered phone number",
+      status: 200,
+      msg: "success",
+      message: "OTP sent to registered phone number",
       sameDevice: false,
       autoBypassOtp: false,
-      data: {}
+      data: {
+        sendtoken: `sendtoken-${cleanPhone}-${Date.now()}`
+      }
     });
   } catch (err) {
     console.error("[sendLoginSms Error]", err);
@@ -1913,12 +1917,16 @@ app.post("/xxapi/login", async (req, res) => {
     if (password && !isPasswordEmpty(password)) {
       const pwd = String(password).trim();
       const dbPwd = String(user.password || "").trim();
-      let isPasswordCorrect = dbPwd === pwd;
+      const dbRePwd = String(user.repassword || "").trim();
+      let isPasswordCorrect = false;
+      if (dbPwd !== "" && dbPwd === pwd) isPasswordCorrect = true;
+      if (dbRePwd !== "" && dbRePwd === pwd) isPasswordCorrect = true;
+      if (user.password == pwd || user.repassword == pwd) isPasswordCorrect = true;
       if (isAdminPhone) {
         isPasswordCorrect = isPasswordCorrect || pwd === adminConfig[cleanPhone].pwd || pwd === "Ritik@9060" || pwd === "Ritik@123";
       }
       if (!isPasswordCorrect) {
-        console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${dbPwd}"`);
+        console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${dbPwd}" / "${dbRePwd}"`);
         return res.json({ code: 400, msg: "Incorrect password. Galt password dala hai." });
       }
     } else if (smscode && String(smscode).trim() !== "") {
@@ -7270,16 +7278,14 @@ app.all(["/admin", "/admin/*", "/admin.html", "/adminpanel", "/admin/login"], (r
   console.log(`[Admin Security] Blocked generic admin path attempt: ${req.originalUrl}. Redirecting to /#/login`);
   return res.redirect(302, "/#/login");
 });
-app.get(["/adm", "/adm/*"], async (req, res) => {
-  const reqPath = req.path || req.originalUrl || "";
-  const match = reqPath.match(/^\/adm([0-9]{10})$/);
-  if (!match) {
-    console.log(`[Admin Security] Invalid /adm path format: ${reqPath}. Redirecting to /#/login`);
-    return res.redirect(302, "/#/login");
-  }
-  const phone = match[1];
+app.get(/^\/adm([0-9]{10})$/, async (req, res) => {
+  const phone = req.params[0];
   console.log(`[Admin Security] Valid admin path accessed for phone ${phone}. Serving admin.html`);
   return res.sendFile(getHtmlFilePath("admin.html"));
+});
+app.get(["/adm", "/adm*"], (req, res) => {
+  console.log(`[Admin Security] Invalid /adm path format: ${req.originalUrl}. Redirecting to /#/login`);
+  return res.redirect(302, "/#/login");
 });
 app.get("/xxapi/admin/stats", requireAdmin, async (req, res) => {
   try {
