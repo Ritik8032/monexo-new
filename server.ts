@@ -2272,19 +2272,42 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
   }
 });
 
-app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], async (req, res) => {
-  console.log('[sendLoginSms] Called body:', req.body, 'query:', req.query);
+app.post(['/xxapi/sendsms', '/xxapi/sendSms', '/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], async (req, res) => {
+  console.log('[sendsms / sendLoginSms] Called body:', req.body, 'query:', req.query);
   try {
-    const cleanPhone = extractPhoneFromReq(req);
+    const rawPhone = extractPhoneFromReq(req);
+    const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
       return res.json({ code: 400, msg: 'Phone number is required' });
     }
 
+    const purpose = String(req.body?.purpose || req.query?.purpose || '').toLowerCase();
     await connectToDatabase();
 
-    const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    if (!registeredUser) {
-      return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
+    // If purpose is registration ('reg' or 'register'):
+    if (purpose === 'reg' || purpose === 'register') {
+      const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
+      if (existingUser) {
+        console.log(`[sendsms] Registration check: Phone ${cleanPhone} is ALREADY registered.`);
+        return res.json({
+          code: 400,
+          status: 400,
+          msg: 'Register has existed',
+          message: 'Register has existed'
+        });
+      }
+    }
+
+    // For login or reset/forgot password, verify user exists
+    if (purpose === 'login' || purpose === 'reset' || purpose === 'forgot') {
+      const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
+      if (!registeredUser) {
+        return res.json({
+          code: 400,
+          status: 400,
+          msg: 'User does not exist. Please register first.'
+        });
+      }
     }
 
     await callExternalGetOtp(cleanPhone);
@@ -2293,7 +2316,7 @@ app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], asyn
       code: 0,
       status: 200,
       msg: 'success',
-      message: 'OTP sent to registered phone number',
+      message: 'OTP sent successfully to registered phone number',
       sameDevice: false,
       autoBypassOtp: false,
       data: {
@@ -2301,7 +2324,7 @@ app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], asyn
       }
     });
   } catch (err) {
-    console.error('[sendLoginSms Error]', err);
+    console.error('[sendsms Error]', err);
     return res.json({ code: 500, msg: 'Server error sending SMS' });
   }
 });
