@@ -2093,7 +2093,7 @@ app.post('/xxapi/sendLoginSms', async (req, res) => {
   console.log('[sendLoginSms] Called', req.body);
   try {
     await connectToDatabase();
-    const { phone, trustedDeviceId, clientId } = req.body;
+    const { phone } = req.body;
     if (!phone || String(phone).trim() === '') {
       return res.json({ code: 400, msg: 'Phone number is required' });
     }
@@ -2103,22 +2103,8 @@ app.post('/xxapi/sendLoginSms', async (req, res) => {
       return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
     }
 
-    const cleanDeviceId = String(trustedDeviceId || clientId || '').trim();
-    const isTrusted = registeredUser.trustedDeviceId && cleanDeviceId !== '' && (registeredUser.trustedDeviceId === cleanDeviceId || (cleanDeviceId.startsWith('td_fp_') && registeredUser.trustedDeviceId.includes(cleanDeviceId)));
-
-    if (isTrusted) {
-      console.log('[sendLoginSms] Same device verified for phone ' + cleanPhone + ' (' + cleanDeviceId + '). Bypassing OTP trigger.');
-      return res.json({
-        code: 0,
-        msg: 'Same device verified',
-        sameDevice: true,
-        autoBypassOtp: true,
-        data: {}
-      });
-    }
-
     callExternalGetOtp(cleanPhone).catch(err => console.error('[sendLoginSms OTP Error]', err));
-    console.log('[sendLoginSms] OTP sent for phone ' + cleanPhone + ' on new device (' + cleanDeviceId + ')');
+    console.log('[sendLoginSms] OTP sent to registered phone ' + cleanPhone);
     return res.json({
       code: 0,
       msg: 'OTP sent to registered phone number',
