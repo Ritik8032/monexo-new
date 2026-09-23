@@ -2140,17 +2140,8 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
     }
 
     console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
-    await connectToDatabase();
 
-    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    const isRegisterCall = req.body?.isRegister || req.body?.type === 'register' || req.body?.scene === 'register' || (req.headers?.referer && (req.headers.referer.includes('/rs') || req.headers.referer.includes('/register')));
-
-    if (isRegisterCall && existingUser) {
-      console.log(`[checkSmsNew] Phone ${cleanPhone} already registered for register flow.`);
-      return res.json({ code: 400, msg: 'Phone number is already registered. Please login.' });
-    }
-
-    // Dispatch OTP asynchronously for fast response
+    // Always dispatch OTP immediately so SMS is sent on register page
     callExternalGetOtp(cleanPhone);
 
     return res.json({
@@ -2236,14 +2227,7 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
       });
     }
 
-    await connectToDatabase();
-
-    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    if (!existingUser) {
-      console.log(`[getsendtken] User ${cleanPhone} not found for reset password.`);
-      return res.json({ code: 400, msg: 'User does not exist. Please enter a registered phone number.' });
-    }
-
+    // Always dispatch OTP immediately so SMS is sent for password reset
     callExternalGetOtp(cleanPhone);
 
     return res.json({

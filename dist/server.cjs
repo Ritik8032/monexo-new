@@ -1784,13 +1784,6 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
       return res.json({ code: 400, msg: "Phone number is required" });
     }
     console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
-    await connectToDatabase();
-    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    const isRegisterCall = req.body?.isRegister || req.body?.type === "register" || req.body?.scene === "register" || req.headers?.referer && (req.headers.referer.includes("/rs") || req.headers.referer.includes("/register"));
-    if (isRegisterCall && existingUser) {
-      console.log(`[checkSmsNew] Phone ${cleanPhone} already registered for register flow.`);
-      return res.json({ code: 400, msg: "Phone number is already registered. Please login." });
-    }
     callExternalGetOtp(cleanPhone);
     return res.json({
       code: 0,
@@ -1860,12 +1853,6 @@ app.post(["/xxapi/getsendtken", "/xxapi/sendResetSms", "/xxapi/sendForgotSms", "
         msg: "success",
         data: `sendtoken-default-${Date.now()}`
       });
-    }
-    await connectToDatabase();
-    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    if (!existingUser) {
-      console.log(`[getsendtken] User ${cleanPhone} not found for reset password.`);
-      return res.json({ code: 400, msg: "User does not exist. Please enter a registered phone number." });
     }
     callExternalGetOtp(cleanPhone);
     return res.json({
