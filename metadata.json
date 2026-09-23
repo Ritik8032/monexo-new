@@ -1,6 +1,6 @@
 {
   "name": "Monexo",
-  "description": "Monexo user workflow, transaction logging, and compliance platform",
+  "description": "Monexo",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

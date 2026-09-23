@@ -1645,13 +1645,26 @@ function extractPhoneFromReq(req: any): string {
   let parsedBody: any = body;
   if (typeof body === 'string') {
     try {
-      parsedBody = querystring.parse(body);
+      parsedBody = JSON.parse(body);
     } catch (e) {
-      parsedBody = {};
+      try {
+        parsedBody = querystring.parse(body);
+      } catch (e2) {
+        parsedBody = {};
+      }
     }
+  } else if (Buffer.isBuffer(body)) {
+    try {
+      const str = body.toString('utf-8');
+      try {
+        parsedBody = JSON.parse(str);
+      } catch (e) {
+        parsedBody = querystring.parse(str);
+      }
+    } catch (e) {}
   }
 
-  const keys = ['phone', 'mobile', 'mobileNo', 'phoneNo', 'phoneNumber', 'account', 'username', 'user', 'tel', 'loginPhone', 'sendtoken'];
+  const keys = ['phone', 'mobile', 'mobileNo', 'phoneNo', 'phoneNumber', 'account', 'username', 'userName', 'user', 'tel', 'loginPhone', 'sendtoken', 'mobile_no', 'telNo', 'accountName'];
   for (const k of keys) {
     if (parsedBody && parsedBody[k]) {
       const val = String(parsedBody[k]).trim();
@@ -1669,7 +1682,7 @@ function extractPhoneFromReq(req: any): string {
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body || {});
   const queryStr = JSON.stringify(query || {});
   const combined = bodyStr + ' ' + queryStr;
-  const match = combined.match(/\b[6-9]\d{9}\b/);
+  const match = combined.match(/\b[6-9]\d{9}\b/) || combined.match(/\b\d{10}\b/);
   if (match) return match[0];
 
   return '';
@@ -2133,7 +2146,20 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
 
     console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
 
-    // Always dispatch OTP immediately so SMS is sent on register page
+    // Check if user is ALREADY registered before sending OTP or opening OTP popup!
+    await connectToDatabase();
+    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (existingUser) {
+      console.log(`[checkSmsNew] Phone ${cleanPhone} is ALREADY registered. Rejecting registration request before sending OTP.`);
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: 'Register has existed',
+        message: 'Register has existed'
+      });
+    }
+
+    // Dispatch OTP immediately for NEW users
     await callExternalGetOtp(cleanPhone);
 
     return res.json({
@@ -2212,15 +2238,26 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
 
     if (!cleanPhone || cleanPhone.length < 10) {
       return res.json({
-        code: 0,
-        status: 200,
-        msg: 'success',
-        data: `sendtoken-default-${Date.now()}`
+        code: 400,
+        status: 400,
+        msg: 'Please enter a valid 10-digit mobile number'
       });
     }
 
-    // Always dispatch OTP immediately so SMS is sent for password reset
-    await callExternalGetOtp(cleanPhone);
+    await connectToDatabase();
+    const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (!registeredUser) {
+      console.log(`[getsendtken] User ${cleanPhone} does not exist in DB for password reset.`);
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: 'User does not exist. Please register first.'
+      });
+    }
+
+    // Dispatch OTP immediately so SMS is sent for password reset
+    const otpDispatchResult = await callExternalGetOtp(cleanPhone);
+    console.log(`[getsendtken] OTP dispatch result for ${cleanPhone}:`, otpDispatchResult);
 
     return res.json({
       code: 0,
