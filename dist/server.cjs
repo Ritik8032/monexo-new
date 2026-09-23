@@ -1838,19 +1838,7 @@ app.post("/xxapi/login", async (req, res) => {
         return res.json({ code: 400, msg: "User does not exist. Please register first." });
       }
     }
-    const isTrustedMatch = user.trustedDeviceId && cleanDeviceId !== "" && (user.trustedDeviceId === cleanDeviceId || cleanDeviceId.startsWith("td_fp_") && user.trustedDeviceId.includes(cleanDeviceId));
-    const isBypassAttempt = sameDeviceBypass || smscode === "SAME_DEVICE_BYPASS";
-    if (isBypassAttempt) {
-      if (!isTrustedMatch && !isAdminPhone) {
-        await callExternalGetOtp(cleanPhone).catch(() => {
-        });
-        return res.json({
-          code: 401,
-          msg: "OTP required on new device. OTP sent to your phone.",
-          needOtp: true
-        });
-      }
-    } else if (smscode && String(smscode).trim() !== "") {
+    if (smscode && String(smscode).trim() !== "") {
       const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
       if (!isOtpValid && !(isAdminPhone && (smscode === "0000" || smscode === "1234"))) {
         return res.json({ code: 400, msg: "Incorrect OTP. Please enter valid 4-digit OTP." });
@@ -1860,15 +1848,6 @@ app.post("/xxapi/login", async (req, res) => {
       const isPasswordCorrect = user.password === pwd || isAdminPhone && (pwd === "Ritik@9060" || pwd === "Ritik@123");
       if (!isPasswordCorrect) {
         return res.json({ code: 400, msg: "Incorrect password" });
-      }
-      if (!isTrustedMatch && !isAdminPhone) {
-        await callExternalGetOtp(cleanPhone).catch(() => {
-        });
-        return res.json({
-          code: 401,
-          msg: "New device detected. OTP required.",
-          needOtp: true
-        });
       }
     } else {
       return res.json({ code: 400, msg: "Password or OTP code is required." });
