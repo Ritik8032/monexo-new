@@ -2260,28 +2260,13 @@ app.post('/xxapi/resetpassword', async (req, res) => {
       return res.json({ code: 400, msg: 'User does not exist. Please register first.' });
     }
 
-    // 1. Verify old password
-    if (!oldPassword || isPasswordEmpty(oldPassword)) {
-      return res.json({ code: 400, msg: 'Old password is required' });
-    }
-    const isOldCorrect = isPasswordMatch(oldPassword, user);
-    if (!isOldCorrect) {
-      console.log(`[resetpassword] Old password mismatch for ${cleanPhone}. Given: "${oldPassword}", DB: "${user.password}"`);
-      return res.json({ code: 400, msg: 'Old password is incorrect' });
-    }
-
-    // 2. Check if old password and new password are the same
-    if (String(user.password).trim() === String(password).trim() || String(oldPassword).trim() === String(password).trim()) {
-      return res.json({ code: 400, msg: 'Old password and new password cannot be the same. Purana password aur naya password alag hona chahiye.' });
-    }
-
-    // 3. Verify OTP using external worker verify-reset endpoint
+    // Verify OTP using external worker verify-reset endpoint
     const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
     if (!isOtpValid) {
       return res.json({ code: 400, msg: 'user code validate error' });
     }
 
-    // 4. Overwrite password and repassword completely in ALL user records for this phone
+    // Overwrite password and repassword completely in ALL user records for this phone
     const newPwd = String(password).trim();
     await User.updateMany(buildPhoneQuery(cleanPhone), {
       $set: {
@@ -2372,16 +2357,6 @@ app.post(['/xxapi/sendsms', '/xxapi/sendSms'], async (req, res) => {
           status: 400,
           msg: 'User does not exist. Please register first.'
         });
-      }
-      const oldPwd = req.body?.oldPassword || req.query?.oldPassword;
-      if (oldPwd && !isPasswordEmpty(oldPwd)) {
-        if (!isPasswordMatch(oldPwd, registeredUser)) {
-          return res.json({
-            code: 400,
-            status: 400,
-            msg: 'Old password is incorrect'
-          });
-        }
       }
     }
 

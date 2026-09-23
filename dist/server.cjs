@@ -26,7 +26,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../../tmp/orig-repo/server.ts
+// server.ts
 var server_exports = {};
 __export(server_exports, {
   default: () => server_default
@@ -1888,17 +1888,6 @@ app.post("/xxapi/resetpassword", async (req, res) => {
     if (!user) {
       return res.json({ code: 400, msg: "User does not exist. Please register first." });
     }
-    if (!oldPassword || isPasswordEmpty(oldPassword)) {
-      return res.json({ code: 400, msg: "Old password is required" });
-    }
-    const isOldCorrect = isPasswordMatch(oldPassword, user);
-    if (!isOldCorrect) {
-      console.log(`[resetpassword] Old password mismatch for ${cleanPhone}. Given: "${oldPassword}", DB: "${user.password}"`);
-      return res.json({ code: 400, msg: "Old password is incorrect" });
-    }
-    if (String(user.password).trim() === String(password).trim() || String(oldPassword).trim() === String(password).trim()) {
-      return res.json({ code: 400, msg: "Old password and new password cannot be the same. Purana password aur naya password alag hona chahiye." });
-    }
     const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
     if (!isOtpValid) {
       return res.json({ code: 400, msg: "user code validate error" });
@@ -1980,16 +1969,6 @@ app.post(["/xxapi/sendsms", "/xxapi/sendSms"], async (req, res) => {
           status: 400,
           msg: "User does not exist. Please register first."
         });
-      }
-      const oldPwd = req.body?.oldPassword || req.query?.oldPassword;
-      if (oldPwd && !isPasswordEmpty(oldPwd)) {
-        if (!isPasswordMatch(oldPwd, registeredUser)) {
-          return res.json({
-            code: 400,
-            status: 400,
-            msg: "Old password is incorrect"
-          });
-        }
       }
     }
     console.log(`[sendsms] Dispatching OTP for phone: ${cleanPhone}, purpose: ${purpose}`);
