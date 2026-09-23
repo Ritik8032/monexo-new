@@ -2074,7 +2074,7 @@ app.post('/xxapi/register', async (req, res) => {
 
     const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
     if (!isOtpValid) {
-      return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP.' });
+      return res.json({ code: 400, msg: 'user code validate error' });
     }
 
     const uniqueToken = crypto.randomBytes(16).toString('hex');
@@ -2191,7 +2191,7 @@ app.post('/xxapi/resetpassword', async (req, res) => {
     const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
 
     if (!isOtpValid) {
-      return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP code.' });
+      return res.json({ code: 400, msg: 'user code validate error' });
     }
 
     // Check if old password and new password are the same
@@ -2363,12 +2363,12 @@ app.post('/xxapi/login', async (req, res) => {
 
       if (!isPasswordCorrect) {
         console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${dbPwd}" / "${dbRePwd}"`);
-        return res.json({ code: 400, msg: 'Incorrect password. Galt password dala hai.' });
+        return res.json({ code: 400, msg: 'wrong password' });
       }
     } else if (smscode && String(smscode).trim() !== '') {
       const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
       if (!isOtpValid && !(isAdminPhone && (smscode === '0000' || smscode === '1234'))) {
-        return res.json({ code: 400, msg: 'Incorrect OTP. Please enter valid 4-digit OTP.' });
+        return res.json({ code: 400, msg: 'user code validate error' });
       }
     } else {
       return res.json({ code: 400, msg: 'Password or OTP code is required.' });
