@@ -1792,18 +1792,7 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
     if (!cleanPhone || cleanPhone.length < 10) {
       return res.json({ code: 400, msg: "Phone number is required" });
     }
-    console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
-    await connectToDatabase();
-    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    if (existingUser) {
-      console.log(`[checkSmsNew] Phone ${cleanPhone} is ALREADY registered. Rejecting registration request.`);
-      return res.json({
-        code: 400,
-        status: 400,
-        msg: "Register has existed",
-        message: "Register has existed"
-      });
-    }
+    console.log(`[checkSmsNew] Validated pre-check for phone: ${cleanPhone}`);
     return res.json({
       code: 0,
       status: 200,

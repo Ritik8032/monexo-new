@@ -2144,22 +2144,8 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
       return res.json({ code: 400, msg: 'Phone number is required' });
     }
 
-    console.log(`[checkSmsNew] Validated request for phone: ${cleanPhone}`);
+    console.log(`[checkSmsNew] Validated pre-check for phone: ${cleanPhone}`);
 
-    // Check if user is ALREADY registered before allowing captcha to open
-    await connectToDatabase();
-    const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
-    if (existingUser) {
-      console.log(`[checkSmsNew] Phone ${cleanPhone} is ALREADY registered. Rejecting registration request.`);
-      return res.json({
-        code: 400,
-        status: 400,
-        msg: 'Register has existed',
-        message: 'Register has existed'
-      });
-    }
-
-    // Return success without sending OTP here (OTP will be sent when captcha completes and calls /xxapi/sendsms)
     return res.json({
       code: 0,
       status: 200,
