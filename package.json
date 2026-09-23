@@ -5,38 +5,40 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && (cp -r assets static icon images public favicon.ico index.html admin.html robots.txt rsCfg.json dist/ 2>/dev/null || true)",
-    "start": "node dist/server.cjs",
-    "preview": "node dist/server.cjs",
+    "build": "vite build && (cp -r assets static icon images public favicon.ico index.html admin.html robots.txt rsCfg.json dist/ 2>/dev/null || true)",
+    "start": "node server.ts",
+    "preview": "node server.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
-    "@tailwindcss/vite": "^4.1.14",
-    "@vitejs/plugin-react": "^5.0.4",
-    "autoprefixer": "^10.4.21",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
-    "esbuild": "^0.25.0",
     "express": "^4.21.2",
     "imagekit": "^6.0.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.546.0",
-    "mongoose": "^9.10.1",
+    "mongoose": "^9.10.2",
     "motion": "^12.23.24",
     "multer": "^2.4.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "serverless-http": "^4.0.0",
-    "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^8.3.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/multer": "^2.2.0",
-    "@types/node": "^22.14.0"
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
   }
 }

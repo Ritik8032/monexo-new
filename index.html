@@ -459,7 +459,8 @@
       (function() {
         const path = window.location.pathname.toLowerCase();
         const search = window.location.search.toLowerCase();
-        const isSupportRoute = path.startsWith('/support') || search.includes('token=') || search.includes('session=');
+        const hash = window.location.hash.toLowerCase();
+        const isSupportRoute = path.startsWith('/support') || hash.startsWith('#/support') || search.includes('supporttoken=') || search.includes('support_token=') || search.includes('support_session=');
 
         // Check if path is valid /adm<10_digits>
         const matchAdm = path.match(/^\/adm([0-9]{10})$/);

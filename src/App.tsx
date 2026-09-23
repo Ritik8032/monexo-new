@@ -86,21 +86,21 @@ export default function App() {
     const hash = window.location.hash;
 
     const urlParams = new URLSearchParams(search);
-    let token = urlParams.get('token') || urlParams.get('session');
+    let token = urlParams.get('supportToken') || urlParams.get('support_session');
 
     if (!token && hash && hash.includes('?')) {
       const hashParams = new URLSearchParams(hash.substring(hash.indexOf('?')));
-      token = hashParams.get('token') || hashParams.get('session');
+      token = hashParams.get('supportToken') || hashParams.get('support_session') || hashParams.get('token');
     }
 
-    if (!token && path.startsWith('/support/')) {
+    if (!token && path.startsWith('/support')) {
       const parts = path.split('/').filter(Boolean);
       if (parts.length >= 2 && parts[1]) {
         token = parts[1];
       }
     }
 
-    const isSupportRoute = path.startsWith('/support') || hash.toLowerCase().includes('support') || Boolean(token) || search.toLowerCase().includes('token=') || search.toLowerCase().includes('session=');
+    const isSupportRoute = path.startsWith('/support') || hash.toLowerCase().startsWith('#/support') || search.toLowerCase().includes('supporttoken=') || search.toLowerCase().includes('support_session=');
 
     return { isSupportRoute, token };
   };
