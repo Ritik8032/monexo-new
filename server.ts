@@ -1049,15 +1049,15 @@ function getNormalizedCtType(ct_type: any): number {
     return ct_type;
   }
   const str = String(ct_type).trim().toLowerCase();
-  if (str.includes("amazon") || str === "33" || str === "-10") return -10;
+  if (str.includes("amazon") || str.includes("@apl") || str === "33" || str === "-10") return -10;
   if (str.includes("freecharge") || str === "3" || str === "5" || str === "2") return 2;
-  if (str.includes("mobikwik") || str === "4") return 4;
+  if (str.includes("mobikwik") || str.includes("@ikwik") || str === "4") return 4;
   if (str.includes("phonepe") && str.includes("business")) return 14;
-  if (str.includes("phonepe") || str === "1") return 1;
+  if (str.includes("phonepe") || str.includes("@ybl") || str.includes("@ibl") || str.includes("@axl") || str === "1") return 1;
   if (str.includes("paytm") && str.includes("business")) return 16;
-  if (str.includes("paytm") || str === "8" || str === "9") return 8;
+  if (str.includes("paytm") || str.includes("@pytm") || str === "8" || str === "9") return 8;
   if (str.includes("navi") || str === "13" || str === "20" || str === "21") return 13;
-  if (str.includes("supermoney") || str === "17") return 17;
+  if (str.includes("supermoney") || str.includes("@superyes") || str === "17") return 17;
   if (str.includes("bharatpe") || str === "18") return 18;
   const num = parseInt(str, 10);
   return isNaN(num) ? 8 : num;
@@ -5972,6 +5972,10 @@ async function healAndGetCleanTools(user) {
     const isBuyAllowed = buyAllowedTypes.includes(Number(typeVal));
     const onlyPaymentFlagVal = isBuyAllowed ? 3 : 2;
 
+    const rawMob = t.linkedPhone || t.phone || t.account || user.phone || '';
+    const cleanMobile = String(rawMob).replace(/@.*/, '').replace(/\D/g, '').slice(-10) || String(user.phone || '').replace(/\D/g, '').slice(-10);
+    const partnerName = mapCtTypeToName(typeVal);
+
     cleanTools.push({
       ...t,
       id: toolIdVal,
@@ -5982,11 +5986,19 @@ async function healAndGetCleanTools(user) {
       insell: inSellVal,
       onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
-      account: t.linkedPhone || t.account || finalUpi || user.phone,
+      account: cleanMobile,
+      phone: cleanMobile,
+      linkedPhone: cleanMobile,
+      pnname: partnerName,
+      remark: partnerName,
+      text: partnerName,
+      name: partnerName,
+      channelName: partnerName,
+      partnerName: partnerName,
+      providerName: partnerName,
       ctType: typeVal,
       ct_type: typeVal,
-      type: typeVal,
-      text: mapCtTypeToName(typeVal)
+      type: typeVal
     });
   }
   
@@ -6169,6 +6181,40 @@ app.post('/xxapi/collectiontool', async (req, res) => {
     console.error('[Zoopay] collectiontool link error:', err);
     return res.json({ code: 0, msg: 'success' }); // Return success so user is not blocked
   }
+});
+
+// Primary UPI selection endpoint
+app.post(['/xxapi/selectUpi', '/xxapi/collectiontool/selectUpi', '/xxapi/collectiontool/select'], async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+
+  const { id, ct_id, ctid, upi, upi_id, selectedUpi } = req.body || {};
+  const targetToolId = id || ct_id || ctid;
+  const targetUpi = String(upi || upi_id || selectedUpi || '').trim();
+
+  if (!targetUpi || !targetUpi.includes('@')) {
+    return res.json({ code: 400, msg: 'Valid UPI ID required' });
+  }
+
+  if (!user.collectionTools) user.collectionTools = [];
+  let tool = findUserTool(user.collectionTools, targetToolId);
+  if (!tool) {
+    tool = user.collectionTools.find((t: any) => t.backup_upi && Array.isArray(t.backup_upi) && t.backup_upi.includes(targetUpi));
+  }
+
+  if (tool) {
+    tool.upi = targetUpi; // Set active primary UPI for selling!
+    if (!tool.backup_upi || !tool.backup_upi.includes(targetUpi)) {
+      if (!tool.backup_upi) tool.backup_upi = [];
+      tool.backup_upi.unshift(targetUpi);
+    }
+    user.markModified('collectionTools');
+    await user.save();
+    console.log(`[UPI Select] User ${user.phone} selected primary UPI: ${targetUpi} for tool ${tool.id}`);
+    return res.json({ code: 0, msg: 'success', data: { selectedUpi: targetUpi, tool } });
+  }
+
+  return res.json({ code: 404, msg: 'UPI Tool not found' });
 });
 
 const userCancelledOrdersSet = new Set<string>();
@@ -7305,19 +7351,29 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
     }
 
     // Update tool state to ready and save exact linked phone number!
-    const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
+    const normCtType = getNormalizedCtType(ct_type || user.zoopayUpiType);
+    const partnerName = mapCtTypeToName(normCtType);
+    const cleanMobile = String(targetPhone).replace(/@.*/, '').replace(/\D/g, '').slice(-10) || String(user.phone || '').replace(/\D/g, '').slice(-10);
+    const primarySelectedUpi = upis[0];
+
     if (!tool) {
       tool = {
-        id: pk || `tool-${Date.now()}`,
-        type: typeNum,
-        ctType: typeNum,
-        ct_type: typeNum,
-        account: targetPhone,
-        phone: targetPhone,
-        linkedPhone: targetPhone,
-        pnname: user.phone || 'Merchant Partner',
-        upi: upis[0],
-        backup_upi: upis || [],
+        id: pk || `tool-${normCtType}-${cleanMobile}`,
+        type: normCtType,
+        ctType: normCtType,
+        ct_type: normCtType,
+        account: cleanMobile,
+        phone: cleanMobile,
+        linkedPhone: cleanMobile,
+        pnname: partnerName,
+        remark: partnerName,
+        text: partnerName,
+        name: partnerName,
+        partnerName: partnerName,
+        channelName: partnerName,
+        providerName: partnerName,
+        upi: primarySelectedUpi,
+        backup_upi: upis || [primarySelectedUpi],
         state: 2,
         status: 1,
         inSell: 1,
@@ -7334,16 +7390,24 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
       tool.inSell = 1;
       tool.onlyPaymentFlag = 3;
       tool.backup_upi = upis;
-      if (upis && upis.length > 0) {
-        tool.upi = upis[0];
-      }
+      tool.upi = primarySelectedUpi;
+      tool.type = normCtType;
+      tool.ctType = normCtType;
+      tool.ct_type = normCtType;
+      tool.pnname = partnerName;
+      tool.remark = partnerName;
+      tool.text = partnerName;
+      tool.name = partnerName;
+      tool.partnerName = partnerName;
+      tool.channelName = partnerName;
+      tool.providerName = partnerName;
       delete tool.isNewDraft;
       delete tool.savedOriginalState;
       delete tool.savedUpi;
       delete tool.savedBackupUpi;
-      tool.linkedPhone = targetPhone; // STORE EXACT VERIFIED LINKED PHONE NUMBER!
-      tool.account = targetPhone;
-      tool.phone = targetPhone;
+      tool.linkedPhone = cleanMobile;
+      tool.account = cleanMobile;
+      tool.phone = cleanMobile;
       tool.channelType = config.channelType;
       tool.engine = config.engine;
       tool.verifiedAt = Date.now();
@@ -9345,7 +9409,7 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
             inSell: 1,
             state: 2,
             type: 1,
-            name: 'Zoopay Verified UPI',
+            name: mapCtTypeToName(getNormalizedCtType(zUpi)),
             ctime: user.createdAt
           });
         }
@@ -12232,7 +12296,7 @@ async function getFullUserContextForAi(userId: string) {
 
     // 2. From zoopayUpis
     if (Array.isArray(user.zoopayUpis)) {
-      user.zoopayUpis.forEach((zUpi: string) => addUpi(zUpi, user.fullName, 'Zoopay Verified UPI', 'Active'));
+      user.zoopayUpis.forEach((zUpi: string) => addUpi(zUpi, user.fullName, mapCtTypeToName(getNormalizedCtType(zUpi)), 'Active'));
     }
 
     // 3. From upiDetails
