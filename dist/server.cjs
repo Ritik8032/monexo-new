@@ -2896,30 +2896,34 @@ var getNewbieUserData = async (req) => {
       } catch (e) {
       }
     }
+    const userIds = [user._id, user._id ? user._id.toString() : ""].filter(Boolean);
+    const userPhones = [user.phone, user.mobileNo].filter(Boolean);
     const boughtTxs = await Transaction.find({
       $or: [
-        { userId: user._id },
-        { phone: user.phone },
-        ...user.mobileNo ? [{ phone: user.mobileNo }] : []
+        { userId: { $in: userIds } },
+        { buyerUserId: { $in: userIds } },
+        { phone: { $in: userPhones } },
+        { buyerPhone: { $in: userPhones } }
       ],
       payer_status: 3,
       type: { $ne: "sell" }
     });
-    totalBought = boughtTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+    totalBought = boughtTxs.reduce((sum, t) => sum + Number(t.amount || t.realAmount || 0), 0);
     user.newbieParams = JSON.stringify(userParams);
     user.markModified("newbieParams");
     await user.save().catch(() => {
     });
   }
-  const rules = buildNewbieRules(userParams, totalBought, hasLinkedUpi);
+  const cappedBought = Math.min(totalBought, 1e3);
+  const rules = buildNewbieRules(userParams, cappedBought, hasLinkedUpi);
   let isDone = 1;
   if (user && (user.newbieClaimed === true || user.newbieDone === "claimed" || user.newbieDone === 2)) {
     isDone = 2;
   }
-  return { user, userParams, rules, isDone, totalBought };
+  return { user, userParams, rules, isDone, totalBought, cappedBought };
 };
 app.get("/xxapi/newbieDayStep/init", async (req, res) => {
-  const { userParams, rules, isDone, totalBought } = await getNewbieUserData(req);
+  const { userParams, rules, isDone, cappedBought } = await getNewbieUserData(req);
   return res.json({
     code: 0,
     msg: "success",
@@ -2929,12 +2933,12 @@ app.get("/xxapi/newbieDayStep/init", async (req, res) => {
       guides: rules,
       allDone: allTasksDone,
       finishNewbie: isDone,
-      buyToken: String(totalBought)
+      buyToken: String(cappedBought)
     }
   });
 });
 app.get("/xxapi/newbieStepTotal/init", async (req, res) => {
-  const { userParams, rules, isDone, totalBought } = await getNewbieUserData(req);
+  const { userParams, rules, isDone, cappedBought } = await getNewbieUserData(req);
   return res.json({
     code: 0,
     msg: "success",
@@ -2945,7 +2949,7 @@ app.get("/xxapi/newbieStepTotal/init", async (req, res) => {
       guides: rules,
       tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
       newbieReward: 200,
-      buyToken: String(totalBought),
+      buyToken: String(cappedBought),
       allDone: allTasksDone,
       finishNewbie: isDone
     }
@@ -7565,7 +7569,7 @@ app.get("/xxapi/news/code/:code", (req, res) => {
   });
 });
 app.get("/xxapi/bguide/guides", async (req, res) => {
-  const { userParams, rules, isDone } = await getNewbieUserData(req);
+  const { userParams, rules, isDone, cappedBought } = await getNewbieUserData(req);
   return res.json({
     code: 0,
     msg: "success",
@@ -7575,7 +7579,7 @@ app.get("/xxapi/bguide/guides", async (req, res) => {
       guides: rules,
       tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
       newbieReward: 200,
-      buyToken: "0",
+      buyToken: String(cappedBought),
       finishNewbie: isDone,
       activityRecord: {
         done: isDone,
