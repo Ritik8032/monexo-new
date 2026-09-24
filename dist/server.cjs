@@ -921,38 +921,42 @@ async function getUniqueOwnInviteCode() {
   }
   return generateAlphanumericInviteCode();
 }
+function getNormalizedCtType(ct_type) {
+  if (ct_type === void 0 || ct_type === null) return 8;
+  if (typeof ct_type === "number") {
+    if (ct_type === 9) return 8;
+    if (ct_type === 3) return 2;
+    if (ct_type === 33) return -10;
+    return ct_type;
+  }
+  const str = String(ct_type).trim().toLowerCase();
+  if (str.includes("amazon") || str === "33" || str === "-10") return -10;
+  if (str.includes("freecharge") || str === "3" || str === "5" || str === "2") return 2;
+  if (str.includes("mobikwik") || str === "4") return 4;
+  if (str.includes("phonepe") && str.includes("business")) return 14;
+  if (str.includes("phonepe") || str === "1") return 1;
+  if (str.includes("paytm") && str.includes("business")) return 16;
+  if (str.includes("paytm") || str === "8" || str === "9") return 8;
+  if (str.includes("navi") || str === "13" || str === "20" || str === "21") return 13;
+  if (str.includes("supermoney") || str === "17") return 17;
+  if (str.includes("bharatpe") || str === "18") return 18;
+  const num = parseInt(str, 10);
+  return isNaN(num) ? 8 : num;
+}
 function mapCtTypeToUpiType(ct_type) {
-  if (!ct_type) return "phonepe";
-  const typeStr = String(ct_type).trim().toLowerCase();
-  if (typeStr.includes("amazon") || typeStr === "33") return "amazon";
-  if (typeStr.includes("freecharge") || typeStr === "3" || typeStr === "2") return "freecharge";
-  if (typeStr.includes("mobikwik") || typeStr === "4") return "mobikwik";
-  if (typeStr.includes("phonepe") && typeStr.includes("business")) return "phonepebusiness";
-  if (typeStr.includes("phonepe") || typeStr === "1") return "phonepe";
-  if (typeStr.includes("paytm") && typeStr.includes("business")) return "paytmbusiness";
-  if (typeStr.includes("paytm") || typeStr === "8" || typeStr === "9") return "paytm";
-  if (typeStr.includes("navi") || typeStr === "13" || typeStr === "20" || typeStr === "21") return "navi";
-  if (typeStr.includes("supermoney") || typeStr === "17") return "supermoney";
-  if (typeStr.includes("bharatpe") || typeStr === "18") return "bharatpebusiness";
-  const typeNum = Number(ct_type);
-  switch (typeNum) {
+  const norm = getNormalizedCtType(ct_type);
+  switch (norm) {
     case 1:
       return "phonepe";
     case 2:
       return "freecharge";
-    case 3:
-      return "freecharge";
     case 4:
       return "mobikwik";
     case 8:
-    case 9:
       return "paytm";
     case 13:
-    case 20:
-    case 21:
       return "navi";
     case 14:
-    case 19:
       return "phonepebusiness";
     case 16:
       return "paytmbusiness";
@@ -960,44 +964,26 @@ function mapCtTypeToUpiType(ct_type) {
       return "supermoney";
     case 18:
       return "bharatpebusiness";
-    case 33:
+    case -10:
       return "amazon";
     default:
-      return "phonepe";
+      return "paytm";
   }
 }
 function mapCtTypeToName(ct_type) {
-  if (!ct_type) return "PhonePe";
-  const typeStr = String(ct_type).trim().toLowerCase();
-  if (typeStr.includes("amazon") || typeStr === "33") return "Amazon Pay";
-  if (typeStr.includes("freecharge") || typeStr === "3" || typeStr === "2") return "Freecharge";
-  if (typeStr.includes("mobikwik") || typeStr === "4") return "MobiKwik";
-  if (typeStr.includes("phonepe") && typeStr.includes("business")) return "PhonePeBusiness";
-  if (typeStr.includes("phonepe") || typeStr === "1") return "PhonePe";
-  if (typeStr.includes("paytm") && typeStr.includes("business")) return "PaytmBusiness";
-  if (typeStr.includes("paytm") || typeStr === "8" || typeStr === "9") return "Paytm";
-  if (typeStr.includes("navi") || typeStr === "13" || typeStr === "20" || typeStr === "21") return "Navi";
-  if (typeStr.includes("supermoney") || typeStr === "17") return "SuperMoney";
-  if (typeStr.includes("bharatpe") || typeStr === "18") return "BharatPeBusiness";
-  const typeNum = Number(ct_type);
-  switch (typeNum) {
+  const norm = getNormalizedCtType(ct_type);
+  switch (norm) {
     case 1:
       return "PhonePe";
     case 2:
       return "Freecharge";
-    case 3:
-      return "Freecharge";
     case 4:
       return "MobiKwik";
     case 8:
-    case 9:
       return "Paytm";
     case 13:
-    case 20:
-    case 21:
       return "Navi";
     case 14:
-    case 19:
       return "PhonePeBusiness";
     case 16:
       return "PaytmBusiness";
@@ -1005,47 +991,31 @@ function mapCtTypeToName(ct_type) {
       return "SuperMoney";
     case 18:
       return "BharatPeBusiness";
-    case 33:
+    case -10:
       return "Amazon Pay";
     default:
-      return "PhonePe";
+      return "Paytm";
   }
 }
 function mapCtTypeToPlatform(ct_type) {
-  if (!ct_type) return 3;
-  const typeStr = String(ct_type).trim().toLowerCase();
-  if (typeStr.includes("freecharge") || typeStr === "3" || typeStr === "2") return 1;
-  if (typeStr.includes("mobikwik") || typeStr === "4") return 2;
-  if (typeStr.includes("phonepe")) return 3;
-  if (typeStr.includes("paytm")) return 4;
-  if (typeStr.includes("navi")) return 8;
-  if (typeStr.includes("supermoney")) return 17;
-  if (typeStr.includes("bharatpe")) return 18;
-  const typeNum = Number(ct_type);
-  switch (typeNum) {
+  const norm = getNormalizedCtType(ct_type);
+  switch (norm) {
     case 1:
       return 3;
     // PhonePe
     case 2:
       return 1;
-    // Freecharge in bundle
-    case 3:
-      return 1;
     // Freecharge
     case 4:
       return 2;
-    // MobiKwik in bundle
+    // MobiKwik
     case 8:
-    case 9:
       return 4;
     // Paytm
     case 13:
-    case 20:
-    case 21:
       return 8;
     // Navi
     case 14:
-    case 19:
       return 3;
     // PhonePe Business
     case 16:
@@ -1057,11 +1027,11 @@ function mapCtTypeToPlatform(ct_type) {
     case 18:
       return 18;
     // BharatPe Business
-    case 33:
-      return 3;
+    case -10:
+      return 18;
     // Amazon Pay
     default:
-      return 3;
+      return 4;
   }
 }
 function isPaytmTool(ctType, toolName, upi) {
@@ -2639,44 +2609,78 @@ app.post("/xxapi/authupi", async (req, res) => {
   }
 });
 app.get(["/xxapi/upidetail/:id", "/xxapi/upidetail"], async (req, res) => {
-  const upi = String(req.params.id || req.query.vpa || req.query.upi || "").trim();
-  if (upi && upi.includes("@")) {
-    const name = await getVerifiedUpiName(upi);
-    const user = await User.findOne({
+  const paramId = String(req.params.id || req.query.vpa || req.query.upi || req.query.id || req.query.ctid || "").trim();
+  const user = await getUserByToken(req);
+  let upi = "";
+  let tool = null;
+  if (paramId && paramId.includes("@") && paramId !== "Pending verification") {
+    upi = paramId;
+  }
+  if (user && user.collectionTools && user.collectionTools.length > 0) {
+    tool = user.collectionTools.find(
+      (t) => t && (t.id === paramId || t._id === paramId || t.upi === paramId || t.account === paramId || upi && (t.upi === upi || t.account === upi))
+    );
+  }
+  if (!tool && paramId) {
+    const foundUser = await User.findOne({
       $or: [
+        { "collectionTools.id": paramId },
+        { "collectionTools.upi": paramId },
         { "collectionTools.upi": upi },
+        { "collectionTools.account": paramId },
         { "collectionTools.account": upi }
       ]
     });
-    let tool = user && user.collectionTools ? user.collectionTools.find((t) => t && (t.upi === upi || t.account === upi)) : null;
-    let ctType = tool ? tool.ctType || tool.type || tool.ct_type : null;
-    if (!ctType) {
-      const lowerUpi = upi.toLowerCase();
-      if (lowerUpi.includes("@ybl") || lowerUpi.includes("@axl") || lowerUpi.includes("@ibl") || lowerUpi.includes("@phonepe")) ctType = 1;
-      else if (lowerUpi.includes("@paytm")) ctType = 2;
-      else if (lowerUpi.includes("@ok") || lowerUpi.includes("@gpay")) ctType = 3;
-      else if (lowerUpi.includes("@mobikwik") || lowerUpi.includes("@ikwik")) ctType = 4;
-      else if (lowerUpi.includes("@freecharge")) ctType = 5;
-      else if (lowerUpi.includes("@airtel")) ctType = -6;
-      else if (lowerUpi.includes("@bharatpe")) ctType = 8;
-      else if (lowerUpi.includes("@amazon") || lowerUpi.includes("@apl")) ctType = -10;
-      else if (lowerUpi.includes("@bhim")) ctType = -11;
-      else if (lowerUpi.includes("@moneyview")) ctType = -15;
-      else ctType = 1;
+    if (foundUser && foundUser.collectionTools) {
+      tool = foundUser.collectionTools.find(
+        (t) => t && (t.id === paramId || t.upi === paramId || t.account === paramId || upi && (t.upi === upi || t.account === upi))
+      );
     }
-    const stateVal = tool ? tool.state ?? 1 : 1;
-    const isOnline = stateVal === 1 || stateVal === 2;
-    const inSellVal = tool ? tool.inSell !== void 0 ? tool.inSell : isOnline ? 1 : 0 : isOnline ? 1 : 0;
-    const statusVal = tool ? tool.status ?? 1 : 1;
-    const receivingVal = tool ? tool.receiving || (isOnline ? "1" : "0") : isOnline ? "1" : "0";
-    const secLimitVal = tool ? tool.secLimit || 0 : 0;
+  }
+  if (tool && !upi && tool.upi && tool.upi.includes("@")) {
+    upi = tool.upi;
+  }
+  let ctType = tool ? tool.ctType || tool.type || tool.ct_type : null;
+  if (!ctType && paramId) {
+    ctType = getNormalizedCtType(paramId);
+  }
+  ctType = getNormalizedCtType(ctType || 8);
+  let toolName = mapCtTypeToName(ctType);
+  let logoUrl = "https://ik.imagekit.io/MonexoCS/paytm.png";
+  if (ctType === 1 || ctType === 14 || ctType === 19) {
+    logoUrl = "https://ik.imagekit.io/MonexoCS/phonepe.png";
+  } else if (ctType === 8 || ctType === 9 || ctType === 16) {
+    logoUrl = "https://ik.imagekit.io/MonexoCS/paytm.png";
+  } else if (ctType === 4 || ctType === 2) {
+    logoUrl = "/assets/mobikwik.png";
+  } else if (ctType === 3 || ctType === 5) {
+    logoUrl = "/assets/freecharge.png";
+  } else if (ctType === 13 || ctType === 20 || ctType === 21) {
+    logoUrl = "/assets/navi.png";
+  } else if (ctType === 18) {
+    logoUrl = "/assets/bharatpe.png";
+  } else if (ctType === 33 || ctType === -10) {
+    logoUrl = "/assets/amazon.png";
+  }
+  let verifiedName = toolName;
+  if (upi && upi.includes("@") && upi !== "Pending verification") {
+    verifiedName = await getVerifiedUpiName(upi, toolName);
+  } else if (tool && tool.pnname) {
+    verifiedName = tool.pnname;
+  }
+  const stateVal = tool ? tool.state ?? 2 : 2;
+  const statusVal = tool ? tool.status ?? 1 : 1;
+  const inSellVal = tool ? tool.inSell ?? 1 : 1;
+  const receivingVal = "1";
+  const secLimitVal = 0;
+  let mappedOrders = [];
+  if (upi && upi.includes("@")) {
     const buyTxs = await Transaction.find({
       payee_bank_account: upi,
       type: { $in: ["recharge", "buy", "rechargeToken", "BUY", "Buy"] },
       orderType: { $ne: "sell" }
     }).sort({ ctime: -1 }).limit(30);
     const seenOrders = /* @__PURE__ */ new Set();
-    const mappedOrders = [];
     for (const t of buyTxs) {
       const cleanRpt = String(t.rptNo || "").replace(/^SELL_/i, "").trim();
       if (!cleanRpt || seenOrders.has(cleanRpt)) continue;
@@ -2692,28 +2696,35 @@ app.get(["/xxapi/upidetail/:id", "/xxapi/upidetail"], async (req, res) => {
       });
       if (mappedOrders.length >= 10) break;
     }
-    return res.json({
-      code: 0,
-      msg: "success",
-      data: {
-        vo: {
-          upi,
-          ctType,
-          ct_type: ctType,
-          inSell: inSellVal,
-          state: stateVal,
-          status: statusVal,
-          receiving: receivingVal,
-          secLimit: secLimitVal,
-          pnname: name,
-          verified_name: name,
-          name
-        },
-        orders: mappedOrders
-      }
-    });
   }
-  return res.json({ code: 0, msg: "success", data: { vo: {}, orders: [] } });
+  return res.json({
+    code: 0,
+    msg: "success",
+    data: {
+      vo: {
+        upi: upi || `${toolName} Partner`,
+        account: upi || toolName,
+        ctType,
+        ct_type: ctType,
+        type: ctType,
+        text: toolName,
+        title: toolName,
+        name: verifiedName,
+        pnname: verifiedName,
+        verified_name: verifiedName,
+        logo: logoUrl,
+        icon: logoUrl,
+        image: logoUrl,
+        avatar: logoUrl,
+        inSell: inSellVal,
+        state: stateVal,
+        status: statusVal,
+        receiving: receivingVal,
+        secLimit: secLimitVal
+      },
+      orders: mappedOrders
+    }
+  });
 });
 app.get("/xxapi/lookup-upi", async (req, res) => {
   const vpa = String(req.query.vpa || req.query.upi || "").trim();
@@ -5094,26 +5105,17 @@ async function healAndGetCleanTools(user) {
   }
   let modified = false;
   let rawTools = (user.collectionTools || []).filter(
-    (t) => t && t.id && !t.id.startsWith("tool-paytm-business") && !t.id.startsWith("tool-phonepe-business") && !t.id.startsWith("tool-amazon")
+    (t) => t && t.id && !t.id.startsWith("tool-paytm-business") && !t.id.startsWith("tool-phonepe-business") && !t.id.startsWith("tool-amazon") && t.upi && typeof t.upi === "string" && t.upi.includes("@") && t.upi !== "Pending verification" && !t.isNewDraft
   );
   const uniqueToolMap = /* @__PURE__ */ new Map();
   for (const t of rawTools) {
-    let partnerType = t.type !== void 0 ? t.type : t.ctType !== void 0 ? t.ctType : 16;
-    if (partnerType === 9) partnerType = 8;
-    if (partnerType === 3) partnerType = 2;
-    if (partnerType === 33) partnerType = -10;
+    let partnerType = getNormalizedCtType(t.type !== void 0 ? t.type : t.ctType);
     if (!uniqueToolMap.has(partnerType)) {
       uniqueToolMap.set(partnerType, t);
     } else {
       const existing = uniqueToolMap.get(partnerType);
-      const existingVerified = existing.state === 2 && existing.upi && existing.upi.includes("@") && existing.upi !== "Pending verification";
-      const currentVerified = t.state === 2 && t.upi && t.upi.includes("@") && t.upi !== "Pending verification";
-      if (!existingVerified && currentVerified) {
+      if ((t.verifiedAt || 0) > (existing.verifiedAt || 0)) {
         uniqueToolMap.set(partnerType, t);
-      } else if (existingVerified && currentVerified) {
-        if ((t.verifiedAt || 0) > (existing.verifiedAt || 0)) {
-          uniqueToolMap.set(partnerType, t);
-        }
       }
       modified = true;
     }
@@ -5125,40 +5127,27 @@ async function healAndGetCleanTools(user) {
   }
   const cleanTools = [];
   for (const t of deduplicatedTools) {
-    let typeVal = t.type !== void 0 ? t.type : t.ctType !== void 0 ? t.ctType : 16;
-    if (typeVal === 9) typeVal = 8;
-    if (typeVal === 3) typeVal = 2;
-    if (typeVal === 33) typeVal = -10;
+    let typeVal = getNormalizedCtType(t.type !== void 0 ? t.type : t.ctType);
     const hasValidUpi = t.upi && typeof t.upi === "string" && t.upi.includes("@") && t.upi !== "Pending verification";
+    if (!hasValidUpi) continue;
     const toolIdVal = String(t.id || t._id || t.upi || typeVal);
     if (!t.id) {
       t.id = toolIdVal;
       modified = true;
     }
-    let resolvedState = t.state !== void 0 ? t.state : hasValidUpi ? 2 : 5;
-    let inSellVal = 0;
-    if (t.inSell === 0 || t.inSell === false || t.inSell === "0" || t.in_sell === 0 || t.in_sell === false || t.insell === 0) {
-      inSellVal = 0;
-    } else if (t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1) {
-      inSellVal = 1;
-    } else {
-      inSellVal = 0;
-    }
-    if (resolvedState === 5 || resolvedState === 7 || !hasValidUpi) {
-      inSellVal = 0;
-    }
+    let resolvedState = 2;
+    let inSellVal = t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1 ? 1 : 0;
     t.inSell = inSellVal;
     t.in_sell = inSellVal;
     t.insell = inSellVal;
-    const currentUpi = t.upi && t.upi !== "Pending verification" ? t.upi : t.savedUpi || "Pending verification";
-    const finalUpi = currentUpi && currentUpi !== "Pending verification" && currentUpi.includes("@") ? currentUpi : "Pending verification";
+    const finalUpi = t.upi.trim();
     const buyAllowedTypes = [1, 4, 8];
     const isBuyAllowed = buyAllowedTypes.includes(Number(typeVal));
     const onlyPaymentFlagVal = isBuyAllowed ? 3 : 2;
     cleanTools.push({
       ...t,
       id: toolIdVal,
-      status: hasValidUpi && resolvedState !== 5 && resolvedState !== 7 ? 1 : 0,
+      status: 1,
       state: resolvedState,
       inSell: inSellVal,
       in_sell: inSellVal,
@@ -5168,16 +5157,15 @@ async function healAndGetCleanTools(user) {
       account: t.linkedPhone || t.account || finalUpi || user.phone,
       ctType: typeVal,
       ct_type: typeVal,
-      type: typeVal
+      type: typeVal,
+      text: mapCtTypeToName(typeVal)
     });
   }
   if (modified) {
     user.markModified("collectionTools");
     try {
       await user.save();
-      console.log(`[Collection Tool Healing] Saved auto-healed tool fields for user: ${user.phone}`);
     } catch (err) {
-      console.error(`[Collection Tool Healing] Error saving user:`, err);
     }
   }
   return cleanTools;
@@ -5588,11 +5576,8 @@ app.get("/xxapi/availablect", async (req, res) => {
   if (!user) return res.json({ code: 0, msg: "success", data: [] });
   const cleanTools = await healAndGetCleanTools(user);
   let tools = (cleanTools || []).map((t) => {
-    let resolvedType = t.ctType && Number(t.ctType) !== 7 ? Number(t.ctType) : t.type || 1;
-    if (resolvedType === 9) resolvedType = 8;
-    if (resolvedType === 3) resolvedType = 2;
-    if (resolvedType === 33) resolvedType = -10;
-    const resolvedUpi = t.upi && t.upi.includes("@") && t.upi !== "Pending verification" ? t.upi : t.savedUpi || "Pending verification";
+    let resolvedType = getNormalizedCtType(t.ctType || t.type || t.ct_type);
+    const resolvedUpi = t.upi;
     return {
       ...t,
       upi: resolvedUpi,
@@ -5606,41 +5591,6 @@ app.get("/xxapi/availablect", async (req, res) => {
   });
   const referer = (req.headers.referer || "").toLowerCase();
   const isBuyRequest = req.query.for === "buy" || req.query.purpose === "buy" || req.query.type === "buy" || referer.includes("/buy") || referer.includes("/buyinr") || referer.includes("buyitoken");
-  if (tools.length === 0) {
-    const p = (pkg) => `https://play.google.com/store/apps/details?id=${pkg}`;
-    const defaultDefs = isBuyRequest ? [
-      { id: "tool-phonepe-default", text: "PhonePe", t: 1, pkg: "com.phonepe.app" },
-      { id: "tool-mobikwik-default", text: "MobiKwik", t: 4, pkg: "com.mobikwik" },
-      { id: "tool-paytm-default", text: "Paytm", t: 8, pkg: "net.one97.paytm" }
-    ] : [
-      { id: "tool-phonepe-default", text: "PhonePe", t: 1, pkg: "com.phonepe.app" },
-      { id: "tool-mobikwik-default", text: "MobiKwik", t: 4, pkg: "com.mobikwik" },
-      { id: "tool-freecharge-default", text: "Freecharge", t: 2, pkg: "com.freecharge.android" },
-      { id: "tool-paytm-default", text: "Paytm", t: 8, pkg: "net.one97.paytm" },
-      { id: "tool-navi-default", text: "Navi", t: 13, pkg: "com.navi.android" },
-      { id: "tool-phonepebusiness-default", text: "PhonePeBusiness", t: 14, pkg: "com.phonepe.app.business" },
-      { id: "tool-paytmbusiness-default", text: "PaytmBusiness", t: 16, pkg: "com.paytm.business" },
-      { id: "tool-supermoney-default", text: "SuperMoney", t: 17, pkg: "com.supermoney.app" },
-      { id: "tool-bharatpebusiness-default", text: "BharatPeBusiness", t: 18, pkg: "com.bharatpe.app" },
-      { id: "tool-amazonpay-default", text: "Amazon Pay", t: -10, pkg: "in.amazon.mShop.android.shopping" }
-    ];
-    tools = defaultDefs.map((d) => ({
-      id: d.id,
-      upi: "Pending verification",
-      account: "",
-      ctAccount: "",
-      ct_account: "",
-      text: d.text,
-      ctType: d.t,
-      ct_type: d.t,
-      status: 0,
-      state: 7,
-      // 7 = unlinked / pending verification
-      confirm_mode: 0,
-      package_name: d.pkg,
-      download_url: p(d.pkg)
-    }));
-  }
   if (isBuyRequest) {
     tools = tools.filter((t) => {
       const typeNum = Number(t.ctType || t.ct_type || t.type);
@@ -5712,75 +5662,21 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
     user.markModified("zoopayUpiType");
     user.markModified("zoopayPhone");
     user.markModified("zoopayUpis");
-    let tool;
-    const toolId = ct_id || `tool-${typeNum}-${Date.now()}`;
-    tool = user.collectionTools.find((t) => t.id === toolId || Number(t.type || t.ctType || t.ct_type) === typeNum);
-    if (!tool) {
-      tool = {
-        id: toolId,
-        name: partnerName,
-        type: typeNum,
-        ctType: typeNum,
-        ct_type: typeNum,
-        onlyPaymentFlag: 3,
-        state: 7,
-        // 7 = waiting_authupi state while waiting for OTP verification
-        minSellToken: 2,
-        limitConfig: JSON.stringify({ min: 100, max: 1e5 }),
-        inSell: 1,
-        ctGuide: "If you Change your upi id, please relink right now!",
-        account: targetPhone,
-        upi: "Pending verification",
-        backup_upi: [],
-        phone: targetPhone,
-        pnname: pnname || "Merchant Partner",
-        remark: "Verified partner",
-        channelType: config.channelType,
-        engine: config.engine,
-        isNewDraft: true
-      };
-      user.collectionTools.push(tool);
-    } else {
-      tool.id = toolId;
-      if (!tool.savedOriginalState) {
-        tool.savedOriginalState = {
-          upi: tool.upi,
-          backup_upi: tool.backup_upi ? [...tool.backup_upi] : [],
-          account: tool.account,
-          phone: tool.phone,
-          pnname: tool.pnname,
-          state: tool.state === 7 ? 2 : tool.state || 2,
-          status: tool.status !== void 0 ? tool.status : 1,
-          inSell: tool.inSell !== void 0 ? tool.inSell : 1
-        };
-      }
-      if (tool.upi && tool.upi.includes("@") && tool.upi !== "Pending verification") {
-        tool.savedUpi = tool.upi;
-      }
-      if (Array.isArray(tool.backup_upi) && tool.backup_upi.length > 0) {
-        tool.savedBackupUpi = tool.backup_upi;
-      }
-      tool.account = targetPhone;
-      tool.phone = targetPhone;
-      tool.type = typeNum;
-      tool.ctType = typeNum;
-      tool.ct_type = typeNum;
-      tool.state = 7;
-      tool.inSell = 1;
-      tool.channelType = config.channelType;
-      tool.engine = config.engine;
-      if (pnname) tool.pnname = pnname;
-    }
-    user.markModified("collectionTools");
     await user.save();
+    const returnToolId = ct_id || `tool-${normCtType}-${Date.now()}`;
     return res.json({
       code: 0,
       msg: "success",
       data: {
         needRelink: false,
-        ctId: tool.id,
-        ct_id: tool.id,
-        pk: tool.id
+        sessionId,
+        ctId: returnToolId,
+        ct_id: returnToolId,
+        pk: returnToolId,
+        ctType: normCtType,
+        ct_type: normCtType,
+        type: normCtType,
+        text: partnerName
       }
     });
   } catch (err) {
