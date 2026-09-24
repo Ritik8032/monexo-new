@@ -1195,7 +1195,9 @@ function extractPasswordFromReq(req) {
   if (!req) return "";
   const body = req.body || {};
   const query = req.query || {};
-  const val = body.password ?? body.pwd ?? body.pass ?? body.userPassword ?? body.loginPassword ?? body.userPwd ?? query.password ?? query.pwd ?? query.pass ?? "";
+  const data = body.data || {};
+  const params = body.params || {};
+  const val = body.password ?? body.pwd ?? body.pass ?? body.userPassword ?? body.loginPassword ?? body.userPwd ?? data.password ?? data.pwd ?? data.pass ?? data.loginPassword ?? params.password ?? params.pwd ?? params.pass ?? query.password ?? query.pwd ?? query.pass ?? "";
   if (typeof val === "object" && val !== null) return "";
   return String(val || "").trim();
 }
@@ -3632,7 +3634,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
           const availableBalance = Math.max(0, (seller.balance || 0) - pendingSum);
           if (availableBalance < 1) continue;
           const baseChunks = generateOrderChunks(availableBalance);
-          const standardAmounts = [1, 10, 50, 100, 200, 500, 800, 1e3, 1500, 2e3, 2500, 3e3, 4e3, 5e3, 6500, 8e3, 9500, 1e4, 15e3, 2e4, 5e4];
+          const standardAmounts = CLEAN_DENOMINATIONS.filter((a) => a <= availableBalance);
           const combinedAmounts = Array.from(/* @__PURE__ */ new Set([...baseChunks, ...standardAmounts.filter((a) => a <= availableBalance)]));
           combinedAmounts.forEach((amt) => {
             const rptNo = generate15DigitRptNo();
