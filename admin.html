@@ -812,6 +812,90 @@
           <!-- ========================================== -->
           <!-- TAB: ADMIN NODE HISTORY & API AUDIT        -->
           <!-- ========================================== -->
+          <!-- ALL USER LINKED UPI TOOLS & STATUS REGISTRY -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+              <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-qrcode purple-text text-lg"></i>
+                    <h3 class="text-base font-bold text-slate-800">All User Linked UPI Tools & Status Overview</h3>
+                  </div>
+                  <p class="text-xs text-slate-400">Live status of user UPI tools across all accounts (Active/Online, Sell Disabled, Unlinked)</p>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <input type="text" v-model="allUserToolsSearch" placeholder="Filter phone, UPI, partner..." 
+                    class="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#b66dff] w-56">
+                  <button @click="fetchAllUserTools" class="px-3 py-2 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-rotate text-xs"></i> Refresh Tools
+                  </button>
+                </div>
+              </div>
+
+              <!-- Tools Status Table -->
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-100">
+                  <thead class="bg-slate-50">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase">User Phone / Name</th>
+                      <th class="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase">UPI VPA Address</th>
+                      <th class="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase">Partner Name</th>
+                      <th class="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase">Online Status</th>
+                      <th class="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase">Link Status</th>
+                      <th class="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase">Sell Mode</th>
+                      <th class="px-4 py-3 text-right text-xs font-bold text-slate-400 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-slate-100 text-xs font-medium">
+                    <tr v-for="t in allUserToolsList.filter(x => !allUserToolsSearch || (x.userPhone && x.userPhone.includes(allUserToolsSearch)) || (x.upi && x.upi.toLowerCase().includes(allUserToolsSearch.toLowerCase())) || (x.pnname && x.pnname.toLowerCase().includes(allUserToolsSearch.toLowerCase())))" :key="t.id" class="hover:bg-slate-50/50 transition">
+                      <td class="px-4 py-3">
+                        <span class="block font-bold text-slate-800 font-mono">{{ t.userPhone }}</span>
+                        <span class="block text-[10px] text-slate-400">{{ t.userName }}</span>
+                      </td>
+                      <td class="px-4 py-3 font-mono font-bold text-purple-700 select-all">
+                        {{ t.upi }}
+                      </td>
+                      <td class="px-4 py-3 text-slate-700 font-semibold">
+                        {{ t.pnname || 'Verified Partner' }}
+                      </td>
+                      <td class="px-4 py-3">
+                        <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border', t.isOnline ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200']">
+                          {{ t.isOnline ? 'ONLINE' : 'OFFLINE' }}
+                        </span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border', t.isUnlinked ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200']">
+                          {{ t.isUnlinked ? 'UNLINKED' : 'LINKED' }}
+                        </span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border', t.inSell === 1 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200']">
+                          {{ t.inSell === 1 ? 'SELL ON' : 'SELL OFF' }}
+                        </span>
+                      </td>
+                      <td class="px-4 py-3 text-right">
+                        <div class="flex items-center justify-end gap-1.5">
+                          <button @click="toggleAdminToolInSell(t.userId, t.id, t.inSell === 1 ? 0 : 1)" 
+                            :class="['px-2.5 py-1 rounded-lg text-[10px] font-bold border transition', t.inSell === 1 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100']">
+                            {{ t.inSell === 1 ? 'Disable Sell' : 'Enable Sell' }}
+                          </button>
+                          <button @click="toggleAdminToolState(t.userId, t.id, t.isUnlinked ? 2 : 5)" 
+                            :class="['px-2.5 py-1 rounded-lg text-[10px] font-bold border transition', t.isUnlinked ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100']">
+                            {{ t.isUnlinked ? 'Link' : 'Unlink' }}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="allUserToolsList.length === 0">
+                      <td colspan="7" class="px-4 py-8 text-center text-slate-400">
+                        No user UPI tools fetched yet. Click "Refresh Tools" to view all registered user UPI status.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
           <div v-else-if="activeTab === 'nodeHistory' && !selectedUser" class="space-y-6">
             <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
               <div>
@@ -2033,6 +2117,9 @@
               <button @click="takeActionTab = 'sessions'" :class="['px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition whitespace-nowrap', takeActionTab === 'sessions' ? 'bg-gradient-to-r from-[#b66dff] to-[#7c4dff] text-white shadow-md' : 'text-slate-600 hover:bg-slate-50']">
                 <i class="fa-solid fa-shield-halved text-sm"></i> 5. Login Session
               </button>
+              <button @click="takeActionTab = 'eventcentre'" :class="['px-5 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 transition whitespace-nowrap', takeActionTab === 'eventcentre' ? 'bg-gradient-to-r from-[#b66dff] to-[#7c4dff] text-white shadow-md' : 'text-slate-600 hover:bg-slate-50']">
+                <i class="fa-solid fa-gift text-sm"></i> 6. Event Centre & Rewards
+              </button>
             </div>
 
             <!-- TAB 1: USER INFO -->
@@ -2404,9 +2491,17 @@
                   <div v-for="tool in selectedUser.collectionTools" :key="tool.id" class="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
                     <div class="flex items-center justify-between">
                       <span class="text-sm font-extrabold text-slate-800 font-mono">{{ tool.upi }}</span>
-                      <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase', tool.inSell === 1 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-200 text-slate-600']">
-                        {{ tool.inSell === 1 ? 'SELLING ENABLED' : 'SELLING DISABLED' }}
-                      </span>
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border', (tool.state === 1 || tool.state === 2) ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200']">
+                          {{ (tool.state === 1 || tool.state === 2) ? 'ONLINE / ACTIVE' : 'OFFLINE' }}
+                        </span>
+                        <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border', (tool.state === 5 || tool.status === 5) ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200']">
+                          {{ (tool.state === 5 || tool.status === 5) ? 'UNLINKED' : 'LINKED' }}
+                        </span>
+                        <span :class="['px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border', tool.inSell === 1 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200']">
+                          {{ tool.inSell === 1 ? 'SELL ON' : 'SELL OFF' }}
+                        </span>
+                      </div>
                     </div>
 
                     <div class="space-y-1.5 text-xs text-slate-600 font-medium">
@@ -2433,7 +2528,11 @@
                     <div class="flex items-center gap-2 pt-2 border-t border-slate-200/60">
                       <button @click="toggleCollectionToolInSell(tool)" 
                         :class="['flex-1 py-2 rounded-xl text-xs font-bold transition shadow-xs text-center border', tool.inSell === 1 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100']">
-                        {{ tool.inSell === 1 ? 'Disable Selling' : 'Enable Selling' }}
+                        {{ tool.inSell === 1 ? 'Turn Sell OFF' : 'Turn Sell ON' }}
+                      </button>
+                      <button @click="toggleCollectionToolState(tool)" 
+                        :class="['px-3 py-2 rounded-xl text-xs font-bold transition shadow-xs border', tool.state === 5 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200']">
+                        {{ tool.state === 5 ? 'Mark Linked' : 'Mark Unlinked' }}
                       </button>
                       <button @click="fetchUpiHistory(tool)" 
                         class="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition shadow-sm text-center flex items-center justify-center gap-1.5">
@@ -2600,7 +2699,93 @@
               </div>
             </div>
 
-            <!-- TAB 5: LOGIN SESSION -->
+            <!-- TAB 6: EVENT CENTRE & NEWBIE REWARDS -->
+            <div v-if="takeActionTab === 'eventcentre'" class="space-y-6">
+              <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-gift purple-text text-xl"></i>
+                    <div>
+                      <h3 class="text-base font-bold text-slate-800">Event Centre & Newbie Task Progress</h3>
+                      <p class="text-xs text-slate-400">View user completion status for all newbie tasks and reward claims</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span :class="['px-3 py-1 rounded-full text-xs font-bold uppercase border', selectedEventCentre && selectedEventCentre.newbieClaimed ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : (selectedEventCentre && selectedEventCentre.newbieDone ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200')]">
+                      {{ selectedEventCentre && selectedEventCentre.newbieClaimed ? 'Reward Claimed (₹200)' : (selectedEventCentre && selectedEventCentre.newbieDone ? 'Reward Eligible (Unclaimed)' : 'In Progress') }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Summary Badges Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span class="block text-[11px] font-bold text-slate-400 uppercase">Total IToken Purchased</span>
+                    <span class="text-lg font-black text-slate-800 font-mono">{{ selectedEventCentre ? selectedEventCentre.totalBoughtIToken : 0 }} / 1000</span>
+                    <div class="w-full bg-slate-200 h-2 rounded-full mt-2 overflow-hidden">
+                      <div class="bg-gradient-to-r from-[#b66dff] to-[#7c4dff] h-2 rounded-full" :style="{ width: Math.min(100, ((selectedEventCentre ? selectedEventCentre.totalBoughtIToken : 0) / 1000) * 100) + '%' }"></div>
+                    </div>
+                  </div>
+
+                  <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span class="block text-[11px] font-bold text-slate-400 uppercase">Reward Claim Status</span>
+                    <span class="text-lg font-black text-slate-800 font-mono">
+                      {{ selectedEventCentre && selectedEventCentre.newbieClaimed ? 'CLAIMED' : 'NOT CLAIMED' }}
+                    </span>
+                    <span class="text-xs text-slate-500 block mt-1">₹200 Newbie Welcome Bonus</span>
+                  </div>
+
+                  <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <span class="block text-[11px] font-bold text-slate-400 uppercase">Invited Members Completed</span>
+                    <span class="text-lg font-black text-slate-800 font-mono">{{ selectedEventCentre ? selectedEventCentre.invitedNewbieCount : 0 }} Members</span>
+                    <span class="text-xs text-slate-500 block mt-1">Active referral newbie bonus</span>
+                  </div>
+                </div>
+
+                <!-- Newbie Tasks List Table -->
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <h4 class="text-sm font-bold text-slate-700 uppercase tracking-wider">Newbie Welcome Tasks (5 Total)</h4>
+                    <div class="flex gap-2">
+                      <button @click="toggleAdminNewbieClaim(true)" class="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition">
+                        Force Mark Claimed
+                      </button>
+                      <button @click="toggleAdminNewbieClaim(false)" class="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-300 transition">
+                        Reset Claim Status
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden bg-slate-50/50">
+                    <div v-for="task in (selectedEventCentre ? selectedEventCentre.newbieTasks : [])" :key="task.id" class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white">
+                      <div class="flex items-center gap-3">
+                        <div :class="['w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm', task.completed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500']">
+                          <i :class="['fa-solid', task.completed ? 'fa-check' : 'fa-clock']"></i>
+                        </div>
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-slate-800">{{ task.name }}</span>
+                            <span class="text-[10px] font-extrabold bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100">+{{ task.reward }} IToken</span>
+                          </div>
+                          <span class="text-xs text-slate-400 font-mono">Code: {{ task.activityCode }}</span>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center gap-3">
+                        <span :class="['px-3 py-1 rounded-full text-xs font-extrabold uppercase border', task.completed ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200']">
+                          {{ task.completed ? 'COMPLETED' : 'PENDING' }}
+                        </span>
+                        <button @click="updateAdminNewbieTask(task.activityCode, !task.completed)" :class="['px-3 py-1.5 rounded-xl text-xs font-bold border transition', task.completed ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100']">
+                          {{ task.completed ? 'Mark Pending' : 'Mark Completed' }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+                        <!-- TAB 5: LOGIN SESSION -->
             <div v-if="takeActionTab === 'sessions'" class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
                 <div class="flex items-center justify-between pb-4 border-b border-slate-100">
@@ -3049,7 +3234,7 @@
           selectedUser.value = null;
           if (newTab === 'dashboard') fetchStats(false);
           else if (newTab === 'users') fetchUsers(false);
-          else if (newTab === 'nodes') fetchNodes(false);
+          else if (newTab === 'nodes') { fetchNodes(false); fetchAllUserTools(); }
           else if (newTab === 'nodeHistory') fetchNodeHistory(false);
           else if (newTab === 'payments') fetchPaymentHistory(true);
           else if (newTab === 'matchingOrders') fetchMatchingOrders();
@@ -3149,6 +3334,119 @@
         const sendNotifLoading = ref(false);
 
         const userSmsLogs = ref([]);
+        const selectedEventCentre = ref(null);
+        const allUserToolsList = ref([]);
+        const allUserToolsSearch = ref('');
+
+        const updateAdminNewbieTask = async (activityCode, completed) => {
+          if (!selectedUser.value) return;
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/userNewbieTaskUpdate'), {
+              method: 'POST',
+              headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: selectedUser.value._id, activityCode, completed })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              fetchUserDetail(selectedUser.value._id, true);
+            } else {
+              alert(data.msg || 'Failed to update newbie task');
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        const toggleAdminNewbieClaim = async (claimReward) => {
+          if (!selectedUser.value) return;
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/userNewbieTaskUpdate'), {
+              method: 'POST',
+              headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: selectedUser.value._id, claimReward })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              fetchUserDetail(selectedUser.value._id, true);
+            } else {
+              alert(data.msg || 'Failed to update claim status');
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        const toggleAdminToolInSell = async (userId, toolId, inSell) => {
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/updateToolInSell'), {
+              method: 'POST',
+              headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, toolId, inSell })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              fetchAllUserTools();
+              if (selectedUser.value && selectedUser.value._id === userId) {
+                fetchUserDetail(userId, true);
+              }
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        const toggleAdminToolState = async (userId, toolId, state) => {
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/updateToolInSell'), {
+              method: 'POST',
+              headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, toolId, state })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              fetchAllUserTools();
+              if (selectedUser.value && selectedUser.value._id === userId) {
+                fetchUserDetail(userId, true);
+              }
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        const toggleCollectionToolState = async (tool) => {
+          if (!selectedUser.value || !tool) return;
+          const newState = tool.state === 5 ? 2 : 5;
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/updateToolInSell'), {
+              method: 'POST',
+              headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: selectedUser.value._id, toolId: tool.id || tool._id, state: newState })
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              fetchUserDetail(selectedUser.value._id, true);
+            } else {
+              alert(data.msg || 'Failed to update tool state');
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        const fetchAllUserTools = async () => {
+          try {
+            const res = await fetch(getApiUrl('/xxapi/admin/allCollectionTools'), {
+              headers: getAuthHeaders()
+            });
+            const data = await res.json();
+            if (data.code === 0) {
+              allUserToolsList.value = data.data || [];
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
         const smsForm = reactive({
           sender: 'BANK-OTP',
           message: '',
@@ -3416,6 +3714,7 @@
             const data = await res.json();
             if (data.code === 0) {
               selectedUser.value = data.data.user;
+              selectedEventCentre.value = data.data.eventCentre || null;
               invitedUsers.value = data.data.invitedUsers || [];
               selectedTelemetry.value = data.data.telemetry;
               buyTransactions.value = data.data.buyTransactions || [];
@@ -4827,6 +5126,15 @@
           submitRejectOrder,
           selectedUser,
           selectedTelemetry,
+          selectedEventCentre,
+          allUserToolsList,
+          allUserToolsSearch,
+          updateAdminNewbieTask,
+          toggleAdminNewbieClaim,
+          toggleCollectionToolState,
+          toggleAdminToolInSell,
+          toggleAdminToolState,
+          fetchAllUserTools,
           buyTransactions,
           sellTransactions,
           adminTransactions,

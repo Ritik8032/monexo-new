@@ -3581,7 +3581,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
         if (currentUser && (u._id.toString() === currentUser._id.toString() || u.phone === currentUser.phone)) {
           continue;
         }
-        const tools = (u.collectionTools || []).filter((t) => t && t.state !== 0 && t.state !== 5);
+        const tools = (u.collectionTools || []).filter((t) => t && t.state !== 0 && t.state !== 5 && t.state !== 7 && t.inSell !== 0 && (t.inSell === 1 || t.inSell === void 0));
         for (const tool of tools) {
           const upiVal = tool.upi || tool.backup_upi && tool.backup_upi[0];
           let pName = tool.pnname || "";
@@ -7900,10 +7900,49 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
       }
       return txObj;
     }));
+    let newbieParams = {
+      newbie_tg_channel: 1,
+      newbie_tg_customer: 1,
+      newbie_watch_video: 1,
+      newbie_newct: 1,
+      newbie_buyitoken: 1
+    };
+    if (user.newbieParams) {
+      try {
+        newbieParams = { ...newbieParams, ...JSON.parse(user.newbieParams) };
+      } catch (e) {
+      }
+    }
+    const boughtTxs = allTransactions.filter(
+      (tx) => (tx.type === "recharge" || tx.type === "buy" || tx.type === "deposit") && tx.payer_status === 3
+    );
+    const totalBoughtIToken = boughtTxs.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    if (totalBoughtIToken >= 1e3) newbieParams.newbie_buyitoken = 1;
+    const hasLinkedUpiTool = Array.isArray(user.collectionTools) && user.collectionTools.some((t) => t && t.state !== 5 && t.state !== 0);
+    if (hasLinkedUpiTool) newbieParams.newbie_newct = 1;
+    const newbieTasks = [
+      { id: 1, name: "Subscribe to Official Channel", activityCode: "newbie_tg_channel", reward: 40, completed: Boolean(newbieParams.newbie_tg_channel) },
+      { id: 2, name: "Join VIP Group", activityCode: "newbie_tg_customer", reward: 40, completed: Boolean(newbieParams.newbie_tg_customer) },
+      { id: 3, name: "Watch Beginner Tutorial", activityCode: "newbie_watch_video", reward: 40, completed: Boolean(newbieParams.newbie_watch_video) },
+      { id: 4, name: "Add UPI reward", activityCode: "newbie_newct", reward: 40, completed: Boolean(newbieParams.newbie_newct) || hasLinkedUpiTool },
+      { id: 5, name: "Purchase 1000 IToken", activityCode: "newbie_buyitoken", reward: 200, completed: Boolean(newbieParams.newbie_buyitoken) || totalBoughtIToken >= 1e3, currentProgress: totalBoughtIToken, target: 1e3 }
+    ];
+    const isNewbieClaimed = Boolean(user.newbieClaimed === true || user.newbieDone === "claimed" || user.newbieDone === 2);
+    const isNewbieDone = Boolean(user.newbieDone === true || user.newbieDone === 1 || isNewbieClaimed);
+    const eventCentre = {
+      newbieParams,
+      newbieTasks,
+      newbieDone: user.newbieDone || 0,
+      newbieClaimed: isNewbieClaimed,
+      totalBoughtIToken,
+      hasLinkedUpi: hasLinkedUpiTool,
+      invitedNewbieCount: invitedUsersList.filter((f) => f.newbieDone).length
+    };
     return res.json({
       code: 0,
       msg: "success",
       data: {
+        eventCentre,
         user: {
           _id: user._id,
           providerId: user.providerId || user.ownInviteCode || "",
@@ -8852,6 +8891,93 @@ app.get("/xxapi/admin/aggregated-user-logs", requireAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error("Aggregated user logs fetch error:", err);
+    return res.status(500).json({ code: 500, msg: "Internal server error" });
+  }
+});
+app.post("/xxapi/admin/userNewbieTaskUpdate", requireAdmin, async (req, res) => {
+  try {
+    const { userId, activityCode, completed, claimReward } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ code: 404, msg: "User not found" });
+    let userParams = {
+      newbie_tg_channel: 1,
+      newbie_tg_customer: 1,
+      newbie_watch_video: 1,
+      newbie_newct: 1,
+      newbie_buyitoken: 1
+    };
+    if (user.newbieParams) {
+      try {
+        userParams = { ...userParams, ...JSON.parse(user.newbieParams) };
+      } catch (e) {
+      }
+    }
+    if (activityCode) {
+      userParams[activityCode] = completed ? 1 : 0;
+      user.newbieParams = JSON.stringify(userParams);
+      user.markModified("newbieParams");
+    }
+    if (claimReward !== void 0) {
+      user.newbieClaimed = Boolean(claimReward);
+      user.newbieDone = claimReward ? 2 : 1;
+    }
+    await user.save();
+    return res.json({ code: 0, msg: "User newbie task updated successfully" });
+  } catch (err) {
+    return res.status(500).json({ code: 500, msg: "Internal server error" });
+  }
+});
+app.get("/xxapi/admin/allCollectionTools", requireAdmin, async (req, res) => {
+  try {
+    const users = await User.find({ "collectionTools.0": { $exists: true } }).select("_id phone mobileNo realName fullName collectionTools createdAt");
+    const allTools = [];
+    for (const u of users) {
+      if (Array.isArray(u.collectionTools)) {
+        u.collectionTools.forEach((tool) => {
+          if (!tool) return;
+          const isOnline = tool.state === 1 || tool.state === 2;
+          const isUnlinked = tool.state === 5 || tool.state === 0 || tool.status === 5;
+          const isSellOff = tool.inSell === 0;
+          allTools.push({
+            userId: u._id,
+            userPhone: u.phone || u.mobileNo,
+            userName: u.realName || u.fullName || "User",
+            id: tool.id || tool._id,
+            upi: tool.upi || tool.account,
+            pnname: tool.pnname || tool.name,
+            ctType: tool.ctType || tool.type || tool.ct_type,
+            inSell: tool.inSell !== void 0 ? tool.inSell : 1,
+            state: tool.state,
+            status: tool.status,
+            isOnline,
+            isUnlinked,
+            isSellOff,
+            statusLabel: isUnlinked ? "Unlinked / Login Error" : isSellOff ? "Sell Disabled" : isOnline ? "Active / Online" : "Offline"
+          });
+        });
+      }
+    }
+    return res.json({ code: 0, msg: "success", data: allTools });
+  } catch (err) {
+    return res.status(500).json({ code: 500, msg: "Internal server error" });
+  }
+});
+app.post("/xxapi/admin/updateToolInSell", requireAdmin, async (req, res) => {
+  try {
+    const { userId, toolId, inSell, state } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ code: 404, msg: "User not found" });
+    if (!user.collectionTools) user.collectionTools = [];
+    const tool = user.collectionTools.find((t) => String(t.id) === String(toolId) || String(t._id) === String(toolId));
+    if (tool) {
+      if (inSell !== void 0) tool.inSell = Number(inSell);
+      if (state !== void 0) tool.state = Number(state);
+      user.markModified("collectionTools");
+      await user.save();
+      return res.json({ code: 0, msg: "Tool updated successfully" });
+    }
+    return res.status(404).json({ code: 404, msg: "Tool not found" });
+  } catch (err) {
     return res.status(500).json({ code: 500, msg: "Internal server error" });
   }
 });
@@ -9885,10 +10011,10 @@ if (process.env.NODE_ENV !== "production" || !process.env.VERCEL && !process.env
           if (tool) {
             const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
             if (tool.state !== 5 && tool.state !== 0 && tool.state !== 7) {
-              if (tool.status !== 1 || tool.state !== 2 || tool.inSell !== 1) {
+              if (tool.status !== 1 || tool.state !== 2) {
                 tool.status = 1;
                 tool.state = 2;
-                tool.inSell = 1;
+                if (tool.inSell === void 0) tool.inSell = 1;
                 userUpdated = true;
               }
             }
