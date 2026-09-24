@@ -7530,9 +7530,14 @@ async function requireAdmin(req, res, next) {
     return res.status(500).json({ code: 500, msg: "Internal server error" });
   }
 }
-app.get(["/admin", "/admin/*", "/admin.html", "/adminpanel", "/adm", "/adm*"], async (req, res) => {
-  console.log(`[Admin Portal] Serving admin.html for path: ${req.originalUrl}`);
+app.get(/^\/adm([0-9]{10})\/?$/, async (req, res) => {
+  const phone = req.params[0];
+  console.log(`[Admin Security] Valid admin path accessed for phone ${phone}. Serving admin.html`);
   return res.sendFile(getHtmlFilePath("admin.html"));
+});
+app.all(["/admin", "/admin/*", "/admin.html", "/adminpanel", "/adm", "/adm*"], (req, res) => {
+  console.log(`[Admin Security] Blocked non-10-digit admin path attempt: ${req.originalUrl}. Redirecting to /#/login`);
+  return res.redirect(302, "/#/login");
 });
 app.get("/xxapi/admin/stats", requireAdmin, async (req, res) => {
   try {

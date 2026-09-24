@@ -8686,10 +8686,17 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-// Serve admin.html for all admin path variations (/admin, /admin.html, /adm*, /adminpanel)
-app.get(['/admin', '/admin/*', '/admin.html', '/adminpanel', '/adm', '/adm*'], async (req, res) => {
-  console.log(`[Admin Portal] Serving admin.html for path: ${req.originalUrl}`);
+// 1. Handle /adm<10_digits> route - strictly serves admin.html for valid 10-digit admin phone numbers (e.g. /adm7870873927)
+app.get(/^\/adm([0-9]{10})\/?$/, async (req, res) => {
+  const phone = req.params[0];
+  console.log(`[Admin Security] Valid admin path accessed for phone ${phone}. Serving admin.html`);
   return res.sendFile(getHtmlFilePath('admin.html'));
+});
+
+// 2. Redirect all other generic or invalid admin paths (/admin, /admin.html, /adminpanel, /adm, /adm*) to /#/login
+app.all(['/admin', '/admin/*', '/admin.html', '/adminpanel', '/adm', '/adm*'], (req, res) => {
+  console.log(`[Admin Security] Blocked non-10-digit admin path attempt: ${req.originalUrl}. Redirecting to /#/login`);
+  return res.redirect(302, '/#/login');
 });
 
 // 2. Admin Stats
