@@ -3386,13 +3386,21 @@ app.get('/xxapi/simpConfig', async (req, res) => {
 });
 
 // Helper function to generate newbie rules with frontUrl and status
-const buildNewbieRules = (params: any, totalBought: number = 0, hasLinkedUpi: boolean = false) => [
-  { id: 1, name: 'Subscribe to Official Channel', activityCode: 'newbie_tg_channel', title: 'Subscribe to Official Channel', reward: 40, status: 'done', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
-  { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: 'done', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
-  { id: 3, name: 'Watch Beginner Tutorial', activityCode: 'newbie_watch_video', title: 'Watch Beginner Tutorial', reward: 40, status: 'done', frontd_url: '/newbie_watch_video', frontUrl: '/newbie_watch_video' },
-  { id: 4, name: 'Add UPI reward', activityCode: 'newbie_newct', title: 'Add UPI reward', reward: 40, status: 'done', frontd_url: '/collectiontool', frontUrl: '/collectiontool' },
-  { id: 5, name: 'Purchase 1000 IToken', activityCode: 'newbie_buyitoken', title: 'Purchase 1000 IToken', reward: 200, status: 'done', frontd_url: '/buy', frontUrl: '/buy' }
-];
+const buildNewbieRules = (params: any, totalBought: number = 0, hasLinkedUpi: boolean = false) => {
+  const isBuyDone = totalBought >= 1000 || params.newbie_buyitoken === 1 || params.force_buyitoken === 1;
+  const isTgChannelDone = Boolean(params.newbie_tg_channel);
+  const isTgCustomerDone = Boolean(params.newbie_tg_customer);
+  const isWatchVideoDone = Boolean(params.newbie_watch_video);
+  const isNewCtDone = Boolean(params.newbie_newct) || hasLinkedUpi;
+
+  return [
+    { id: 1, name: 'Subscribe to Official Channel', activityCode: 'newbie_tg_channel', title: 'Subscribe to Official Channel', reward: 40, status: isTgChannelDone ? 'done' : 'undone', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
+    { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: isTgCustomerDone ? 'done' : 'undone', frontd_url: 'https://t.me/+AmPPZsOTjEBjMzg1', frontUrl: 'https://t.me/+AmPPZsOTjEBjMzg1' },
+    { id: 3, name: 'Watch Beginner Tutorial', activityCode: 'newbie_watch_video', title: 'Watch Beginner Tutorial', reward: 40, status: isWatchVideoDone ? 'done' : 'undone', frontd_url: '/newbie_watch_video', frontUrl: '/newbie_watch_video' },
+    { id: 4, name: 'Add UPI reward', activityCode: 'newbie_newct', title: 'Add UPI reward', reward: 40, status: isNewCtDone ? 'done' : 'undone', frontd_url: '/collectiontool', frontUrl: '/collectiontool' },
+    { id: 5, name: 'Purchase 1000 IToken', activityCode: 'newbie_buyitoken', title: 'Purchase 1000 IToken', reward: 200, status: isBuyDone ? 'done' : 'undone', frontd_url: '/buy', frontUrl: '/buy' }
+  ];
+};
 
 const getNewbieUserData = async (req: any) => {
   const user = await getUserByToken(req);
@@ -3404,7 +3412,7 @@ const getNewbieUserData = async (req: any) => {
     newbie_buyitoken: 0
   };
   let totalBought = 0;
-  let hasLinkedUpi = true;
+  let hasLinkedUpi = false;
 
   if (user) {
     if ((user as any).newbieParams) {
@@ -3430,6 +3438,14 @@ const getNewbieUserData = async (req: any) => {
     });
     totalBought = boughtTxs.reduce((sum, t) => sum + Math.abs(Number(t.amount || t.realAmount || 0)), 0);
 
+    const hasLinkedUpiTool = Array.isArray(user.collectionTools) && user.collectionTools.some((t: any) => t && t.state !== 5 && t.state !== 0);
+    hasLinkedUpi = hasLinkedUpiTool;
+
+    // Strictly compute newbie_buyitoken: 1 ONLY IF totalBought >= 1000 or force_buyitoken === 1
+    const isBuy1000Done = totalBought >= 1000 || userParams.force_buyitoken === 1 || userParams.force_buyitoken === true;
+    userParams.newbie_buyitoken = isBuy1000Done ? 1 : 0;
+    if (hasLinkedUpiTool) userParams.newbie_newct = 1;
+
     (user as any).newbieParams = JSON.stringify(userParams);
     user.markModified('newbieParams');
     await user.save().catch(() => {});
@@ -3437,16 +3453,28 @@ const getNewbieUserData = async (req: any) => {
 
   const cappedBought = Math.min(1000, Math.max(0, totalBought));
   const rules = buildNewbieRules(userParams, cappedBought, hasLinkedUpi);
-  // 1 = Done & Ready to Claim, 2 = Already Claimed (Received)
-  let isDone = 1;
+
+  const allTasksCompleted = Boolean(
+    userParams.newbie_tg_channel === 1 &&
+    userParams.newbie_tg_customer === 1 &&
+    userParams.newbie_watch_video === 1 &&
+    (userParams.newbie_newct === 1 || hasLinkedUpi) &&
+    userParams.newbie_buyitoken === 1
+  );
+
+  // 0 = In progress, 1 = Done & Ready to Claim, 2 = Already Claimed (Received)
+  let isDone = 0;
   if (user && ((user as any).newbieClaimed === true || (user as any).newbieDone === 'claimed' || (user as any).newbieDone === 2)) {
     isDone = 2;
+  } else if (allTasksCompleted) {
+    isDone = 1;
   }
-  return { user, userParams, rules, isDone, totalBought, cappedBought };
+
+  return { user, userParams, rules, isDone, totalBought, cappedBought, allTasksCompleted };
 };
 
 app.get('/xxapi/newbieDayStep/init', async (req, res) => {
-  const { userParams, rules, isDone, cappedBought } = await getNewbieUserData(req);
+  const { userParams, rules, isDone, cappedBought, allTasksCompleted } = await getNewbieUserData(req);
   return res.json({
     code: 0,
     msg: "success",
@@ -3454,7 +3482,7 @@ app.get('/xxapi/newbieDayStep/init', async (req, res) => {
       activityRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: JSON.stringify(userParams) },
       activityRules: rules,
       guides: rules,
-      allDone: allTasksDone,
+      allDone: allTasksCompleted,
       finishNewbie: isDone,
       buyToken: String(cappedBought)
     }
@@ -3462,7 +3490,7 @@ app.get('/xxapi/newbieDayStep/init', async (req, res) => {
 });
 
 app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
-  const { userParams, rules, isDone, cappedBought } = await getNewbieUserData(req);
+  const { userParams, rules, isDone, cappedBought, allTasksCompleted } = await getNewbieUserData(req);
   return res.json({
     code: 0,
     msg: "success",
@@ -3474,7 +3502,7 @@ app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
       tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
       newbieReward: 200,
       buyToken: String(cappedBought),
-      allDone: allTasksDone,
+      allDone: allTasksCompleted,
       finishNewbie: isDone
     }
   });
