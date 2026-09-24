@@ -5971,12 +5971,25 @@ app.post('/xxapi/collectiontool', async (req, res) => {
   }
 });
 
+const findUserTool = (tools: any[], toolId: any) => {
+  if (!Array.isArray(tools) || toolId === undefined || toolId === null) return null;
+  const sId = String(toolId).trim();
+  return tools.find((t: any) => {
+    if (!t) return false;
+    if (t.id !== undefined && (t.id == toolId || String(t.id) === sId)) return true;
+    if (t._id !== undefined && (t._id == toolId || String(t._id) === sId)) return true;
+    if (t.upi && String(t.upi).toLowerCase() === sId.toLowerCase()) return true;
+    if (t.account && String(t.account).toLowerCase() === sId.toLowerCase()) return true;
+    return false;
+  });
+};
+
 app.post('/xxapi/collectiontoolStatus', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const { id, inSell, state, status } = req.body;
   if (!user.collectionTools) user.collectionTools = [];
-  const tool = user.collectionTools.find(t => t.id === id);
+  const tool = findUserTool(user.collectionTools, id);
   const statusNum = status !== undefined ? Number(status) : undefined;
   const stateNum = state !== undefined ? Number(state) : undefined;
 
@@ -6032,10 +6045,10 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const { id } = req.body;
   if (!user.collectionTools) user.collectionTools = [];
-  const tool = user.collectionTools.find(t => t.id === id);
+  const tool = findUserTool(user.collectionTools, id);
   if (tool) {
     tool.inSell = 1;
-    tool.state = 2; // idle / active
+    if (tool.state !== 5 && tool.state !== 7) tool.state = 2; // active online
     
     if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
       try {
@@ -6061,10 +6074,9 @@ app.post('/xxapi/collectiontool/stopsell', async (req, res) => {
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
   const { id } = req.body;
   if (!user.collectionTools) user.collectionTools = [];
-  const tool = user.collectionTools.find(t => t.id === id);
+  const tool = findUserTool(user.collectionTools, id);
   if (tool) {
     tool.inSell = 0;
-    tool.state = 0; // disabled
     
     if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
       try {
@@ -9342,14 +9354,12 @@ app.post('/xxapi/admin/toggleCollectionToolInSell', requireAdmin, async (req, re
     if (!user) return res.status(404).json({ code: 404, msg: 'User not found' });
 
     if (Array.isArray(user.collectionTools)) {
-      user.collectionTools = user.collectionTools.map((t: any) => {
-        if (t.id === toolId || t._id === toolId || String(t.id) === String(toolId)) {
-          return { ...t, inSell: inSell !== undefined ? Number(inSell) : (t.inSell === 1 ? 0 : 1) };
-        }
-        return t;
-      });
-      user.markModified('collectionTools');
-      await user.save();
+      const tool = findUserTool(user.collectionTools, toolId);
+      if (tool) {
+        tool.inSell = inSell !== undefined ? Number(inSell) : (tool.inSell === 1 ? 0 : 1);
+        user.markModified('collectionTools');
+        await user.save();
+      }
     }
     return res.json({ code: 0, msg: 'Selling status updated successfully' });
   } catch (err: any) {
@@ -9944,7 +9954,7 @@ app.post('/xxapi/admin/updateCollectionTool', requireAdmin, async (req, res) => 
       return res.status(404).json({ code: 404, msg: 'User not found' });
     }
     if (!user.collectionTools) user.collectionTools = [];
-    const tool = user.collectionTools.find(t => t.id === toolId);
+    const tool = findUserTool(user.collectionTools, toolId);
     if (!tool) {
       return res.status(404).json({ code: 404, msg: 'Collection tool not found for user' });
     }
@@ -10351,18 +10361,18 @@ app.get('/xxapi/admin/allCollectionTools', requireAdmin, async (req, res) => {
       if (Array.isArray(u.collectionTools)) {
         u.collectionTools.forEach((tool: any) => {
           if (!tool) return;
-          const isOnline = tool.state === 1 || tool.state === 2;
-          const isUnlinked = tool.state === 5 || tool.state === 0 || tool.status === 5;
-          const isSellOff = tool.inSell === 0;
+          const isUnlinked = tool.state === 5 || tool.status === 5 || tool.state === 7;
+          const isSellOff = tool.inSell === 0 || tool.inSell === '0';
+          const isOnline = (tool.state === 1 || tool.state === 2 || tool.status === 1) && !isUnlinked && !isSellOff;
           allTools.push({
             userId: u._id,
             userPhone: u.phone || u.mobileNo,
             userName: u.realName || u.fullName || 'User',
-            id: tool.id || tool._id,
+            id: tool.id || tool._id || tool.upi,
             upi: tool.upi || tool.account,
             pnname: tool.pnname || tool.name,
             ctType: tool.ctType || tool.type || tool.ct_type,
-            inSell: tool.inSell !== undefined ? tool.inSell : 1,
+            inSell: isSellOff ? 0 : 1,
             state: tool.state,
             status: tool.status,
             isOnline,
@@ -10385,7 +10395,7 @@ app.post('/xxapi/admin/updateToolInSell', requireAdmin, async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ code: 404, msg: 'User not found' });
     if (!user.collectionTools) user.collectionTools = [];
-    const tool = user.collectionTools.find((t: any) => String(t.id) === String(toolId) || String(t._id) === String(toolId));
+    const tool = findUserTool(user.collectionTools, toolId);
     if (tool) {
       if (inSell !== undefined) tool.inSell = Number(inSell);
       if (state !== undefined) tool.state = Number(state);
@@ -11616,14 +11626,28 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
           if (tool) {
             const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
             
-            // Keep tool active and available for selling unless explicitly set to unlinked (state 5 or 0)
-            if (tool.state !== 5 && tool.state !== 0 && tool.state !== 7) {
-              if (tool.status !== 1 || tool.state !== 2) {
-                tool.status = 1; // available
-                tool.state = 2; // idle / active online
-                if (tool.inSell === undefined) tool.inSell = 1;
-                userUpdated = true;
+            // Respect sell off status (inSell === 0) or unlinked status (state 5 or 7)
+            if (tool.inSell === 0 || tool.state === 5 || tool.state === 7) {
+              if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
+                try {
+                  await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      id: tool.zoopayToolId,
+                      state: 'disabled'
+                    })
+                  });
+                } catch (err) {}
               }
+              continue;
+            }
+
+            // Keep tool active and available for selling unless disabled or unlinked
+            if (tool.status !== 1 || tool.state !== 2) {
+              tool.status = 1; // available
+              tool.state = 2; // idle / active online
+              if (tool.inSell === undefined) tool.inSell = 1;
+              userUpdated = true;
             }
 
             if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
