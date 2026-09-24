@@ -7916,7 +7916,13 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
       (tx) => (tx.type === "recharge" || tx.type === "buy" || tx.type === "deposit") && tx.payer_status === 3
     );
     const totalBoughtIToken = boughtTxs.reduce((sum, tx) => sum + (tx.amount || 0), 0);
-    if (totalBoughtIToken >= 1e3) newbieParams.newbie_buyitoken = 1;
+    let isBuy1000Done = totalBoughtIToken >= 1e3;
+    if (newbieParams.force_buyitoken === 1 || newbieParams.force_buyitoken === true) {
+      isBuy1000Done = true;
+    } else if (totalBoughtIToken < 1e3) {
+      isBuy1000Done = false;
+    }
+    newbieParams.newbie_buyitoken = isBuy1000Done ? 1 : 0;
     const hasLinkedUpiTool = Array.isArray(user.collectionTools) && user.collectionTools.some((t) => t && t.state !== 5 && t.state !== 0);
     if (hasLinkedUpiTool) newbieParams.newbie_newct = 1;
     const newbieTasks = [
@@ -7924,7 +7930,7 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
       { id: 2, name: "Join VIP Group", activityCode: "newbie_tg_customer", reward: 40, completed: Boolean(newbieParams.newbie_tg_customer) },
       { id: 3, name: "Watch Beginner Tutorial", activityCode: "newbie_watch_video", reward: 40, completed: Boolean(newbieParams.newbie_watch_video) },
       { id: 4, name: "Add UPI reward", activityCode: "newbie_newct", reward: 40, completed: Boolean(newbieParams.newbie_newct) || hasLinkedUpiTool },
-      { id: 5, name: "Purchase 1000 IToken", activityCode: "newbie_buyitoken", reward: 200, completed: Boolean(newbieParams.newbie_buyitoken) || totalBoughtIToken >= 1e3, currentProgress: totalBoughtIToken, target: 1e3 }
+      { id: 5, name: "Purchase 1000 IToken", activityCode: "newbie_buyitoken", reward: 200, completed: isBuy1000Done, currentProgress: totalBoughtIToken, target: 1e3 }
     ];
     const isNewbieClaimed = Boolean(user.newbieClaimed === true || user.newbieDone === "claimed" || user.newbieDone === 2);
     const isNewbieDone = Boolean(user.newbieDone === true || user.newbieDone === 1 || isNewbieClaimed);
@@ -8958,6 +8964,9 @@ app.post("/xxapi/admin/userNewbieTaskUpdate", requireAdmin, async (req, res) => 
     }
     if (activityCode) {
       userParams[activityCode] = completed ? 1 : 0;
+      if (activityCode === "newbie_buyitoken") {
+        userParams.force_buyitoken = completed ? 1 : 0;
+      }
       user.newbieParams = JSON.stringify(userParams);
       user.markModified("newbieParams");
     }
