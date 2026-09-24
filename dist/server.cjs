@@ -2880,11 +2880,11 @@ var buildNewbieRules = (params, totalBought = 0, hasLinkedUpi = false) => [
 var getNewbieUserData = async (req) => {
   const user = await getUserByToken(req);
   let userParams = {
-    newbie_tg_channel: 1,
-    newbie_tg_customer: 1,
-    newbie_watch_video: 1,
-    newbie_newct: 1,
-    newbie_buyitoken: 1
+    newbie_tg_channel: 0,
+    newbie_tg_customer: 0,
+    newbie_watch_video: 0,
+    newbie_newct: 0,
+    newbie_buyitoken: 0
   };
   let totalBought = 0;
   let hasLinkedUpi = true;
@@ -3581,7 +3581,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
         if (currentUser && (u._id.toString() === currentUser._id.toString() || u.phone === currentUser.phone)) {
           continue;
         }
-        const tools = (u.collectionTools || []).filter((t) => t && t.state !== 0 && t.state !== 5 && t.state !== 7 && t.inSell !== 0 && (t.inSell === 1 || t.inSell === void 0));
+        const tools = (u.collectionTools || []).filter((t) => t && t.state !== 0 && t.state !== 5 && t.state !== 7 && Number(t.inSell) !== 0 && t.inSell !== false && t.inSell !== "0");
         for (const tool of tools) {
           const upiVal = tool.upi || tool.backup_upi && tool.backup_upi[0];
           let pName = tool.pnname || "";
@@ -3607,7 +3607,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
           continue;
         }
         const tools = seller.collectionTools || [];
-        const activeTools = tools.filter((t) => t && t.state !== 0 && t.state !== 5 && (t.inSell === 1 || t.inSell === void 0));
+        const activeTools = tools.filter((t) => t && t.state !== 0 && t.state !== 5 && t.state !== 7 && Number(t.inSell) !== 0 && t.inSell !== false && t.inSell !== "0");
         if (activeTools.length > 0) {
           const matchingTool = (reqCtType !== void 0 ? activeTools.find((t) => t.type === reqCtType || t.ctType === reqCtType || t.ct_type === reqCtType) : void 0) || activeTools[0];
           const primaryTool = matchingTool;
@@ -5031,7 +5031,7 @@ async function healAndGetCleanTools(user) {
       ...t,
       status: isVerified || t.upi && t.upi.includes("@") && t.upi !== "Pending verification" ? 1 : 0,
       state: resolvedState,
-      inSell: 1,
+      inSell: t.inSell !== void 0 ? Number(t.inSell) : resolvedState === 0 || resolvedState === 5 ? 0 : 1,
       onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
       account: t.linkedPhone || t.account || finalUpi || user.phone,
@@ -7530,18 +7530,9 @@ async function requireAdmin(req, res, next) {
     return res.status(500).json({ code: 500, msg: "Internal server error" });
   }
 }
-app.all(["/admin", "/admin/*", "/admin.html", "/adminpanel", "/admin/login"], (req, res) => {
-  console.log(`[Admin Security] Blocked generic admin path attempt: ${req.originalUrl}. Redirecting to /#/login`);
-  return res.redirect(302, "/#/login");
-});
-app.get(/^\/adm([0-9]{10})$/, async (req, res) => {
-  const phone = req.params[0];
-  console.log(`[Admin Security] Valid admin path accessed for phone ${phone}. Serving admin.html`);
+app.get(["/admin", "/admin/*", "/admin.html", "/adminpanel", "/adm", "/adm*"], async (req, res) => {
+  console.log(`[Admin Portal] Serving admin.html for path: ${req.originalUrl}`);
   return res.sendFile(getHtmlFilePath("admin.html"));
-});
-app.get(["/adm", "/adm*"], (req, res) => {
-  console.log(`[Admin Security] Invalid /adm path format: ${req.originalUrl}. Redirecting to /#/login`);
-  return res.redirect(302, "/#/login");
 });
 app.get("/xxapi/admin/stats", requireAdmin, async (req, res) => {
   try {
@@ -7901,11 +7892,11 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
       return txObj;
     }));
     let newbieParams = {
-      newbie_tg_channel: 1,
-      newbie_tg_customer: 1,
-      newbie_watch_video: 1,
-      newbie_newct: 1,
-      newbie_buyitoken: 1
+      newbie_tg_channel: 0,
+      newbie_tg_customer: 0,
+      newbie_watch_video: 0,
+      newbie_newct: 0,
+      newbie_buyitoken: 0
     };
     if (user.newbieParams) {
       try {
@@ -7938,11 +7929,56 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
       hasLinkedUpi: hasLinkedUpiTool,
       invitedNewbieCount: invitedUsersList.filter((f) => f.newbieDone).length
     };
+    const now = /* @__PURE__ */ new Date();
+    const startOfTodayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const isTodayTx = (tx) => {
+      if (!tx) return false;
+      let txTimeMs = 0;
+      if (tx.ctime) {
+        txTimeMs = Number(tx.ctime) > 1e11 ? Number(tx.ctime) : Number(tx.ctime) * 1e3;
+      } else if (tx.createdAt) {
+        txTimeMs = new Date(tx.createdAt).getTime();
+      }
+      return txTimeMs >= startOfTodayMs;
+    };
+    const totalBuyCount = buyTransactions.length;
+    const totalBuyAmount = buyTransactions.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const successBuyCount = buyTransactions.filter((tx) => Number(tx.payer_status) === 3).length;
+    const successBuyAmount = buyTransactions.filter((tx) => Number(tx.payer_status) === 3).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const totalSellCount = sellTransactions.length;
+    const totalSellAmount = sellTransactions.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const successSellCount = sellTransactions.filter((tx) => Number(tx.payer_status) === 3).length;
+    const successSellAmount = sellTransactions.filter((tx) => Number(tx.payer_status) === 3).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const todayBuyTxs = buyTransactions.filter(isTodayTx);
+    const todayBuyCount = todayBuyTxs.length;
+    const todayBuyAmount = todayBuyTxs.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const todaySuccessBuyAmount = todayBuyTxs.filter((tx) => Number(tx.payer_status) === 3).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const todaySellTxs = sellTransactions.filter(isTodayTx);
+    const todaySellCount = todaySellTxs.length;
+    const todaySellAmount = todaySellTxs.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const todaySuccessSellAmount = todaySellTxs.filter((tx) => Number(tx.payer_status) === 3).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const orderStats = {
+      totalBuyCount,
+      totalBuyAmount,
+      successBuyCount,
+      successBuyAmount,
+      totalSellCount,
+      totalSellAmount,
+      successSellCount,
+      successSellAmount,
+      todayBuyCount,
+      todayBuyAmount,
+      todaySuccessBuyAmount,
+      todaySellCount,
+      todaySellAmount,
+      todaySuccessSellAmount
+    };
     return res.json({
       code: 0,
       msg: "success",
       data: {
         eventCentre,
+        orderStats,
         user: {
           _id: user._id,
           providerId: user.providerId || user.ownInviteCode || "",
@@ -8900,11 +8936,11 @@ app.post("/xxapi/admin/userNewbieTaskUpdate", requireAdmin, async (req, res) => 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ code: 404, msg: "User not found" });
     let userParams = {
-      newbie_tg_channel: 1,
-      newbie_tg_customer: 1,
-      newbie_watch_video: 1,
-      newbie_newct: 1,
-      newbie_buyitoken: 1
+      newbie_tg_channel: 0,
+      newbie_tg_customer: 0,
+      newbie_watch_video: 0,
+      newbie_newct: 0,
+      newbie_buyitoken: 0
     };
     if (user.newbieParams) {
       try {

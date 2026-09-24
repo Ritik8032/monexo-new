@@ -106,7 +106,9 @@ export default function App() {
   };
 
   const { isSupportRoute, token: supportToken } = getSupportDetails();
-  const isAdminRoute = window.location.pathname.toLowerCase().startsWith('/admin');
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+  const isAdminRoute = path.startsWith('/admin') || path.startsWith('/adm') || hash.includes('admin');
 
   if (!isAdminRoute && !isSupportRoute) {
     return null;

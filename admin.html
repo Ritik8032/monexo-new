@@ -823,9 +823,15 @@
                   <p class="text-xs text-slate-400">Live status of user UPI tools across all accounts (Active/Online, Sell Disabled, Unlinked)</p>
                 </div>
 
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="flex items-center bg-slate-100 p-1 rounded-xl gap-1 text-[11px] font-bold">
+                    <button @click="allToolFilter = 'all'" :class="['px-3 py-1 rounded-lg transition', allToolFilter === 'all' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700']">All</button>
+                    <button @click="allToolFilter = 'active'" :class="['px-3 py-1 rounded-lg transition', allToolFilter === 'active' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-500 hover:text-slate-700']">Active / Online</button>
+                    <button @click="allToolFilter = 'selloff'" :class="['px-3 py-1 rounded-lg transition', allToolFilter === 'selloff' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-500 hover:text-slate-700']">Sell Disabled</button>
+                    <button @click="allToolFilter = 'unlinked'" :class="['px-3 py-1 rounded-lg transition', allToolFilter === 'unlinked' ? 'bg-rose-500 text-white shadow-xs' : 'text-slate-500 hover:text-slate-700']">Unlinked</button>
+                  </div>
                   <input type="text" v-model="allUserToolsSearch" placeholder="Filter phone, UPI, partner..." 
-                    class="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#b66dff] w-56">
+                    class="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#b66dff] w-48">
                   <button @click="fetchAllUserTools" class="px-3 py-2 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
                     <i class="fa-solid fa-rotate text-xs"></i> Refresh Tools
                   </button>
@@ -847,7 +853,16 @@
                     </tr>
                   </thead>
                   <tbody class="bg-white divide-y divide-slate-100 text-xs font-medium">
-                    <tr v-for="t in allUserToolsList.filter(x => !allUserToolsSearch || (x.userPhone && x.userPhone.includes(allUserToolsSearch)) || (x.upi && x.upi.toLowerCase().includes(allUserToolsSearch.toLowerCase())) || (x.pnname && x.pnname.toLowerCase().includes(allUserToolsSearch.toLowerCase())))" :key="t.id" class="hover:bg-slate-50/50 transition">
+                    <tr v-for="t in allUserToolsList.filter(x => {
+                      if (allToolFilter === 'active' && (!x.isOnline || x.inSell === 0 || x.isUnlinked)) return false;
+                      if (allToolFilter === 'selloff' && x.inSell !== 0) return false;
+                      if (allToolFilter === 'unlinked' && !x.isUnlinked) return false;
+                      if (allUserToolsSearch) {
+                        const q = allUserToolsSearch.toLowerCase();
+                        return (x.userPhone && x.userPhone.includes(q)) || (x.upi && x.upi.toLowerCase().includes(q)) || (x.pnname && x.pnname.toLowerCase().includes(q));
+                      }
+                      return true;
+                    })" :key="t.id" class="hover:bg-slate-50/50 transition">
                       <td class="px-4 py-3">
                         <span class="block font-bold text-slate-800 font-mono">{{ t.userPhone }}</span>
                         <span class="block text-[10px] text-slate-400">{{ t.userName }}</span>
@@ -2255,6 +2270,38 @@
                   </div>
                 </div>
 
+                <!-- User Buy/Sell Order Statistics Grid -->
+                <div class="space-y-3 pt-2">
+                  <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-cart-shopping text-purple-600"></i> User Buy &amp; Sell Order Activity (All-Time &amp; Today)
+                  </h4>
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div class="p-3.5 bg-purple-50/70 rounded-2xl border border-purple-100 space-y-1">
+                      <span class="block font-bold text-purple-700 uppercase text-[10px]">Total Buy Orders</span>
+                      <span class="text-base font-black text-slate-800 font-mono block">{{ orderStats ? orderStats.totalBuyCount : buyTransactions.length }} Orders</span>
+                      <span class="text-[11px] font-extrabold text-purple-900 block font-mono">₹{{ formatCurrency(orderStats ? orderStats.totalBuyAmount : 0) }}</span>
+                    </div>
+
+                    <div class="p-3.5 bg-emerald-50/70 rounded-2xl border border-emerald-100 space-y-1">
+                      <span class="block font-bold text-emerald-700 uppercase text-[10px]">Total Sell Orders</span>
+                      <span class="text-base font-black text-slate-800 font-mono block">{{ orderStats ? orderStats.totalSellCount : sellTransactions.length }} Orders</span>
+                      <span class="text-[11px] font-extrabold text-emerald-900 block font-mono">₹{{ formatCurrency(orderStats ? orderStats.totalSellAmount : 0) }}</span>
+                    </div>
+
+                    <div class="p-3.5 bg-amber-50/70 rounded-2xl border border-amber-100 space-y-1">
+                      <span class="block font-bold text-amber-700 uppercase text-[10px]">Today Buy Orders</span>
+                      <span class="text-base font-black text-slate-800 font-mono block">{{ orderStats ? orderStats.todayBuyCount : 0 }} Orders</span>
+                      <span class="text-[11px] font-extrabold text-amber-900 block font-mono">₹{{ formatCurrency(orderStats ? orderStats.todayBuyAmount : 0) }}</span>
+                    </div>
+
+                    <div class="p-3.5 bg-sky-50/70 rounded-2xl border border-sky-100 space-y-1">
+                      <span class="block font-bold text-sky-700 uppercase text-[10px]">Today Sell Orders</span>
+                      <span class="text-base font-black text-slate-800 font-mono block">{{ orderStats ? orderStats.todaySellCount : 0 }} Orders</span>
+                      <span class="text-[11px] font-extrabold text-sky-900 block font-mono">₹{{ formatCurrency(orderStats ? orderStats.todaySellAmount : 0) }}</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                   <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
                     <span class="block text-slate-400 font-bold uppercase">Invited By (Inviter Code)</span>
@@ -3322,6 +3369,7 @@
         const buyTransactions = ref([]);
         const sellTransactions = ref([]);
         const adminTransactions = ref([]);
+        const orderStats = ref(null);
         const ledgerTab = ref('buy');
 
         // Notifications & SMS State
@@ -3337,6 +3385,7 @@
         const selectedEventCentre = ref(null);
         const allUserToolsList = ref([]);
         const allUserToolsSearch = ref('');
+        const allToolFilter = ref('all');
 
         const updateAdminNewbieTask = async (activityCode, completed) => {
           if (!selectedUser.value) return;
@@ -3715,6 +3764,7 @@
             if (data.code === 0) {
               selectedUser.value = data.data.user;
               selectedEventCentre.value = data.data.eventCentre || null;
+              orderStats.value = data.data.orderStats || null;
               invitedUsers.value = data.data.invitedUsers || [];
               selectedTelemetry.value = data.data.telemetry;
               buyTransactions.value = data.data.buyTransactions || [];
@@ -5127,8 +5177,10 @@
           selectedUser,
           selectedTelemetry,
           selectedEventCentre,
+          orderStats,
           allUserToolsList,
           allUserToolsSearch,
+          allToolFilter,
           updateAdminNewbieTask,
           toggleAdminNewbieClaim,
           toggleCollectionToolState,
