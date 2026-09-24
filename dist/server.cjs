@@ -5020,8 +5020,22 @@ async function healAndGetCleanTools(user) {
     if (typeVal === 9) typeVal = 8;
     if (typeVal === 3) typeVal = 2;
     if (typeVal === 33) typeVal = -10;
-    const isVerified = t.state === 2 && t.upi && typeof t.upi === "string" && t.upi.includes("@") && t.upi !== "Pending verification";
-    const resolvedState = t.state !== void 0 ? t.state : isVerified ? 2 : 5;
+    const hasValidUpi = t.upi && typeof t.upi === "string" && t.upi.includes("@") && t.upi !== "Pending verification";
+    const toolIdVal = String(t.id || t._id || t.upi || typeVal);
+    if (!t.id) {
+      t.id = toolIdVal;
+      modified = true;
+    }
+    let resolvedState = t.state !== void 0 ? t.state : hasValidUpi ? 2 : 5;
+    let inSellVal = Number(t.inSell);
+    if (isNaN(inSellVal)) inSellVal = 1;
+    if (resolvedState === 5 || resolvedState === 7 || !hasValidUpi) {
+      inSellVal = 0;
+      if (t.inSell !== 0) {
+        t.inSell = 0;
+        modified = true;
+      }
+    }
     const currentUpi = t.upi && t.upi !== "Pending verification" ? t.upi : t.savedUpi || "Pending verification";
     const finalUpi = currentUpi && currentUpi !== "Pending verification" && currentUpi.includes("@") ? currentUpi : "Pending verification";
     const buyAllowedTypes = [1, 4, 8];
@@ -5029,9 +5043,10 @@ async function healAndGetCleanTools(user) {
     const onlyPaymentFlagVal = isBuyAllowed ? 3 : 2;
     cleanTools.push({
       ...t,
-      status: isVerified || t.upi && t.upi.includes("@") && t.upi !== "Pending verification" ? 1 : 0,
+      id: toolIdVal,
+      status: hasValidUpi && resolvedState !== 5 && resolvedState !== 7 ? 1 : 0,
       state: resolvedState,
-      inSell: t.inSell !== void 0 ? Number(t.inSell) : resolvedState === 0 || resolvedState === 5 ? 0 : 1,
+      inSell: inSellVal,
       onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
       account: t.linkedPhone || t.account || finalUpi || user.phone,
@@ -5198,16 +5213,33 @@ app.post("/xxapi/collectiontool", async (req, res) => {
   }
 });
 var findUserTool = (tools, toolId) => {
-  if (!Array.isArray(tools) || toolId === void 0 || toolId === null) return null;
-  const sId = String(toolId).trim();
-  return tools.find((t) => {
+  if (!Array.isArray(tools) || toolId === void 0 || toolId === null || toolId === "") return null;
+  const sId = String(toolId).trim().toLowerCase();
+  let match = tools.find((t) => {
     if (!t) return false;
-    if (t.id !== void 0 && (t.id == toolId || String(t.id) === sId)) return true;
-    if (t._id !== void 0 && (t._id == toolId || String(t._id) === sId)) return true;
-    if (t.upi && String(t.upi).toLowerCase() === sId.toLowerCase()) return true;
-    if (t.account && String(t.account).toLowerCase() === sId.toLowerCase()) return true;
+    if (t.id !== void 0 && (t.id == toolId || String(t.id).trim().toLowerCase() === sId)) return true;
+    if (t._id !== void 0 && (t._id == toolId || String(t._id).trim().toLowerCase() === sId)) return true;
+    if (t.zoopayToolId !== void 0 && String(t.zoopayToolId).trim().toLowerCase() === sId) return true;
     return false;
   });
+  if (match) return match;
+  match = tools.find((t) => {
+    if (!t) return false;
+    if (t.upi && String(t.upi).trim().toLowerCase() === sId) return true;
+    if (t.account && String(t.account).trim().toLowerCase() === sId) return true;
+    return false;
+  });
+  if (match) return match;
+  const numId = Number(toolId);
+  if (!isNaN(numId) && numId !== 0) {
+    match = tools.find((t) => {
+      if (!t) return false;
+      const tType = Number(t.ctType || t.type || t.ct_type);
+      return tType === numId || numId === 8 && tType === 9 || numId === 2 && tType === 3;
+    });
+    if (match) return match;
+  }
+  return null;
 };
 app.post("/xxapi/collectiontoolStatus", async (req, res) => {
   const user = await getUserByToken(req);
@@ -5218,7 +5250,13 @@ app.post("/xxapi/collectiontoolStatus", async (req, res) => {
   const statusNum = status !== void 0 ? Number(status) : void 0;
   const stateNum = state !== void 0 ? Number(state) : void 0;
   if (tool) {
-    if (inSell !== void 0) tool.inSell = Number(inSell);
+    if (inSell !== void 0) {
+      const isUnlinked = tool.state === 5 || tool.state === 7 || tool.status === 5 || !tool.upi || tool.upi === "Pending verification" || !tool.upi.includes("@");
+      if (Number(inSell) === 1 && isUnlinked) {
+        return res.json({ code: 400, msg: "UPI unlinked - Please relink first" });
+      }
+      tool.inSell = Number(inSell);
+    }
     if (state !== void 0) tool.state = Number(state);
     if (status !== void 0) tool.status = Number(status);
   }
@@ -5231,6 +5269,7 @@ app.post("/xxapi/collectiontoolStatus", async (req, res) => {
         tool.savedBackupUpi = tool.backup_upi;
       }
       tool.state = 5;
+      tool.inSell = 0;
       if (!tool.upi || tool.upi === "Pending verification") {
         tool.upi = tool.savedUpi || tool.upi || "Pending verification";
       }
@@ -5241,7 +5280,7 @@ app.post("/xxapi/collectiontoolStatus", async (req, res) => {
   }
   if (tool && tool.zoopayToolId && !String(tool.zoopayToolId).startsWith("zoopay-mock-tool-")) {
     try {
-      const zoopayState = Number(inSell) === 1 || Number(state) === 2 ? "enabled" : "disabled";
+      const zoopayState = Number(tool.inSell) === 1 && Number(tool.state) === 2 ? "enabled" : "disabled";
       console.log(`[Zoopay] Syncing manual state update: id=${tool.zoopayToolId}, state=${zoopayState}`);
       await fetchZoopay(user, "https://api.zoopay.vip/api/collection/tools/updateState", {
         method: "POST",
@@ -5265,8 +5304,13 @@ app.post("/xxapi/collectiontool/startsell", async (req, res) => {
   if (!user.collectionTools) user.collectionTools = [];
   const tool = findUserTool(user.collectionTools, id);
   if (tool) {
+    const isUnlinked = tool.state === 5 || tool.state === 7 || tool.status === 5 || !tool.upi || tool.upi === "Pending verification" || !tool.upi.includes("@");
+    if (isUnlinked) {
+      return res.json({ code: 400, msg: "UPI unlinked - Please relink first" });
+    }
     tool.inSell = 1;
-    if (tool.state !== 5 && tool.state !== 7) tool.state = 2;
+    tool.state = 2;
+    tool.status = 1;
     if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith("zoopay-mock-tool-")) {
       try {
         await fetchZoopay(user, "https://api.zoopay.vip/api/collection/tools/updateState", {
@@ -5280,10 +5324,11 @@ app.post("/xxapi/collectiontool/startsell", async (req, res) => {
         console.error("[Zoopay] startsell sync error:", err);
       }
     }
+    user.markModified("collectionTools");
+    await user.save();
+    return res.json({ code: 0, msg: "start sell successfully" });
   }
-  user.markModified("collectionTools");
-  await user.save();
-  return res.json({ code: 0, msg: "success" });
+  return res.json({ code: 404, msg: "Collection tool not found" });
 });
 app.post("/xxapi/collectiontool/stopsell", async (req, res) => {
   const user = await getUserByToken(req);
@@ -5293,6 +5338,9 @@ app.post("/xxapi/collectiontool/stopsell", async (req, res) => {
   const tool = findUserTool(user.collectionTools, id);
   if (tool) {
     tool.inSell = 0;
+    if (tool.state !== 5 && tool.state !== 7) {
+      tool.state = 2;
+    }
     if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith("zoopay-mock-tool-")) {
       try {
         await fetchZoopay(user, "https://api.zoopay.vip/api/collection/tools/updateState", {
@@ -5306,10 +5354,11 @@ app.post("/xxapi/collectiontool/stopsell", async (req, res) => {
         console.error("[Zoopay] stopsell sync error:", err);
       }
     }
+    user.markModified("collectionTools");
+    await user.save();
+    return res.json({ code: 0, msg: "stop sell successfully" });
   }
-  user.markModified("collectionTools");
-  await user.save();
-  return res.json({ code: 0, msg: "success" });
+  return res.json({ code: 404, msg: "Collection tool not found" });
 });
 app.get("/xxapi/availablect", async (req, res) => {
   const user = await getUserByToken(req);
