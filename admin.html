@@ -45,7 +45,8 @@
       background-color: #a359ec;
     }
     [v-cloak] {
-      display: none !important;
+      opacity: 0;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -3040,18 +3041,12 @@
 
   </div>
 
-  <!-- Vue.js 3 Production CDN with Multi-CDN Fallbacks -->
-  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Vue.js 3 Production Script (Primary Local + CDN Fallbacks) -->
+  <script src="/js/vue.global.prod.js"></script>
+  <script>if (typeof Vue === 'undefined') document.write('<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"><\/script>');</script>
   <script>if (typeof Vue === 'undefined') document.write('<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"><\/script>');</script>
   <script>if (typeof Vue === 'undefined') document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"><\/script>');</script>
-  <script>
-    setTimeout(function() {
-      var appEl = document.getElementById('app');
-      if (appEl && appEl.hasAttribute('v-cloak')) {
-        appEl.removeAttribute('v-cloak');
-      }
-    }, 1200);
-  </script>
+
   <!-- Local & Multi-CDN Fallback for jsPDF & jsPDF-AutoTable -->
   <script src="/js/jspdf.umd.min.js"></script>
   <script src="/js/jspdf.plugin.autotable.min.js"></script>
@@ -3062,10 +3057,18 @@
 
   <!-- Frontend Logic Script -->
   <script>
-    const { createApp, ref, onMounted, reactive, computed, watch } = Vue;
+    function initAdminVueApp() {
+      var appEl = document.getElementById('app');
+      if (typeof Vue === 'undefined') {
+        console.warn('Vue not loaded yet, retrying...');
+        setTimeout(initAdminVueApp, 100);
+        return;
+      }
+      try {
+        const { createApp, ref, onMounted, reactive, computed, watch } = Vue;
 
-    createApp({
-      setup() {
+        const app = createApp({
+          setup() {
         const isLoggedIn = ref(false);
         const activeTab = ref('dashboard');
         const loading = ref(false);
@@ -5298,7 +5301,22 @@
           saveServerUrl
         };
       }
-    }).mount('#app');
-  </script>
+    });
+    app.mount('#app');
+    if (appEl) appEl.removeAttribute('v-cloak');
+    console.log('Admin Vue App mounted successfully!');
+  } catch(err) {
+    console.error('Failed to mount Vue Admin App:', err);
+    var appEl = document.getElementById('app');
+    if (appEl) appEl.removeAttribute('v-cloak');
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAdminVueApp);
+} else {
+  initAdminVueApp();
+}
+</script>
 </body>
 </html>
