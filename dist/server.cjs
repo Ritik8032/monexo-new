@@ -1566,8 +1566,8 @@ async function callExternalVerifyOtp(phone, otp, deviceIdParam) {
   try {
     const { cleanPhone } = getCleanPhone(phone);
     const cleanOtp = String(otp || "").trim().replace(/\D/g, "");
-    const deviceId = deviceIdParam || phoneDeviceIds[cleanPhone] || "";
-    console.log(`[callExternalVerifyOtp] Verifying OTP ONLY via api-otp-xxapi for phone: ${cleanPhone}, otp: ${cleanOtp}, deviceId: ${deviceId}`);
+    const deviceId = deviceIdParam || phoneDeviceIds[cleanPhone] || "device-" + import_crypto.default.createHash("md5").update(cleanPhone).digest("hex").substring(0, 16);
+    console.log(`[callExternalVerifyOtp] Verifying OTP via api-otp-xxapi for phone: ${cleanPhone}, deviceId: ${deviceId}`);
     const verifyRes = await fetch("https://api-otp-xxapi.guruarning.workers.dev/api/verify-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1585,7 +1585,7 @@ async function callExternalVerifyOtp(phone, otp, deviceIdParam) {
       }
       return null;
     });
-    console.log("[callExternalVerifyOtp] Worker Response:", JSON.stringify(verifyRes));
+    console.log("[callExternalVerifyOtp] Worker Response received for phone:", cleanPhone);
     return verifyRes;
   } catch (err) {
     console.warn("[callExternalVerifyOtp] Handled exception:", err);
