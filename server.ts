@@ -5857,15 +5857,21 @@ async function healAndGetCleanTools(user) {
 
     let resolvedState = t.state !== undefined ? t.state : (hasValidUpi ? 2 : 5);
     
-    // If tool is unlinked (state 5 or 7 or missing valid UPI VPA), force inSell = 0
-    let inSellVal = Number(t.inSell);
-    if (isNaN(inSellVal)) inSellVal = 1;
+    // Strictly preserve inSell state
+    let inSellVal = 0;
+    if (t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1) {
+      inSellVal = 1;
+    } else if (t.inSell === 0 || t.inSell === false || t.inSell === "0" || t.in_sell === 0 || t.in_sell === false || t.insell === 0) {
+      inSellVal = 0;
+    } else {
+      inSellVal = (hasValidUpi && resolvedState === 2) ? 1 : 0;
+    }
+
     if (resolvedState === 5 || resolvedState === 7 || !hasValidUpi) {
       inSellVal = 0;
-      if (t.inSell !== 0) {
-        t.inSell = 0;
-        modified = true;
-      }
+      t.inSell = 0;
+      t.in_sell = 0;
+      t.insell = 0;
     }
 
     const currentUpi = (t.upi && t.upi !== 'Pending verification') ? t.upi : (t.savedUpi || 'Pending verification');
@@ -5881,6 +5887,8 @@ async function healAndGetCleanTools(user) {
       status: (hasValidUpi && resolvedState !== 5 && resolvedState !== 7) ? 1 : 0,
       state: resolvedState,
       inSell: inSellVal,
+      in_sell: inSellVal,
+      insell: inSellVal,
       onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
       account: t.linkedPhone || t.account || finalUpi || user.phone,
@@ -6195,18 +6203,22 @@ function getOrCreateUserTool(user: any, toolId: any) {
 app.post('/xxapi/collectiontoolStatus', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  const { id, inSell, state, status } = req.body;
-  const tool = getOrCreateUserTool(user, id);
+  const toolId = req.body?.ct_id || req.body?.id || req.body?.ctId || req.body?.ct_type || req.body?.ctType || req.body?.type || req.query?.ct_id || req.query?.id;
+  const { inSell, state, status } = req.body;
+  const tool = getOrCreateUserTool(user, toolId);
   const statusNum = status !== undefined ? Number(status) : undefined;
   const stateNum = state !== undefined ? Number(state) : undefined;
 
   if (tool) {
     if (inSell !== undefined) {
       const isUnlinked = tool.state === 5 || tool.state === 7 || tool.status === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.upi.includes('@');
-      if (Number(inSell) === 1 && isUnlinked) {
+      const targetInSell = Number(inSell);
+      if (targetInSell === 1 && isUnlinked) {
         return res.json({ code: 400, msg: 'UPI unlinked - Please relink first' });
       }
-      tool.inSell = Number(inSell);
+      tool.inSell = targetInSell;
+      tool.in_sell = targetInSell;
+      tool.insell = targetInSell;
     }
     if (state !== undefined) tool.state = Number(state);
     if (status !== undefined) tool.status = Number(status);
@@ -6222,6 +6234,8 @@ app.post('/xxapi/collectiontoolStatus', async (req, res) => {
       }
       tool.state = 5;
       tool.inSell = 0;
+      tool.in_sell = 0;
+      tool.insell = 0;
       if (!tool.upi || tool.upi === 'Pending verification') {
         tool.upi = tool.savedUpi || tool.upi || 'Pending verification';
       }
@@ -6255,8 +6269,8 @@ app.post('/xxapi/collectiontoolStatus', async (req, res) => {
 app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  const { id } = req.body;
-  const tool = getOrCreateUserTool(user, id);
+  const toolId = req.body?.ct_id || req.body?.id || req.body?.ctId || req.body?.ct_type || req.body?.ctType || req.body?.type || req.query?.ct_id || req.query?.id;
+  const tool = getOrCreateUserTool(user, toolId);
   
   const isUnlinked = tool.state === 5 || tool.state === 7 || tool.status === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.upi.includes('@');
   if (isUnlinked) {
@@ -6264,6 +6278,8 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   }
 
   tool.inSell = 1;
+  tool.in_sell = 1;
+  tool.insell = 1;
   tool.state = 2;
   tool.status = 1;
   
@@ -6288,10 +6304,12 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
 app.post('/xxapi/collectiontool/stopsell', async (req, res) => {
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
-  const { id } = req.body;
-  const tool = getOrCreateUserTool(user, id);
+  const toolId = req.body?.ct_id || req.body?.id || req.body?.ctId || req.body?.ct_type || req.body?.ctType || req.body?.type || req.query?.ct_id || req.query?.id;
+  const tool = getOrCreateUserTool(user, toolId);
 
   tool.inSell = 0;
+  tool.in_sell = 0;
+  tool.insell = 0;
   if (tool.state !== 5 && tool.state !== 7) {
     tool.state = 2;
   }
@@ -6952,12 +6970,10 @@ async function handleOrderEnteredInReview(tx: any) {
             console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) set OFFLINE for order ${tx.rptNo}`);
           }
         } else {
-          if (tool.status !== 1 || tool.inSell !== 1) {
-            tool.status = 1; // online
-            tool.inSell = 1;
-            tool.state = 2; // ready
-            modified = true;
-            console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept ONLINE for order ${tx.rptNo}`);
+          // Keep Paytm tool active only if it is already enabled by user
+          if (tool.state !== 5 && tool.state !== 7 && (tool.inSell === 1 || tool.inSell === true)) {
+            tool.status = 1;
+            tool.state = 2;
           }
         }
       });
