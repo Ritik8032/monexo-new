@@ -1511,8 +1511,8 @@ async function callExternalGetOtp(phone, forceResend = false) {
     if (!cleanPhone || cleanPhone.length < 10) return { code: 0, msg: "success" };
     const now = Date.now();
     const lastTime = lastOtpSentTimes[cleanPhone] || 0;
-    if (!forceResend && now - lastTime < 15e3) {
-      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} throttled (${Math.round((now - lastTime) / 1e3)}s since last request) - returning success`);
+    if (!forceResend && now - lastTime < 2e3) {
+      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} debounced (${Math.round((now - lastTime) / 1e3)}s)`);
       return { code: 0, msg: "success" };
     }
     lastOtpSentTimes[cleanPhone] = now;
@@ -1889,7 +1889,7 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
       });
     }
     console.log(`[checkSmsNew] Dispatching SMS OTP for ${cleanPhone}...`);
-    await callExternalGetOtp(cleanPhone);
+    await callExternalGetOtp(cleanPhone, true);
     return res.json({
       code: 0,
       status: 200,
@@ -2005,7 +2005,7 @@ app.post(["/xxapi/sendsms", "/xxapi/sendSms"], async (req, res) => {
       }
     }
     console.log(`[sendsms] Dispatching OTP for phone: ${cleanPhone}, purpose: ${purpose}`);
-    await callExternalGetOtp(cleanPhone);
+    await callExternalGetOtp(cleanPhone, true);
     return res.json({
       code: 0,
       status: 200,
@@ -2089,7 +2089,7 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
       });
     }
     console.log(`[sendLoginSms] Password verified for ${cleanPhone}. Dispatching Login OTP...`);
-    await callExternalGetOtp(cleanPhone);
+    await callExternalGetOtp(cleanPhone, true);
     return res.json({
       code: 0,
       status: 200,
