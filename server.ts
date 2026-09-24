@@ -5859,20 +5859,21 @@ async function healAndGetCleanTools(user) {
     
     // Strictly preserve inSell state
     let inSellVal = 0;
-    if (t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1) {
-      inSellVal = 1;
-    } else if (t.inSell === 0 || t.inSell === false || t.inSell === "0" || t.in_sell === 0 || t.in_sell === false || t.insell === 0) {
+    if (t.inSell === 0 || t.inSell === false || t.inSell === "0" || t.in_sell === 0 || t.in_sell === false || t.insell === 0) {
       inSellVal = 0;
+    } else if (t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1) {
+      inSellVal = 1;
     } else {
-      inSellVal = (hasValidUpi && resolvedState === 2) ? 1 : 0;
+      inSellVal = 0; // Default off unless started
     }
 
     if (resolvedState === 5 || resolvedState === 7 || !hasValidUpi) {
       inSellVal = 0;
-      t.inSell = 0;
-      t.in_sell = 0;
-      t.insell = 0;
     }
+
+    t.inSell = inSellVal;
+    t.in_sell = inSellVal;
+    t.insell = inSellVal;
 
     const currentUpi = (t.upi && t.upi !== 'Pending verification') ? t.upi : (t.savedUpi || 'Pending verification');
     const finalUpi = (currentUpi && currentUpi !== 'Pending verification' && currentUpi.includes('@')) ? currentUpi : 'Pending verification';
@@ -5924,6 +5925,8 @@ app.get('/xxapi/collectiontool', async (req, res) => {
   const { id } = req.query;
   const toolId = String(id || '');
 
+  const cleanTools = await healAndGetCleanTools(user);
+
   let reqTypeNum = 0;
   if (toolId.includes('paytm') || toolId === '8' || toolId === '9' || toolId === '16') reqTypeNum = 8;
   else if (toolId.includes('mobikwik') || toolId === '4') reqTypeNum = 4;
@@ -5935,8 +5938,8 @@ app.get('/xxapi/collectiontool', async (req, res) => {
   else if (toolId.includes('amazon') || toolId === '-10' || toolId === '33') reqTypeNum = -10;
   else if (toolId.includes('phonepe') || toolId === '1') reqTypeNum = 1;
 
-  if (user.collectionTools && user.collectionTools.length > 0) {
-    const specificTool = user.collectionTools.find((t: any) => 
+  if (cleanTools && cleanTools.length > 0) {
+    const specificTool = cleanTools.find((t: any) => 
       String(t.id) === toolId || 
       String(t._id) === toolId || 
       t.upi === toolId || 
@@ -5969,6 +5972,9 @@ app.get('/xxapi/collectiontool', async (req, res) => {
           ctType: resolvedType,
           ct_type: resolvedType,
           type: resolvedType,
+          inSell: specificTool.inSell,
+          in_sell: specificTool.inSell,
+          insell: specificTool.inSell,
           text: specificTool.text || mapCtTypeToName(resolvedType)
         }
       });
@@ -6282,6 +6288,20 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   tool.insell = 1;
   tool.state = 2;
   tool.status = 1;
+
+  if (user.collectionTools && Array.isArray(user.collectionTools)) {
+    user.collectionTools.forEach((t: any) => {
+      const tType = Number(t.ctType || t.type || t.ct_type);
+      const targetType = Number(tool.ctType || tool.type || tool.ct_type);
+      if (t === tool || t.id === tool.id || (targetType > 0 && tType === targetType)) {
+        t.inSell = 1;
+        t.in_sell = 1;
+        t.insell = 1;
+        t.state = 2;
+        t.status = 1;
+      }
+    });
+  }
   
   if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
     try {
@@ -6312,6 +6332,21 @@ app.post('/xxapi/collectiontool/stopsell', async (req, res) => {
   tool.insell = 0;
   if (tool.state !== 5 && tool.state !== 7) {
     tool.state = 2;
+  }
+
+  if (user.collectionTools && Array.isArray(user.collectionTools)) {
+    user.collectionTools.forEach((t: any) => {
+      const tType = Number(t.ctType || t.type || t.ct_type);
+      const targetType = Number(tool.ctType || tool.type || tool.ct_type);
+      if (t === tool || t.id === tool.id || (targetType > 0 && tType === targetType)) {
+        t.inSell = 0;
+        t.in_sell = 0;
+        t.insell = 0;
+        if (t.state !== 5 && t.state !== 7) {
+          t.state = 2;
+        }
+      }
+    });
   }
   
   if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
