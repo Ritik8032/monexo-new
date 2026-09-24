@@ -252,7 +252,7 @@ const userSchema = new mongoose.Schema({
   bankDetails: { type: Array, default: [] },
   upiDetails: { type: Array, default: [] },
   utrLogs: { type: Array, default: [] },
-  balance: { type: Number, default: 10000 },
+  balance: { type: Number, default: 0 },
   commission: { type: Number, default: 0 },
   recharge: { type: Number, default: 0 },
   vipLevel: { type: Number, default: 1 },
@@ -405,7 +405,7 @@ const siteConfigSchema = new mongoose.Schema({
   key: { type: String, default: 'global', unique: true },
   bannerSrcs: [String],
   newsList: [mongoose.Schema.Types.Mixed],
-  usdtExchangerate: { type: String, default: '115' },
+  usdtExchangerate: { type: String, default: '111' },
   trc20Address: { type: String, default: '' },
   trc20CollectionAddress: { type: String, default: '' },
   bscCollectionAddress: { type: String, default: '' },
@@ -1388,7 +1388,16 @@ async function seedAdminUser() {
 function isPasswordEmpty(password) {
   if (password === undefined || password === null) return true;
   const p = String(password).trim();
-  return p === '' || p === 'undefined' || p === 'null';
+  return p === '' || p === 'undefined' || p === 'null' || p === '[object Object]';
+}
+
+function extractPasswordFromReq(req: any): string {
+  if (!req) return '';
+  const body = req.body || {};
+  const query = req.query || {};
+  const val = body.password ?? body.pwd ?? body.pass ?? body.userPassword ?? body.loginPassword ?? body.userPwd ?? query.password ?? query.pwd ?? query.pass ?? '';
+  if (typeof val === 'object' && val !== null) return '';
+  return String(val || '').trim();
 }
 
 function getDefaultCollectionTools() {
@@ -1742,7 +1751,7 @@ async function callExternalGetOtp(phone: string) {
         phoneNumber: cleanPhone,
         formattedPhone: formattedPhone
       }),
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(12000)
     }).then(async (res) => {
       const resData = await res.json().catch(() => null);
       console.log('[callExternalGetOtp] Worker Response for ' + cleanPhone + ':', resData);
@@ -1754,12 +1763,16 @@ async function callExternalGetOtp(phone: string) {
         phoneDeviceIds[cleanPhone] = deviceId;
       }
     }).catch((err) => {
-      console.error('[callExternalGetOtp] Background fetch error:', err?.message || err);
+      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+        console.log(`[callExternalGetOtp] Background fetch timed out for ${cleanPhone} (handled gracefully)`);
+      } else {
+        console.warn('[callExternalGetOtp] Background fetch notice:', err?.message || err);
+      }
     });
 
     return { code: 0, msg: 'success' };
   } catch (err) {
-    console.error('[callExternalGetOtp] Failed:', err);
+    console.warn('[callExternalGetOtp] Handled exception:', err);
     return { code: 0, msg: 'success' };
   }
 }
@@ -1782,14 +1795,18 @@ async function callExternalVerifyOtp(phone: string, otp: string, deviceIdParam?:
       }),
       signal: AbortSignal.timeout(15000)
     }).then(res => res.json()).catch(err => {
-      console.error('[callExternalVerifyOtp] Fetch error:', err);
+      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+        console.log(`[callExternalVerifyOtp] Verify request timed out for ${cleanPhone}`);
+      } else {
+        console.warn('[callExternalVerifyOtp] Fetch notice:', err?.message || err);
+      }
       return null;
     });
 
     console.log('[callExternalVerifyOtp] Worker Response:', JSON.stringify(verifyRes));
     return verifyRes;
   } catch (err) {
-    console.error('[callExternalVerifyOtp] Failed:', err);
+    console.warn('[callExternalVerifyOtp] Handled exception:', err);
     return null;
   }
 }
@@ -2120,7 +2137,7 @@ app.post('/xxapi/register', async (req, res) => {
       invitercode: invitercode || '',
       parentUser: invitercode || '',
       token: uniqueToken,
-      balance: 10000,
+      balance: 0,
       commission: 0,
       collectionTools: getDefaultCollectionTools(),
       sessions: [initialSession],
@@ -2150,10 +2167,10 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
     const rawPhone = extractPhoneFromReq(req);
     const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: 'Please enter a valid 10-digit mobile number' });
+      return res.json({ code: 400, status: 400, msg: 'Please enter a valid 10-digit mobile number' });
     }
 
-    const password = req.body?.password || req.query?.password || '';
+    const password = extractPasswordFromReq(req);
 
     await connectToDatabase();
     const user = await User.findOne(buildPhoneQuery(cleanPhone));
@@ -2185,25 +2202,25 @@ app.post(['/xxapi/checkSmsNew', '/xxapi/checkSms', '/xxapi/sendRegSms'], async (
     }
 
     // Strictly require and verify password before sending login OTP or opening popup
-    if (typeof password === 'string' && password.trim() !== '' && password !== '[object Object]') {
-      const pwd = password.trim();
-      let isMatch = isPasswordMatch(pwd, user);
-      if (isAdminPhone) {
-        isMatch = isMatch || (pwd === 'Ritik@9060') || (pwd === 'Ritik@123');
-      }
-      if (!isMatch) {
-        console.log(`[checkSmsNew] Password mismatch for ${cleanPhone}. Given: "${pwd}"`);
-        return res.json({
-          code: 400,
-          status: 400,
-          msg: 'Password error',
-          message: 'Password error'
-        });
-      }
-    } else {
+    if (!password || isPasswordEmpty(password)) {
       console.log(`[checkSmsNew] Password missing or empty for ${cleanPhone}`);
       return res.json({
-        code: 400,
+        code: 1128,
+        status: 400,
+        msg: 'Password error',
+        message: 'Password error'
+      });
+    }
+
+    let isMatch = isPasswordMatch(password, user);
+    if (isAdminPhone) {
+      isMatch = isMatch || (password === 'Ritik@9060') || (password === 'Ritik@123');
+    }
+
+    if (!isMatch) {
+      console.log(`[checkSmsNew] Password mismatch for ${cleanPhone}. Given: "${password}", DB: "${user.password}"`);
+      return res.json({
+        code: 1128,
         status: 400,
         msg: 'Password error',
         message: 'Password error'
@@ -2372,22 +2389,23 @@ function isPasswordMatch(givenPwd: any, userDoc: any): boolean {
   if (!userDoc) return false;
   if (givenPwd === undefined || givenPwd === null) return false;
   const pwd = String(givenPwd).trim();
-  if (!pwd) return false;
+  if (!pwd || pwd === 'undefined' || pwd === 'null' || pwd === '[object Object]') return false;
 
   const dbPwd = String(userDoc.password || '').trim();
   const dbRePwd = String(userDoc.repassword || '').trim();
 
+  // If DB password is empty or not set, match cannot succeed
+  if (!dbPwd && !dbRePwd) return false;
+
   if (dbPwd !== '' && dbPwd === pwd) return true;
   if (dbRePwd !== '' && dbRePwd === pwd) return true;
-  if (userDoc.password == pwd || userDoc.repassword == pwd) return true;
-  if (dbPwd.toLowerCase() === pwd.toLowerCase()) return true;
-  if (dbRePwd.toLowerCase() === pwd.toLowerCase()) return true;
+  if (dbPwd !== '' && dbPwd.toLowerCase() === pwd.toLowerCase()) return true;
+  if (dbRePwd !== '' && dbRePwd.toLowerCase() === pwd.toLowerCase()) return true;
 
   try {
     const md5Pwd = crypto.createHash('md5').update(pwd).digest('hex');
-    if (dbPwd.toLowerCase() === md5Pwd.toLowerCase() || dbRePwd.toLowerCase() === md5Pwd.toLowerCase()) {
-      return true;
-    }
+    if (dbPwd !== '' && dbPwd.toLowerCase() === md5Pwd.toLowerCase()) return true;
+    if (dbRePwd !== '' && dbRePwd.toLowerCase() === md5Pwd.toLowerCase()) return true;
   } catch (e) {}
 
   return false;
@@ -2402,7 +2420,7 @@ app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], asyn
       return res.json({ code: 400, msg: 'Phone number is required' });
     }
 
-    const givenPassword = req.body?.password || req.query?.password || '';
+    const givenPassword = extractPasswordFromReq(req);
 
     await connectToDatabase();
 
@@ -2428,18 +2446,26 @@ app.post(['/xxapi/sendLoginSms', '/xxapi/sendLoginOtp', '/xxapi/loginSms'], asyn
       return res.json({ code: 400, msg: 'Your account is blocked. Please contact customer support.' });
     }
 
-    // CHECK PASSWORD BEFORE SENDING OTP!
-    if (typeof givenPassword === 'string' && givenPassword.trim() !== '' && givenPassword !== '[object Object]') {
-      const isMatch = isPasswordMatch(givenPassword, registeredUser) || (isAdminPhone && (givenPassword === 'Ritik@9060' || givenPassword === 'Ritik@123'));
-      if (!isMatch) {
-        console.log(`[sendLoginSms] Password error for phone: ${cleanPhone}. Given: "${givenPassword}", DB: "${registeredUser.password}"`);
-        return res.json({
-          code: 400,
-          status: 400,
-          msg: 'Password error',
-          message: 'Password error'
-        });
-      }
+    // STRICTLY REQUIRE AND CHECK PASSWORD BEFORE SENDING OTP!
+    if (!givenPassword || isPasswordEmpty(givenPassword)) {
+      console.log(`[sendLoginSms] Password missing for phone: ${cleanPhone}`);
+      return res.json({
+        code: 1128,
+        status: 400,
+        msg: "Password error",
+        message: "Password error"
+      });
+    }
+
+    const isMatch = isPasswordMatch(givenPassword, registeredUser) || (isAdminPhone && (givenPassword === "Ritik@9060" || givenPassword === "Ritik@123"));
+    if (!isMatch) {
+      console.log(`[sendLoginSms] Password error for phone: ${cleanPhone}. Given: "${givenPassword}", DB: "${registeredUser.password}"`);
+      return res.json({
+        code: 1128,
+        status: 400,
+        msg: "Password error",
+        message: "Password error"
+      });
     }
 
     console.log(`[sendLoginSms] Password verified for ${cleanPhone}. Dispatching Login OTP...`);
@@ -2473,7 +2499,8 @@ app.post(["/xxsapi/slid/verify", "/xxapi/checkSliderCaptcha"], async (req, res) 
 app.post('/xxapi/login', async (req, res) => {
   try {
     await connectToDatabase();
-    const { phone, password, smscode, trustedDeviceId, clientId, sameDeviceBypass } = req.body;
+    const { phone, smscode, trustedDeviceId, clientId, sameDeviceBypass } = req.body || {};
+    const password = extractPasswordFromReq(req);
     const { cleanPhone } = getCleanPhone(phone || '');
     if (!cleanPhone) {
       return res.json({ code: 400, msg: 'Phone number is required' });
@@ -2516,20 +2543,19 @@ app.post('/xxapi/login', async (req, res) => {
     }
 
     // STRICT CHECK: Check password against user.password and user.repassword
-    if (password && !isPasswordEmpty(password)) {
-      const pwd = String(password).trim();
-      let isPasswordCorrect = isPasswordMatch(pwd, user);
+    if (!password || isPasswordEmpty(password)) {
+      console.log(`[Login Rejected] Missing password for ${cleanPhone}`);
+      return res.json({ code: 1128, status: 400, msg: "Password error", message: "Password error" });
+    }
 
-      if (isAdminPhone) {
-        isPasswordCorrect = isPasswordCorrect || (pwd === adminConfig[cleanPhone].pwd) || (pwd === 'Ritik@9060') || (pwd === 'Ritik@123');
-      }
+    let isPasswordCorrect = isPasswordMatch(password, user);
+    if (isAdminPhone) {
+      isPasswordCorrect = isPasswordCorrect || (password === adminConfig[cleanPhone]?.pwd) || (password === "Ritik@9060") || (password === "Ritik@123");
+    }
 
-      if (!isPasswordCorrect) {
-        console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${user.password}" / "${user.repassword}"`);
-        return res.json({ code: 400, status: 400, msg: 'Password error', message: 'Password error' });
-      }
-    } else if (!smscode || String(smscode).trim() === '') {
-      return res.json({ code: 400, status: 400, msg: 'Password error', message: 'Password error' });
+    if (!isPasswordCorrect) {
+      console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${password}", DB: "${user.password}" / "${user.repassword}"`);
+      return res.json({ code: 1128, status: 400, msg: "Password error", message: "Password error" });
     }
 
     // STRICT CHECK: ALWAYS verify OTP code if smscode is provided!
@@ -2835,7 +2861,7 @@ app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
       }
     }
 
-    const currentTotalBalance = Number(user.balance ?? 10000);
+    const currentTotalBalance = Number(user.balance ?? 0);
     const frozenItoken = inSellAmount;
     const availableIToken = Math.max(0, currentTotalBalance - frozenItoken);
 
@@ -3237,7 +3263,7 @@ app.get('/xxapi/config', async (req, res) => {
     }
   } catch (e) {}
 
-  const usdtRate = (dbConfig && dbConfig.usdtExchangerate) ? String(dbConfig.usdtExchangerate) : "115";
+  const usdtRate = (dbConfig && dbConfig.usdtExchangerate) ? String(dbConfig.usdtExchangerate) : "111";
   const trc20Addr = (dbConfig && dbConfig.trc20Address) 
     ? dbConfig.trc20Address 
     : ((dbConfig && dbConfig.trc20CollectionAddress) ? dbConfig.trc20CollectionAddress : "TMX8vG5Qk4jP9wZ2yR7L3mN6K1sT4vU8xY");
@@ -3399,9 +3425,9 @@ app.get('/xxapi/newbieDayStep/init', async (req, res) => {
       activityRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: JSON.stringify(userParams) },
       activityRules: rules,
       guides: rules,
-      allDone: true,
+      allDone: allTasksDone,
       finishNewbie: isDone,
-      buyToken: String(Math.max(1000, totalBought))
+      buyToken: String(totalBought)
     }
   });
 });
@@ -3418,8 +3444,8 @@ app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
       guides: rules,
       tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
       newbieReward: 200,
-      buyToken: String(Math.max(1000, totalBought)),
-      allDone: true,
+      buyToken: String(totalBought),
+      allDone: allTasksDone,
       finishNewbie: isDone
     }
   });
@@ -5434,7 +5460,7 @@ app.all(['/xxapi/buyUsdt/notify', '/xxapi/buyTrx/notify', '/xxapi/buyUsdt/submit
     }
 
     const siteConf = await SiteConfig.findOne().lean();
-    const rate = Number(siteConf?.usdtExchangerate || 115);
+    const rate = Number(siteConf?.usdtExchangerate || 111);
 
     let actualUsdt = 0;
     let inrAmount = 0;
@@ -7544,7 +7570,7 @@ async function getRechargeHistory(req: any, res: any) {
 
     const isUsdtTx = tx.isUsdt || tx.currency === 1 || String(tx.rptNo || '').startsWith('USDT') || (tx.usdtAmount && tx.usdtAmount > 0);
     let uAmt = Number(tx.usdtAmount || 1);
-    const rate = Number(tx.exchangeRate || 115);
+    const rate = Number(tx.exchangeRate || 111);
     let effectiveAmount = Number(tx.amount || 0);
     if (isUsdtTx) {
       if (uAmt < 0.1 || effectiveAmount <= 10) {
@@ -9227,7 +9253,7 @@ app.post('/xxapi/admin/updateUsdtConfig', requireAdmin, async (req: any, res: an
       config.trc20CollectionAddress = String(trc20Address).trim();
     }
     if (usdtExchangerate !== undefined) {
-      config.usdtExchangerate = String(usdtExchangerate).trim() || "115";
+      config.usdtExchangerate = String(usdtExchangerate).trim() || "111";
     }
     if (bscCollectionAddress !== undefined) {
       config.bscCollectionAddress = String(bscCollectionAddress).trim();
@@ -9264,7 +9290,7 @@ app.post('/xxapi/admin/updateSiteConfig', requireAdmin, async (req, res) => {
       config.trc20CollectionAddress = String(trc20Address).trim();
     }
     if (usdtExchangerate !== undefined) {
-      config.usdtExchangerate = String(usdtExchangerate).trim() || "115";
+      config.usdtExchangerate = String(usdtExchangerate).trim() || "111";
     }
     if (bscCollectionAddress !== undefined) {
       config.bscCollectionAddress = String(bscCollectionAddress).trim();
@@ -9529,7 +9555,7 @@ app.get('/xxapi/admin/usdtHistory', requireAdmin, async (req, res) => {
     // Run database repair for bugged legacy USDT transactions
     try {
       const siteConf = await SiteConfig.findOne().lean();
-      const defaultRate = Number(siteConf?.usdtExchangerate || 115);
+      const defaultRate = Number(siteConf?.usdtExchangerate || 111);
       const buggedTxs = await Transaction.find({
         $or: [{ isUsdt: true }, { currency: 1 }, { rptNo: /^USDT/ }],
         $or: [
@@ -9564,7 +9590,7 @@ app.get('/xxapi/admin/usdtHistory', requireAdmin, async (req, res) => {
       .lean();
 
     const siteConf = await SiteConfig.findOne().lean();
-    const defaultRate = Number(siteConf?.usdtExchangerate || 115);
+    const defaultRate = Number(siteConf?.usdtExchangerate || 111);
 
     const mappedTxs = txs.map((t: any) => {
       let uAmt = Number(t.usdtAmount || 1);
@@ -9657,7 +9683,7 @@ app.post('/xxapi/admin/approveUsdtDeposit', requireAdmin, async (req, res) => {
     }
 
     let uAmt = Number(tx.usdtAmount || 1);
-    const rate = Number(tx.exchangeRate || 115);
+    const rate = Number(tx.exchangeRate || 111);
     if (uAmt < 0.1 || !tx.amount || tx.amount <= 10) {
       uAmt = 1;
       tx.usdtAmount = 1;
@@ -9744,7 +9770,7 @@ app.post('/xxapi/admin/createUsdtDeposit', requireAdmin, async (req, res) => {
     }
 
     const siteConf = await SiteConfig.findOne().lean();
-    const rate = Number(siteConf?.usdtExchangerate || 115);
+    const rate = Number(siteConf?.usdtExchangerate || 111);
 
     const numUsdt = Number(usdtAmount || (inrAmount ? Number(inrAmount) / rate : 1));
     const numInr = Number(inrAmount || Math.round(numUsdt * rate));
@@ -10975,7 +11001,7 @@ app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
           const isUsdtTx = tx.isUsdt || tx.currency === 1 || String(tx.rptNo || '').startsWith('USDT') || (tx.usdtAmount && tx.usdtAmount > 0);
           if (isUsdtTx) {
             let uAmt = Number(tx.usdtAmount || 1);
-            const rate = Number(tx.exchangeRate || 115);
+            const rate = Number(tx.exchangeRate || 111);
             if (uAmt < 0.1 || !tx.amount || tx.amount <= 10) {
               uAmt = 1;
               tx.usdtAmount = 1;

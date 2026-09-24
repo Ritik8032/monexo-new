@@ -246,7 +246,7 @@ var userSchema = new import_mongoose.default.Schema({
   bankDetails: { type: Array, default: [] },
   upiDetails: { type: Array, default: [] },
   utrLogs: { type: Array, default: [] },
-  balance: { type: Number, default: 1e4 },
+  balance: { type: Number, default: 0 },
   commission: { type: Number, default: 0 },
   recharge: { type: Number, default: 0 },
   vipLevel: { type: Number, default: 1 },
@@ -405,7 +405,7 @@ var siteConfigSchema = new import_mongoose.default.Schema({
   key: { type: String, default: "global", unique: true },
   bannerSrcs: [String],
   newsList: [import_mongoose.default.Schema.Types.Mixed],
-  usdtExchangerate: { type: String, default: "115" },
+  usdtExchangerate: { type: String, default: "111" },
   trc20Address: { type: String, default: "" },
   trc20CollectionAddress: { type: String, default: "" },
   bscCollectionAddress: { type: String, default: "" },
@@ -1175,7 +1175,15 @@ async function fetchZoopay(user, url, options = {}) {
 function isPasswordEmpty(password) {
   if (password === void 0 || password === null) return true;
   const p = String(password).trim();
-  return p === "" || p === "undefined" || p === "null";
+  return p === "" || p === "undefined" || p === "null" || p === "[object Object]";
+}
+function extractPasswordFromReq(req) {
+  if (!req) return "";
+  const body = req.body || {};
+  const query = req.query || {};
+  const val = body.password ?? body.pwd ?? body.pass ?? body.userPassword ?? body.loginPassword ?? body.userPwd ?? query.password ?? query.pwd ?? query.pass ?? "";
+  if (typeof val === "object" && val !== null) return "";
+  return String(val || "").trim();
 }
 function getDefaultCollectionTools() {
   return [];
@@ -1494,7 +1502,7 @@ async function callExternalGetOtp(phone) {
         phoneNumber: cleanPhone,
         formattedPhone
       }),
-      signal: AbortSignal.timeout(8e3)
+      signal: AbortSignal.timeout(12e3)
     }).then(async (res) => {
       const resData = await res.json().catch(() => null);
       console.log("[callExternalGetOtp] Worker Response for " + cleanPhone + ":", resData);
@@ -1503,11 +1511,15 @@ async function callExternalGetOtp(phone) {
         phoneDeviceIds[cleanPhone] = deviceId;
       }
     }).catch((err) => {
-      console.error("[callExternalGetOtp] Background fetch error:", err?.message || err);
+      if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+        console.log(`[callExternalGetOtp] Background fetch timed out for ${cleanPhone} (handled gracefully)`);
+      } else {
+        console.warn("[callExternalGetOtp] Background fetch notice:", err?.message || err);
+      }
     });
     return { code: 0, msg: "success" };
   } catch (err) {
-    console.error("[callExternalGetOtp] Failed:", err);
+    console.warn("[callExternalGetOtp] Handled exception:", err);
     return { code: 0, msg: "success" };
   }
 }
@@ -1527,13 +1539,17 @@ async function callExternalVerifyOtp(phone, otp, deviceIdParam) {
       }),
       signal: AbortSignal.timeout(15e3)
     }).then((res) => res.json()).catch((err) => {
-      console.error("[callExternalVerifyOtp] Fetch error:", err);
+      if (err?.name === "TimeoutError" || err?.name === "AbortError") {
+        console.log(`[callExternalVerifyOtp] Verify request timed out for ${cleanPhone}`);
+      } else {
+        console.warn("[callExternalVerifyOtp] Fetch notice:", err?.message || err);
+      }
       return null;
     });
     console.log("[callExternalVerifyOtp] Worker Response:", JSON.stringify(verifyRes));
     return verifyRes;
   } catch (err) {
-    console.error("[callExternalVerifyOtp] Failed:", err);
+    console.warn("[callExternalVerifyOtp] Handled exception:", err);
     return null;
   }
 }
@@ -1769,7 +1785,7 @@ app.post("/xxapi/register", async (req, res) => {
       invitercode: invitercode || "",
       parentUser: invitercode || "",
       token: uniqueToken,
-      balance: 1e4,
+      balance: 0,
       commission: 0,
       collectionTools: getDefaultCollectionTools(),
       sessions: [initialSession],
@@ -1796,9 +1812,9 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
     const rawPhone = extractPhoneFromReq(req);
     const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: "Please enter a valid 10-digit mobile number" });
+      return res.json({ code: 400, status: 400, msg: "Please enter a valid 10-digit mobile number" });
     }
-    const password = req.body?.password || req.query?.password || "";
+    const password = extractPasswordFromReq(req);
     await connectToDatabase();
     const user = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!user) {
@@ -1824,25 +1840,23 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
         msg: "Your account is blocked. Please contact customer support."
       });
     }
-    if (typeof password === "string" && password.trim() !== "" && password !== "[object Object]") {
-      const pwd = password.trim();
-      let isMatch = isPasswordMatch(pwd, user);
-      if (isAdminPhone) {
-        isMatch = isMatch || pwd === "Ritik@9060" || pwd === "Ritik@123";
-      }
-      if (!isMatch) {
-        console.log(`[checkSmsNew] Password mismatch for ${cleanPhone}. Given: "${pwd}"`);
-        return res.json({
-          code: 400,
-          status: 400,
-          msg: "Password error",
-          message: "Password error"
-        });
-      }
-    } else {
+    if (!password || isPasswordEmpty(password)) {
       console.log(`[checkSmsNew] Password missing or empty for ${cleanPhone}`);
       return res.json({
-        code: 400,
+        code: 1128,
+        status: 400,
+        msg: "Password error",
+        message: "Password error"
+      });
+    }
+    let isMatch = isPasswordMatch(password, user);
+    if (isAdminPhone) {
+      isMatch = isMatch || password === "Ritik@9060" || password === "Ritik@123";
+    }
+    if (!isMatch) {
+      console.log(`[checkSmsNew] Password mismatch for ${cleanPhone}. Given: "${password}", DB: "${user.password}"`);
+      return res.json({
+        code: 1128,
         status: 400,
         msg: "Password error",
         message: "Password error"
@@ -1984,19 +1998,18 @@ function isPasswordMatch(givenPwd, userDoc) {
   if (!userDoc) return false;
   if (givenPwd === void 0 || givenPwd === null) return false;
   const pwd = String(givenPwd).trim();
-  if (!pwd) return false;
+  if (!pwd || pwd === "undefined" || pwd === "null" || pwd === "[object Object]") return false;
   const dbPwd = String(userDoc.password || "").trim();
   const dbRePwd = String(userDoc.repassword || "").trim();
+  if (!dbPwd && !dbRePwd) return false;
   if (dbPwd !== "" && dbPwd === pwd) return true;
   if (dbRePwd !== "" && dbRePwd === pwd) return true;
-  if (userDoc.password == pwd || userDoc.repassword == pwd) return true;
-  if (dbPwd.toLowerCase() === pwd.toLowerCase()) return true;
-  if (dbRePwd.toLowerCase() === pwd.toLowerCase()) return true;
+  if (dbPwd !== "" && dbPwd.toLowerCase() === pwd.toLowerCase()) return true;
+  if (dbRePwd !== "" && dbRePwd.toLowerCase() === pwd.toLowerCase()) return true;
   try {
     const md5Pwd = import_crypto.default.createHash("md5").update(pwd).digest("hex");
-    if (dbPwd.toLowerCase() === md5Pwd.toLowerCase() || dbRePwd.toLowerCase() === md5Pwd.toLowerCase()) {
-      return true;
-    }
+    if (dbPwd !== "" && dbPwd.toLowerCase() === md5Pwd.toLowerCase()) return true;
+    if (dbRePwd !== "" && dbRePwd.toLowerCase() === md5Pwd.toLowerCase()) return true;
   } catch (e) {
   }
   return false;
@@ -2009,7 +2022,7 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
     if (!cleanPhone || cleanPhone.length < 10) {
       return res.json({ code: 400, msg: "Phone number is required" });
     }
-    const givenPassword = req.body?.password || req.query?.password || "";
+    const givenPassword = extractPasswordFromReq(req);
     await connectToDatabase();
     const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
     if (!registeredUser) {
@@ -2030,17 +2043,24 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
     if (registeredUser.isBlocked && !isAdminPhone) {
       return res.json({ code: 400, msg: "Your account is blocked. Please contact customer support." });
     }
-    if (typeof givenPassword === "string" && givenPassword.trim() !== "" && givenPassword !== "[object Object]") {
-      const isMatch = isPasswordMatch(givenPassword, registeredUser) || isAdminPhone && (givenPassword === "Ritik@9060" || givenPassword === "Ritik@123");
-      if (!isMatch) {
-        console.log(`[sendLoginSms] Password error for phone: ${cleanPhone}. Given: "${givenPassword}", DB: "${registeredUser.password}"`);
-        return res.json({
-          code: 400,
-          status: 400,
-          msg: "Password error",
-          message: "Password error"
-        });
-      }
+    if (!givenPassword || isPasswordEmpty(givenPassword)) {
+      console.log(`[sendLoginSms] Password missing for phone: ${cleanPhone}`);
+      return res.json({
+        code: 1128,
+        status: 400,
+        msg: "Password error",
+        message: "Password error"
+      });
+    }
+    const isMatch = isPasswordMatch(givenPassword, registeredUser) || isAdminPhone && (givenPassword === "Ritik@9060" || givenPassword === "Ritik@123");
+    if (!isMatch) {
+      console.log(`[sendLoginSms] Password error for phone: ${cleanPhone}. Given: "${givenPassword}", DB: "${registeredUser.password}"`);
+      return res.json({
+        code: 1128,
+        status: 400,
+        msg: "Password error",
+        message: "Password error"
+      });
     }
     console.log(`[sendLoginSms] Password verified for ${cleanPhone}. Dispatching Login OTP...`);
     await callExternalGetOtp(cleanPhone);
@@ -2067,7 +2087,8 @@ app.post(["/xxsapi/slid/verify", "/xxapi/checkSliderCaptcha"], async (req, res) 
 app.post("/xxapi/login", async (req, res) => {
   try {
     await connectToDatabase();
-    const { phone, password, smscode, trustedDeviceId, clientId, sameDeviceBypass } = req.body;
+    const { phone, smscode, trustedDeviceId, clientId, sameDeviceBypass } = req.body || {};
+    const password = extractPasswordFromReq(req);
     const { cleanPhone } = getCleanPhone(phone || "");
     if (!cleanPhone) {
       return res.json({ code: 400, msg: "Phone number is required" });
@@ -2105,18 +2126,17 @@ app.post("/xxapi/login", async (req, res) => {
     if (user.isBlocked && !isAdminPhone) {
       return res.json({ code: 400, msg: "Your account is blocked. Please contact customer support." });
     }
-    if (password && !isPasswordEmpty(password)) {
-      const pwd = String(password).trim();
-      let isPasswordCorrect = isPasswordMatch(pwd, user);
-      if (isAdminPhone) {
-        isPasswordCorrect = isPasswordCorrect || pwd === adminConfig[cleanPhone].pwd || pwd === "Ritik@9060" || pwd === "Ritik@123";
-      }
-      if (!isPasswordCorrect) {
-        console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${pwd}", DB: "${user.password}" / "${user.repassword}"`);
-        return res.json({ code: 400, status: 400, msg: "Password error", message: "Password error" });
-      }
-    } else if (!smscode || String(smscode).trim() === "") {
-      return res.json({ code: 400, status: 400, msg: "Password error", message: "Password error" });
+    if (!password || isPasswordEmpty(password)) {
+      console.log(`[Login Rejected] Missing password for ${cleanPhone}`);
+      return res.json({ code: 1128, status: 400, msg: "Password error", message: "Password error" });
+    }
+    let isPasswordCorrect = isPasswordMatch(password, user);
+    if (isAdminPhone) {
+      isPasswordCorrect = isPasswordCorrect || password === adminConfig[cleanPhone]?.pwd || password === "Ritik@9060" || password === "Ritik@123";
+    }
+    if (!isPasswordCorrect) {
+      console.log(`[Login Rejected] Incorrect password for ${cleanPhone}. Given: "${password}", DB: "${user.password}" / "${user.repassword}"`);
+      return res.json({ code: 1128, status: 400, msg: "Password error", message: "Password error" });
     }
     if (smscode && String(smscode).trim() !== "") {
       const isOtpValid = await verifyOtpCode(cleanPhone, smscode);
@@ -2386,7 +2406,7 @@ app.get(["/xxapi/userinfo", "/userinfo"], async (req, res) => {
         todaySuccess++;
       }
     }
-    const currentTotalBalance = Number(user.balance ?? 1e4);
+    const currentTotalBalance = Number(user.balance ?? 0);
     const frozenItoken = inSellAmount;
     const availableIToken = Math.max(0, currentTotalBalance - frozenItoken);
     const myInviteCode = user.ownInviteCode || user.referralCode || "";
@@ -2743,7 +2763,7 @@ app.get("/xxapi/config", async (req, res) => {
     }
   } catch (e) {
   }
-  const usdtRate = dbConfig && dbConfig.usdtExchangerate ? String(dbConfig.usdtExchangerate) : "115";
+  const usdtRate = dbConfig && dbConfig.usdtExchangerate ? String(dbConfig.usdtExchangerate) : "111";
   const trc20Addr = dbConfig && dbConfig.trc20Address ? dbConfig.trc20Address : dbConfig && dbConfig.trc20CollectionAddress ? dbConfig.trc20CollectionAddress : "TMX8vG5Qk4jP9wZ2yR7L3mN6K1sT4vU8xY";
   const bscAddr = dbConfig && dbConfig.bscCollectionAddress ? dbConfig.bscCollectionAddress : "";
   const defaultBanners = [
@@ -2891,9 +2911,9 @@ app.get("/xxapi/newbieDayStep/init", async (req, res) => {
       activityRecord: { done: isDone, condition: 1e3, settleAmt: isDone === 1 ? 200 : 0, params: JSON.stringify(userParams) },
       activityRules: rules,
       guides: rules,
-      allDone: true,
+      allDone: allTasksDone,
       finishNewbie: isDone,
-      buyToken: String(Math.max(1e3, totalBought))
+      buyToken: String(totalBought)
     }
   });
 });
@@ -2909,8 +2929,8 @@ app.get("/xxapi/newbieStepTotal/init", async (req, res) => {
       guides: rules,
       tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
       newbieReward: 200,
-      buyToken: String(Math.max(1e3, totalBought)),
-      allDone: true,
+      buyToken: String(totalBought),
+      allDone: allTasksDone,
       finishNewbie: isDone
     }
   });
@@ -4726,7 +4746,7 @@ app.all(["/xxapi/buyUsdt/notify", "/xxapi/buyTrx/notify", "/xxapi/buyUsdt/submit
       }
     }
     const siteConf = await SiteConfig.findOne().lean();
-    const rate = Number(siteConf?.usdtExchangerate || 115);
+    const rate = Number(siteConf?.usdtExchangerate || 111);
     let actualUsdt = 0;
     let inrAmount = 0;
     if (explicitUsdt > 0) {
@@ -6553,7 +6573,7 @@ async function getRechargeHistory(req, res) {
     const finishTimeSec = tx.finishTime || tx.fnsDate || (tx.payer_status >= 3 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : 0);
     const isUsdtTx = tx.isUsdt || tx.currency === 1 || String(tx.rptNo || "").startsWith("USDT") || tx.usdtAmount && tx.usdtAmount > 0;
     let uAmt = Number(tx.usdtAmount || 1);
-    const rate = Number(tx.exchangeRate || 115);
+    const rate = Number(tx.exchangeRate || 111);
     let effectiveAmount = Number(tx.amount || 0);
     if (isUsdtTx) {
       if (uAmt < 0.1 || effectiveAmount <= 10) {
@@ -8007,7 +8027,7 @@ app.post("/xxapi/admin/updateUsdtConfig", requireAdmin, async (req, res) => {
       config.trc20CollectionAddress = String(trc20Address).trim();
     }
     if (usdtExchangerate !== void 0) {
-      config.usdtExchangerate = String(usdtExchangerate).trim() || "115";
+      config.usdtExchangerate = String(usdtExchangerate).trim() || "111";
     }
     if (bscCollectionAddress !== void 0) {
       config.bscCollectionAddress = String(bscCollectionAddress).trim();
@@ -8040,7 +8060,7 @@ app.post("/xxapi/admin/updateSiteConfig", requireAdmin, async (req, res) => {
       config.trc20CollectionAddress = String(trc20Address).trim();
     }
     if (usdtExchangerate !== void 0) {
-      config.usdtExchangerate = String(usdtExchangerate).trim() || "115";
+      config.usdtExchangerate = String(usdtExchangerate).trim() || "111";
     }
     if (bscCollectionAddress !== void 0) {
       config.bscCollectionAddress = String(bscCollectionAddress).trim();
@@ -8277,7 +8297,7 @@ app.get("/xxapi/admin/usdtHistory", requireAdmin, async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 50));
     try {
       const siteConf2 = await SiteConfig.findOne().lean();
-      const defaultRate2 = Number(siteConf2?.usdtExchangerate || 115);
+      const defaultRate2 = Number(siteConf2?.usdtExchangerate || 111);
       const buggedTxs = await Transaction.find({
         $or: [{ isUsdt: true }, { currency: 1 }, { rptNo: /^USDT/ }],
         $or: [
@@ -8308,7 +8328,7 @@ app.get("/xxapi/admin/usdtHistory", requireAdmin, async (req, res) => {
     const totalCount = await Transaction.countDocuments(filter);
     const txs = await Transaction.find(filter).sort({ ctime: -1, createdAt: -1 }).skip((pageNum - 1) * limitNum).limit(limitNum).lean();
     const siteConf = await SiteConfig.findOne().lean();
-    const defaultRate = Number(siteConf?.usdtExchangerate || 115);
+    const defaultRate = Number(siteConf?.usdtExchangerate || 111);
     const mappedTxs = txs.map((t) => {
       let uAmt = Number(t.usdtAmount || 1);
       const rate = Number(t.exchangeRate || defaultRate);
@@ -8388,7 +8408,7 @@ app.post("/xxapi/admin/approveUsdtDeposit", requireAdmin, async (req, res) => {
       return res.json({ code: 0, msg: "Transaction is already approved" });
     }
     let uAmt = Number(tx.usdtAmount || 1);
-    const rate = Number(tx.exchangeRate || 115);
+    const rate = Number(tx.exchangeRate || 111);
     if (uAmt < 0.1 || !tx.amount || tx.amount <= 10) {
       uAmt = 1;
       tx.usdtAmount = 1;
@@ -8459,7 +8479,7 @@ app.post("/xxapi/admin/createUsdtDeposit", requireAdmin, async (req, res) => {
       return res.status(404).json({ code: 404, msg: "User with this phone number not found" });
     }
     const siteConf = await SiteConfig.findOne().lean();
-    const rate = Number(siteConf?.usdtExchangerate || 115);
+    const rate = Number(siteConf?.usdtExchangerate || 111);
     const numUsdt = Number(usdtAmount || (inrAmount ? Number(inrAmount) / rate : 1));
     const numInr = Number(inrAmount || Math.round(numUsdt * rate));
     const rptNo = "USDT" + Date.now() + Math.floor(Math.random() * 1e3);
@@ -9507,7 +9527,7 @@ app.post("/xxapi/admin/updateOrderStatus", requireAdmin, async (req, res) => {
           const isUsdtTx = tx.isUsdt || tx.currency === 1 || String(tx.rptNo || "").startsWith("USDT") || tx.usdtAmount && tx.usdtAmount > 0;
           if (isUsdtTx) {
             let uAmt = Number(tx.usdtAmount || 1);
-            const rate = Number(tx.exchangeRate || 115);
+            const rate = Number(tx.exchangeRate || 111);
             if (uAmt < 0.1 || !tx.amount || tx.amount <= 10) {
               uAmt = 1;
               tx.usdtAmount = 1;
