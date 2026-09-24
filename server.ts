@@ -1756,6 +1756,7 @@ function buildPhoneQuery(inputPhone: string) {
 }
 
 const phoneDeviceIds: Record<string, string> = {};
+const otpInFlightLocks: Record<string, Promise<any>> = {};
 
 async function callExternalGetOtp(phone: string, forceResend: boolean = false) {
   try {
@@ -1765,45 +1766,58 @@ async function callExternalGetOtp(phone: string, forceResend: boolean = false) {
     const now = Date.now();
     const lastTime = lastOtpSentTimes[cleanPhone] || 0;
 
-    // Small 2-second debounce to catch instant duplicate network clicks while allowing valid resends
-    if (!forceResend && (now - lastTime < 2000)) {
-      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} debounced (${Math.round((now - lastTime)/1000)}s)`);
+    // Prevent duplicate OTP sends within 3 seconds regardless of forceResend to stop rapid double clicks / concurrent requests
+    if (now - lastTime < 3000) {
+      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} suppressed (duplicate dispatch within ${Math.round((now - lastTime)/1000)}s)`);
+      return { code: 0, msg: 'success' };
+    }
+
+    if (otpInFlightLocks[cleanPhone]) {
+      console.log(`[callExternalGetOtp] In-flight OTP request active for ${cleanPhone}, awaiting existing dispatch...`);
+      await otpInFlightLocks[cleanPhone];
       return { code: 0, msg: 'success' };
     }
 
     lastOtpSentTimes[cleanPhone] = now;
     console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
-    
-    // Dispatch to external worker non-blocking so response is instant
-    fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phone: cleanPhone,
-        mobile: cleanPhone,
-        mobileNo: cleanPhone,
-        phoneNo: cleanPhone,
-        phoneNumber: cleanPhone,
-        formattedPhone: formattedPhone
-      }),
-      signal: AbortSignal.timeout(12000)
-    }).then(async (res) => {
-      const resData = await res.json().catch(() => null);
-      console.log('[callExternalGetOtp] Worker Response for ' + cleanPhone + ':', resData);
-      const deviceId = resData?.deviceId || 
-                       resData?.data?.deviceId || 
-                       resData?.data?.data?.deviceId || 
-                       resData?.meta?.deviceId;
-      if (deviceId) {
-        phoneDeviceIds[cleanPhone] = deviceId;
+
+    const dispatchPromise = (async () => {
+      try {
+        const res = await fetch('https://api-otp-xxapi.guruarning.workers.dev/api/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: cleanPhone,
+            mobile: cleanPhone,
+            mobileNo: cleanPhone,
+            phoneNo: cleanPhone,
+            phoneNumber: cleanPhone,
+            formattedPhone: formattedPhone
+          }),
+          signal: AbortSignal.timeout(8000)
+        });
+        const resData = await res.json().catch(() => null);
+        console.log('[callExternalGetOtp] Worker Response for ' + cleanPhone + ':', resData);
+        const deviceId = resData?.deviceId || 
+                         resData?.data?.deviceId || 
+                         resData?.data?.data?.deviceId || 
+                         resData?.meta?.deviceId;
+        if (deviceId) {
+          phoneDeviceIds[cleanPhone] = deviceId;
+        }
+      } catch (err: any) {
+        if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+          console.log(`[callExternalGetOtp] Fetch timed out for ${cleanPhone} (handled gracefully)`);
+        } else {
+          console.warn('[callExternalGetOtp] Fetch notice:', err?.message || err);
+        }
+      } finally {
+        delete otpInFlightLocks[cleanPhone];
       }
-    }).catch((err) => {
-      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
-        console.log(`[callExternalGetOtp] Background fetch timed out for ${cleanPhone} (handled gracefully)`);
-      } else {
-        console.warn('[callExternalGetOtp] Background fetch notice:', err?.message || err);
-      }
-    });
+    })();
+
+    otpInFlightLocks[cleanPhone] = dispatchPromise;
+    await dispatchPromise;
 
     return { code: 0, msg: 'success' };
   } catch (err) {
@@ -2350,6 +2364,11 @@ app.post(['/xxapi/getsendtken', '/xxapi/sendResetSms', '/xxapi/sendForgotSms', '
     }
 
     const phoneToken = cleanPhone && cleanPhone.length >= 10 ? cleanPhone : 'default';
+
+    if (cleanPhone && cleanPhone.length >= 10) {
+      console.log(`[getsendtken] Dispatching OTP for phone: ${cleanPhone}`);
+      await callExternalGetOtp(cleanPhone, true);
+    }
 
     return res.json({
       code: 0,
