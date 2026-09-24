@@ -3040,8 +3040,18 @@
 
   </div>
 
-  <!-- Vue.js 3 Production CDN -->
-  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- Vue.js 3 Production CDN with Multi-CDN Fallbacks -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script>if (typeof Vue === 'undefined') document.write('<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"><\/script>');</script>
+  <script>if (typeof Vue === 'undefined') document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"><\/script>');</script>
+  <script>
+    setTimeout(function() {
+      var appEl = document.getElementById('app');
+      if (appEl && appEl.hasAttribute('v-cloak')) {
+        appEl.removeAttribute('v-cloak');
+      }
+    }, 1200);
+  </script>
   <!-- Local & Multi-CDN Fallback for jsPDF & jsPDF-AutoTable -->
   <script src="/js/jspdf.umd.min.js"></script>
   <script src="/js/jspdf.plugin.autotable.min.js"></script>
@@ -4440,7 +4450,7 @@
           }
         };
 
-        const toggleCollectionToolState = async (tool) => {
+        const toggleUserToolLinkState = async (tool) => {
           const newState = tool.state === 2 ? 1 : 2;
           try {
             const res = await fetch(getApiUrl('/xxapi/admin/updateCollectionTool'), {
@@ -5213,7 +5223,7 @@
           formatDate,
           handleBalanceAction,
           toggleCollectionToolInSell,
-          toggleCollectionToolState,
+          toggleUserToolLinkState,
           terminateUserSession,
           nodes,
           nodeHistory,
