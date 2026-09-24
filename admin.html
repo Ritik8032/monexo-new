@@ -108,7 +108,7 @@
     </div>
 
     <!-- 2. MAIN APPLICATION WORKSPACE -->
-    <div v-else class="flex-1 flex flex-col min-h-screen">
+    <div v-if="isLoggedIn" class="flex-1 flex flex-col min-h-screen">
       
       <!-- LOCAL FILE / STANDALONE MODE BANNER -->
       <div v-if="isLocalFile" class="bg-gradient-to-r from-purple-800 to-indigo-900 text-white px-6 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-between gap-2 shadow-inner border-b border-purple-700">
@@ -491,7 +491,7 @@
           <!-- ========================================== -->
           <!-- TAB 2: USER'S LIST & FIND PAGE            -->
           <!-- ========================================== -->
-          <div v-else-if="activeTab === 'users' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'users' && !selectedUser" class="space-y-6">
             
             <!-- Search / Filter panel -->
             <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center">
@@ -597,7 +597,7 @@
           <!-- ========================================== -->
           <!-- TAB 4: ADMIN PAYMENT NODES (NODE SETTINGS) -->
           <!-- ========================================== -->
-          <div v-else-if="activeTab === 'nodes' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'nodes' && !selectedUser" class="space-y-6">
             
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
               
@@ -909,7 +909,7 @@
               </div>
             </div>
 
-          <div v-else-if="activeTab === 'nodeHistory' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'nodeHistory' && !selectedUser" class="space-y-6">
             <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
               <div>
                 <h3 class="text-lg font-bold text-slate-800">Admin Node Orders History & API Audit</h3>
@@ -1003,7 +1003,7 @@
           <!-- ========================================== -->
           <!-- TAB 5: PAYMENT HISTORY & ORDER AUDIT      -->
           <!-- ========================================== -->
-          <div v-else-if="activeTab === 'payments' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'payments' && !selectedUser" class="space-y-6">
             
             <!-- Search & Filter Panel -->
             <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -1052,7 +1052,7 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="paymentOrders.length === 0" class="bg-white p-12 rounded-2xl border border-slate-100 text-center shadow-sm">
+            <div v-if="paymentOrders.length === 0" class="bg-white p-12 rounded-2xl border border-slate-100 text-center shadow-sm">
               <div class="h-16 w-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-[#b66dff] text-2xl">
                 <i class="fa-solid fa-receipt"></i>
               </div>
@@ -1321,7 +1321,7 @@
           <!-- ========================================== -->
           <!-- TAB 6: MATCHING ORDERS (BUYERS ONLY & 4-FIELD MATCHING) -->
           <!-- ========================================== -->
-          <div v-else-if="activeTab === 'matchingOrders' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'matchingOrders' && !selectedUser" class="space-y-6">
             
             <!-- Search Panel -->
             <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -1351,7 +1351,7 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="matchingOrders.length === 0" class="bg-white p-12 rounded-2xl border border-slate-100 text-center shadow-sm">
+            <div v-if="matchingOrders.length === 0" class="bg-white p-12 rounded-2xl border border-slate-100 text-center shadow-sm">
               <div class="h-16 w-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-[#b66dff] text-2xl">
                 <i class="fa-solid fa-code-compare"></i>
               </div>
@@ -1539,7 +1539,7 @@
           <!-- ========================================== -->
           <!-- TAB 7: USDT DEPOSIT HISTORY & BUY ORDERS   -->
           <!-- ========================================== -->
-          <div v-else-if="activeTab === 'usdtHistory' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'usdtHistory' && !selectedUser" class="space-y-6">
             <!-- Header & Summary Cards -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div class="bg-gradient-to-br from-emerald-500 to-teal-700 text-white p-5 rounded-2xl shadow-sm">
@@ -1655,7 +1655,7 @@
                         <i class="fa-solid fa-spinner fa-spin text-lg mr-2"></i> Loading USDT history records...
                       </td>
                     </tr>
-                    <tr v-else-if="usdtHistoryList.length === 0" class="text-center">
+                    <tr v-if="usdtHistoryList.length === 0" class="text-center">
                       <td colspan="10" class="py-8 text-slate-400">
                         No USDT deposit records found.
                       </td>
@@ -1814,7 +1814,7 @@
           <!-- ========================================== -->
           <!-- TAB 8: ADMIN ACTION LOGS (MASTER ADMIN ONLY) -->
           <!-- ========================================== -->
-          <div v-else-if="activeTab === 'actionLogs' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'actionLogs' && !selectedUser" class="space-y-6">
             <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
               <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div class="flex items-center gap-3">
@@ -1868,7 +1868,7 @@
           <!-- ========================================== -->
           <!-- TAB 9: MANAGE ADMINS (MASTER ADMIN ONLY)   -->
           <!-- ========================================== -->
-          <div v-else-if="activeTab === 'manageAdmins' && !selectedUser" class="space-y-6">
+          <div v-if="activeTab === 'manageAdmins' && !selectedUser" class="space-y-6">
             <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
               <div class="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div class="flex items-center gap-3">
@@ -2021,7 +2021,7 @@
               </div>
 
               <!-- Results Section -->
-              <div v-else-if="modalResult" class="space-y-3">
+              <div v-if="modalResult" class="space-y-3">
                 <div class="flex items-center justify-between">
                   <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wider">
                     Server Response History Records ({{ modalResult.parsedHistory?.length || 0 }} items found)
@@ -2079,7 +2079,7 @@
           <!-- ========================================== -->
           <!-- DETAILED "TAKE ACTION" VIEW FOR A USER     -->
           <!-- ========================================== -->
-          <div v-else-if="selectedUser" class="space-y-8 font-sans">
+          <div v-if="selectedUser" class="space-y-8 font-sans">
             
             <!-- Quick Summary Panel -->
             <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -5305,7 +5305,24 @@
   } catch(err) {
     console.error('Failed to mount Vue Admin App:', err);
     var appEl = document.getElementById('app');
-    if (appEl) appEl.removeAttribute('v-cloak');
+    if (appEl) {
+      appEl.removeAttribute('v-cloak');
+      appEl.innerHTML = `
+        <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #0f172a; color: white; padding: 1.5rem; font-family: Ubuntu, sans-serif;">
+          <div style="max-width: 520px; width: 100%; background-color: #1e293b; padding: 2rem; border-radius: 1rem; border: 1px solid #334155; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);">
+            <div style="width: 3.5rem; height: 3.5rem; background-color: #f43f5e15; border: 1px solid #f43f5e40; border-radius: 1rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto; color: #f43f5e; font-size: 1.5rem;">⚠️</div>
+            <h2 style="font-size: 1.25rem; font-weight: 700; color: #ffffff; margin-bottom: 0.5rem;">Admin Panel Initialization Error</h2>
+            <p style="font-size: 0.875rem; color: #94a3b8; margin-bottom: 1.25rem; line-height: 1.5;">The Control Panel interface could not start due to a frontend initialization error.</p>
+            <div style="background-color: #0f172a; padding: 0.875rem; border-radius: 0.75rem; text-align: left; font-family: monospace; font-size: 0.75rem; color: #fb7185; border: 1px solid #334155; word-break: break-all; max-height: 150px; overflow-y: auto; margin-bottom: 1.25rem;">
+              ${err ? (err.stack || err.message || err) : 'Unknown startup error'}
+            </div>
+            <button onclick="window.location.reload()" style="padding: 0.625rem 1.75rem; background: linear-gradient(to right, #da8cff, #9a55ff); color: white; border: none; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: opacity 0.2s;">
+              Reload Control Panel
+            </button>
+          </div>
+        </div>
+      `;
+    }
   }
 }
 
