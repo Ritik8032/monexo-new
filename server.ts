@@ -3425,16 +3425,17 @@ const getNewbieUserData = async (req: any) => {
         { buyerPhone: { $in: userPhones } }
       ],
       payer_status: 3,
-      type: { $ne: 'sell' }
+      type: { $in: ['recharge', 'buy', 'deposit', 'buyitoken'] },
+      amount: { $gt: 0 }
     });
-    totalBought = boughtTxs.reduce((sum, t) => sum + Number(t.amount || t.realAmount || 0), 0);
+    totalBought = boughtTxs.reduce((sum, t) => sum + Math.abs(Number(t.amount || t.realAmount || 0)), 0);
 
     (user as any).newbieParams = JSON.stringify(userParams);
     user.markModified('newbieParams');
     await user.save().catch(() => {});
   }
 
-  const cappedBought = Math.min(totalBought, 1000);
+  const cappedBought = Math.min(1000, Math.max(0, totalBought));
   const rules = buildNewbieRules(userParams, cappedBought, hasLinkedUpi);
   // 1 = Done & Ready to Claim, 2 = Already Claimed (Received)
   let isDone = 1;
@@ -3678,18 +3679,21 @@ app.get('/xxapi/buyInrAmount/init', async (req, res) => {
     const boughtTxs = await Transaction.find({
       $or: [{ userId: user._id }, { phone: user.phone }],
       payer_status: 3,
-      type: { $ne: 'sell' }
+      type: { $in: ['recharge', 'buy', 'deposit', 'buyitoken'] },
+      amount: { $gt: 0 }
     });
-    totalBought = boughtTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+    totalBought = boughtTxs.reduce((sum, t) => sum + Math.abs(Number(t.amount || t.realAmount || 0)), 0);
+    const displayVal = Math.min(1000, Math.max(0, totalBought));
     isDone = (user as any).newbieDone || totalBought >= 1000;
   }
+  const displayVal = Math.min(1000, Math.max(0, totalBought));
   return res.json({
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: isDone ? 1 : 0, condition: 1000, settleAmt: 200, params: JSON.stringify({ buyAmount: totalBought }) },
+      activityRecord: { done: isDone ? 1 : 0, condition: 1000, settleAmt: 200, params: JSON.stringify({ buyAmount: displayVal }) },
       activityRules: [
-        { id: 1, name: "Purchase 1000 iToken", reward: 200, condition: 1000, current: totalBought, done: isDone }
+        { id: 1, name: "Purchase 1000 iToken", reward: 200, condition: 1000, current: displayVal, done: isDone }
       ],
       allDone: isDone
     }
@@ -3766,9 +3770,10 @@ app.all([
         const boughtTxs = await Transaction.find({
           $or: [{ userId: user._id }, { phone: user.phone }, ...(user.mobileNo ? [{ phone: user.mobileNo }] : [])],
           payer_status: 3,
-          type: { $ne: 'sell' }
+          type: { $in: ['recharge', 'buy', 'deposit', 'buyitoken'] },
+          amount: { $gt: 0 }
         });
-        const totalBought = boughtTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const totalBought = boughtTxs.reduce((sum, t) => sum + Math.abs(Number(t.amount || t.realAmount || 0)), 0);
         if (totalBought >= 1000) {
           userParams[code] = 1;
         } else {
@@ -9420,9 +9425,9 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
       try { newbieParams = { ...newbieParams, ...JSON.parse((user as any).newbieParams) }; } catch (e) {}
     }
     const boughtTxs = allTransactions.filter(tx => 
-      (tx.type === "recharge" || tx.type === "buy" || tx.type === "deposit") && tx.payer_status === 3
+      (tx.type === "recharge" || tx.type === "buy" || tx.type === "deposit" || tx.type === "buyitoken") && tx.payer_status === 3 && Number(tx.amount || tx.realAmount || 0) > 0
     );
-    const totalBoughtIToken = boughtTxs.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    const totalBoughtIToken = boughtTxs.reduce((sum, tx) => sum + Math.abs(Number(tx.amount || tx.realAmount || 0)), 0);
     let isBuy1000Done = totalBoughtIToken >= 1000;
     if (newbieParams.force_buyitoken === 1 || newbieParams.force_buyitoken === true) {
       isBuy1000Done = true;
