@@ -6545,6 +6545,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
 
   const upiType = mapCtTypeToUpiType(ct_type);
   const partnerName = mapCtTypeToName(ct_type);
+  const normCtType = getNormalizedCtType(ct_type);
   const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
 
   try {

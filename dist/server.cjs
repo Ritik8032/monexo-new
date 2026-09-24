@@ -5646,6 +5646,7 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
   }
   const upiType = mapCtTypeToUpiType(ct_type);
   const partnerName = mapCtTypeToName(ct_type);
+  const normCtType = getNormalizedCtType(ct_type);
   const typeNum = isNaN(Number(ct_type)) ? 16 : Number(ct_type);
   try {
     const config = getAutomationConfig(ct_type);
@@ -6309,16 +6310,16 @@ app.post("/xxapi/monitorflow/three", async (req, res) => {
       user.kycStatus = 1;
       user.markModified("kycStatus");
     }
-    const normCtType2 = getNormalizedCtType(ct_type || user.zoopayUpiType);
-    const partnerName = mapCtTypeToName(normCtType2);
+    const normCtType = getNormalizedCtType(ct_type || user.zoopayUpiType);
+    const partnerName = mapCtTypeToName(normCtType);
     const cleanMobile = String(targetPhone).replace(/@.*/, "").replace(/\D/g, "").slice(-10) || String(user.phone || "").replace(/\D/g, "").slice(-10);
     const primarySelectedUpi = upis[0];
     if (!tool) {
       tool = {
-        id: pk || `tool-${normCtType2}-${cleanMobile}`,
-        type: normCtType2,
-        ctType: normCtType2,
-        ct_type: normCtType2,
+        id: pk || `tool-${normCtType}-${cleanMobile}`,
+        type: normCtType,
+        ctType: normCtType,
+        ct_type: normCtType,
         account: cleanMobile,
         phone: cleanMobile,
         linkedPhone: cleanMobile,
@@ -6348,9 +6349,9 @@ app.post("/xxapi/monitorflow/three", async (req, res) => {
       tool.onlyPaymentFlag = 3;
       tool.backup_upi = upis;
       tool.upi = primarySelectedUpi;
-      tool.type = normCtType2;
-      tool.ctType = normCtType2;
-      tool.ct_type = normCtType2;
+      tool.type = normCtType;
+      tool.ctType = normCtType;
+      tool.ct_type = normCtType;
       tool.pnname = partnerName;
       tool.remark = partnerName;
       tool.text = partnerName;
