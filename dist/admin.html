@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Panel - Purple Dashboard</title>
-  <!-- Tailwind CSS CDN -->
+  <!-- Local Compiled Tailwind CSS + CDN Fallback -->
+  <link rel="stylesheet" href="/css/tailwind.min.css">
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome CDN for Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -44,14 +45,10 @@
     .purple-btn:hover {
       background-color: #a359ec;
     }
-    [v-cloak] {
-      opacity: 0;
-      pointer-events: none;
-    }
   </style>
 </head>
 <body class="h-full text-slate-700">
-  <div id="app" class="min-h-full flex flex-col" v-cloak>
+  <div id="app" class="min-h-full flex flex-col">
     
     <!-- 1. LOGIN SCREEN -->
     <div v-if="!isLoggedIn" id="login-screen" class="flex-1 flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-slate-900 purple-gradient">

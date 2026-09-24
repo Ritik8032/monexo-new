@@ -8690,6 +8690,9 @@ async function requireAdmin(req, res, next) {
 app.get(/^\/adm([0-9]{10})\/?$/, async (req, res) => {
   const phone = req.params[0];
   console.log(`[Admin Security] Valid admin path accessed for phone ${phone}. Serving admin.html`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   return res.sendFile(getHtmlFilePath('admin.html'));
 });
 
