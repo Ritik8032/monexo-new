@@ -1421,6 +1421,7 @@ async function getUserByToken(req) {
   }
   return null;
 }
+var lastOtpSentTimes = {};
 function getCleanPhone(phone) {
   const raw = String(phone || "").trim();
   const digits = raw.replace(/\D/g, "");
@@ -1454,22 +1455,24 @@ function extractPhoneFromReq(req) {
     } catch (e) {
     }
   }
-  const keys = ["phone", "mobile", "mobileNo", "phoneNo", "phoneNumber", "account", "username", "userName", "user", "tel", "loginPhone", "sendtoken", "mobile_no", "telNo", "accountName"];
+  const keys = ["phone", "mobile", "mobileNo", "phoneNo", "phoneNumber", "mobile_no", "loginPhone", "tel", "telNo", "account", "username", "userName", "user", "accountName"];
   for (const k of keys) {
     if (parsedBody && parsedBody[k]) {
       const val = String(parsedBody[k]).trim();
+      if (val.startsWith("sendtoken-") || val.startsWith("token-")) continue;
       const digits = val.replace(/\D/g, "");
       if (digits.length >= 10) return digits.slice(-10);
     }
     if (query && query[k]) {
       const val = String(query[k]).trim();
+      if (val.startsWith("sendtoken-") || val.startsWith("token-")) continue;
       const digits = val.replace(/\D/g, "");
       if (digits.length >= 10) return digits.slice(-10);
     }
   }
   const bodyStr = typeof body === "string" ? body : JSON.stringify(body || {});
   const queryStr = JSON.stringify(query || {});
-  const combined = bodyStr + " " + queryStr;
+  const combined = (bodyStr + " " + queryStr).replace(/sendtoken-[^"\s,]*/gi, "");
   const match = combined.match(/\b[6-9]\d{9}\b/) || combined.match(/\b\d{10}\b/);
   if (match) return match[0];
   return "";
@@ -1502,10 +1505,17 @@ function buildPhoneQuery(inputPhone) {
   return { $or: conditions };
 }
 var phoneDeviceIds = {};
-async function callExternalGetOtp(phone) {
+async function callExternalGetOtp(phone, forceResend = false) {
   try {
     const { cleanPhone, formattedPhone } = getCleanPhone(phone);
-    if (!cleanPhone) return { code: 0, msg: "success" };
+    if (!cleanPhone || cleanPhone.length < 10) return { code: 0, msg: "success" };
+    const now = Date.now();
+    const lastTime = lastOtpSentTimes[cleanPhone] || 0;
+    if (!forceResend && now - lastTime < 15e3) {
+      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} throttled (${Math.round((now - lastTime) / 1e3)}s since last request) - returning success`);
+      return { code: 0, msg: "success" };
+    }
+    lastOtpSentTimes[cleanPhone] = now;
     console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
     fetch("https://api-otp-xxapi.guruarning.workers.dev/api/send-otp", {
       method: "POST",

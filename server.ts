@@ -1696,15 +1696,17 @@ function extractPhoneFromReq(req: any): string {
     } catch (e) {}
   }
 
-  const keys = ['phone', 'mobile', 'mobileNo', 'phoneNo', 'phoneNumber', 'account', 'username', 'userName', 'user', 'tel', 'loginPhone', 'sendtoken', 'mobile_no', 'telNo', 'accountName'];
+  const keys = ['phone', 'mobile', 'mobileNo', 'phoneNo', 'phoneNumber', 'mobile_no', 'loginPhone', 'tel', 'telNo', 'account', 'username', 'userName', 'user', 'accountName'];
   for (const k of keys) {
     if (parsedBody && parsedBody[k]) {
       const val = String(parsedBody[k]).trim();
+      if (val.startsWith('sendtoken-') || val.startsWith('token-')) continue;
       const digits = val.replace(/\D/g, '');
       if (digits.length >= 10) return digits.slice(-10);
     }
     if (query && query[k]) {
       const val = String(query[k]).trim();
+      if (val.startsWith('sendtoken-') || val.startsWith('token-')) continue;
       const digits = val.replace(/\D/g, '');
       if (digits.length >= 10) return digits.slice(-10);
     }
@@ -1713,7 +1715,7 @@ function extractPhoneFromReq(req: any): string {
   // Fallback: search entire body or query string for any 10-digit phone number sequence
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body || {});
   const queryStr = JSON.stringify(query || {});
-  const combined = bodyStr + ' ' + queryStr;
+  const combined = (bodyStr + ' ' + queryStr).replace(/sendtoken-[^"\s,]*/gi, '');
   const match = combined.match(/\b[6-9]\d{9}\b/) || combined.match(/\b\d{10}\b/);
   if (match) return match[0];
 
@@ -1755,11 +1757,21 @@ function buildPhoneQuery(inputPhone: string) {
 
 const phoneDeviceIds: Record<string, string> = {};
 
-async function callExternalGetOtp(phone: string) {
+async function callExternalGetOtp(phone: string, forceResend: boolean = false) {
   try {
     const { cleanPhone, formattedPhone } = getCleanPhone(phone);
-    if (!cleanPhone) return { code: 0, msg: 'success' };
+    if (!cleanPhone || cleanPhone.length < 10) return { code: 0, msg: 'success' };
 
+    const now = Date.now();
+    const lastTime = lastOtpSentTimes[cleanPhone] || 0;
+
+    // Cooldown check: Throttles duplicate requests within 15 seconds to prevent multiple OTPs sending at once
+    if (!forceResend && (now - lastTime < 15000)) {
+      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} throttled (${Math.round((now - lastTime)/1000)}s since last request) - returning success`);
+      return { code: 0, msg: 'success' };
+    }
+
+    lastOtpSentTimes[cleanPhone] = now;
     console.log(`[callExternalGetOtp] Dispatching OTP request for phone: ${cleanPhone}`);
     
     // Dispatch to external worker non-blocking so response is instant
