@@ -77,6 +77,20 @@ function getHtmlFilePath(filename) {
   return import_path.default.join(currentDirname, filename);
 }
 var app = (0, import_express.default)();
+app.get([
+  "/privacy",
+  "/privacypolicy",
+  "/privacypolicy.html",
+  "/static/privacypolicy.html",
+  "/static/icon/privacypolicy.html",
+  "/public/privacypolicy.html"
+], (req, res) => {
+  const filePath = import_path.default.join(process.cwd(), "static", "privacypolicy.html");
+  if (import_fs.default.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  return res.status(404).send("Privacy Policy not found");
+});
 var handleSliderCaptcha = async (req, res) => {
   console.log("[GET /xxsapi/slid] Captcha request received - returning disabled success");
   return res.status(200).json({ code: 0, msg: "success", data: { disabled: true } });

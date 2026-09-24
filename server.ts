@@ -54,6 +54,24 @@ function getHtmlFilePath(filename: string): string {
 
 const app = express();
 
+// Serve Privacy Policy HTML
+app.get([
+  "/privacy",
+  "/privacypolicy",
+  "/privacypolicy.html",
+  "/static/privacypolicy.html",
+  "/static/icon/privacypolicy.html",
+  "/public/privacypolicy.html"
+], (req, res) => {
+  const filePath = path.join(process.cwd(), "static", "privacypolicy.html");
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  return res.status(404).send("Privacy Policy not found");
+});
+
+
+
 const handleSliderCaptcha = async (req: any, res: any) => {
   console.log("[GET /xxsapi/slid] Captcha request received - returning disabled success");
   return res.status(200).json({ code: 0, msg: "success", data: { disabled: true } });
