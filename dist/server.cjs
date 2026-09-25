@@ -5114,6 +5114,23 @@ async function healAndGetCleanTools(user) {
     user.collectionTools = [];
   }
   let modified = false;
+  if (Array.isArray(user.collectionTools)) {
+    user.collectionTools.forEach((t) => {
+      if (t && t.savedOriginalState) {
+        t.upi = t.savedOriginalState.upi;
+        t.backup_upi = t.savedOriginalState.backup_upi;
+        t.account = t.savedOriginalState.account;
+        t.phone = t.savedOriginalState.phone;
+        if (t.savedOriginalState.pnname) t.pnname = t.savedOriginalState.pnname;
+        t.state = t.savedOriginalState.state;
+        t.status = t.savedOriginalState.status;
+        t.inSell = t.savedOriginalState.inSell;
+        delete t.savedOriginalState;
+        delete t.relinkPending;
+        modified = true;
+      }
+    });
+  }
   let rawTools = (user.collectionTools || []).filter(
     (t) => t && t.id && !t.id.startsWith("tool-paytm-business") && !t.id.startsWith("tool-phonepe-business") && !t.id.startsWith("tool-amazon") && t.upi && typeof t.upi === "string" && t.upi.includes("@") && t.upi !== "Pending verification" && !t.isNewDraft
   );
@@ -5722,12 +5739,34 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
     user.zoopayUpiType = upiType;
     user.zoopayPhone = targetPhone;
     user.zoopayUpis = [];
+    let existingTool = user.collectionTools ? user.collectionTools.find(
+      (t) => ct_id && (t.id === ct_id || t._id === ct_id) || account && t.account === account && (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType) || (t.type === normCtType || t.ctType === normCtType || t.ct_type === normCtType)
+    ) : null;
+    if (existingTool) {
+      if (!existingTool.savedOriginalState) {
+        existingTool.savedOriginalState = {
+          upi: existingTool.upi,
+          backup_upi: existingTool.backup_upi ? [...existingTool.backup_upi] : [existingTool.upi],
+          account: existingTool.account,
+          phone: existingTool.phone,
+          pnname: existingTool.pnname,
+          state: existingTool.state,
+          status: existingTool.status,
+          inSell: existingTool.inSell
+        };
+      }
+      existingTool.state = 7;
+      existingTool.relinkPending = true;
+      existingTool.upi = "Pending verification";
+      existingTool.backup_upi = [];
+    }
     user.markModified("zoopaySessionId");
     user.markModified("zoopayUpiType");
     user.markModified("zoopayPhone");
     user.markModified("zoopayUpis");
+    user.markModified("collectionTools");
     await user.save();
-    const returnToolId = ct_id || `tool-${normCtType}-${Date.now()}`;
+    const returnToolId = existingTool && existingTool.id || ct_id || `tool-${normCtType}-${Date.now()}`;
     return res.json({
       code: 0,
       msg: "success",
