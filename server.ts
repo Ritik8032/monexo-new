@@ -7965,9 +7965,10 @@ async function cancelTransactionHandler(req: any, res: any) {
     const rptStr = String(rptNo).trim();
     const cleanRptStr = rptStr.replace(/^SELL_/i, '').trim();
 
-    // 1. Mark global cancellation in set
+    // 1. Mark global cancellation in memory
     markOrderCancelledForUser("", rptStr);
     markOrderCancelledForUser("", cleanRptStr);
+    markOrderCancelledForUser("", `SELL_${cleanRptStr}`);
 
     // 2. Clear from orderSlipMap
     const slipData = orderSlipMap.get(rptStr) || orderSlipMap.get(cleanRptStr);
@@ -7999,8 +8000,8 @@ async function cancelTransactionHandler(req: any, res: any) {
       markOrderCancelledForUser(user.phone, cleanRptStr);
     }
 
-    // 4. Update ALL matching database Transaction records (both buy & sell counterparts)
-    await Transaction.updateMany(
+    // 4. Atomic update on ALL matching database Transaction records (both buy & sell counterparts)
+    const updateRes = await Transaction.updateMany(
       {
         $or: [
           { rptNo: rptStr },
@@ -8008,14 +8009,17 @@ async function cancelTransactionHandler(req: any, res: any) {
           { rptNo: `SELL_${cleanRptStr}` },
           { rptNo: new RegExp(`^${cleanRptStr}$`, 'i') },
           { rptNo: new RegExp(`^SELL_${cleanRptStr}$`, 'i') }
-        ]
+        ],
+        payer_status: { $nin: [4, 5] } // Idempotency check: only update if not already cancelled
       },
       {
         $set: {
           payer_status: 4,
-          statusText: "Cancelled",
-          orderStateText: "Cancelled",
-          reason_for_rejection: "Order cancelled"
+          cancelled_by: "buyer",
+          statusText: "Cancelled by Buyer",
+          orderStateText: "Cancelled by Buyer",
+          reason_for_rejection: "Cancelled by Buyer",
+          cancelRemark: "Cancelled by Buyer"
         }
       }
     ).catch(() => {});
@@ -8030,26 +8034,57 @@ async function cancelTransactionHandler(req: any, res: any) {
 
     if (matchingTxs.length > 0) {
       for (const txItem of matchingTxs) {
-        txItem.payer_status = 4; // Cancelled
-        txItem.statusText = "Cancelled";
-        txItem.orderStateText = "Cancelled";
+        if (txItem.payer_status !== 4) {
+          txItem.payer_status = 4;
+        }
+        txItem.cancelled_by = "buyer";
+        txItem.statusText = "Cancelled by Buyer";
+        txItem.orderStateText = "Cancelled by Buyer";
+        txItem.reason_for_rejection = "Cancelled by Buyer";
+        txItem.cancelRemark = "Cancelled by Buyer";
         if (user && !txItem.userId) txItem.userId = user._id;
         await txItem.save().catch(() => {});
       }
     } else {
-      await Transaction.create({
-        userId: user ? user._id : undefined,
-        phone: user ? user.phone : (slipData ? slipData.sellerPhone : undefined),
-        rptNo: cleanRptStr,
-        amount: slipData ? slipData.amount : 100,
-        payer_status: 4,
-        payment_method: slipData ? slipData.method : 1,
-        payee_recipients_name: slipData ? slipData.pnname : "",
-        payee_bank_account: slipData ? slipData.upi : "",
-        ctime: slipData ? slipData.ctime : Math.floor(Date.now() / 1000),
-        type: 'recharge',
-        currency: 3
-      }).catch(() => {});
+      // Create both buyer and seller counterpart transaction records in DB
+      await Promise.all([
+        Transaction.create({
+          userId: user ? user._id : undefined,
+          phone: user ? user.phone : (slipData ? slipData.sellerPhone : undefined),
+          rptNo: cleanRptStr,
+          amount: slipData ? slipData.amount : 100,
+          payer_status: 4,
+          cancelled_by: "buyer",
+          statusText: "Cancelled by Buyer",
+          orderStateText: "Cancelled by Buyer",
+          reason_for_rejection: "Cancelled by Buyer",
+          cancelRemark: "Cancelled by Buyer",
+          payment_method: slipData ? slipData.method : 1,
+          payee_recipients_name: slipData ? slipData.pnname : "",
+          payee_bank_account: slipData ? slipData.upi : "",
+          ctime: slipData ? slipData.ctime : Math.floor(Date.now() / 1000),
+          type: 'recharge',
+          currency: 3
+        }).catch(() => {}),
+        Transaction.create({
+          userId: slipData?.sellerId || undefined,
+          phone: slipData?.sellerPhone || undefined,
+          rptNo: `SELL_${cleanRptStr}`,
+          amount: slipData ? slipData.amount : 100,
+          payer_status: 4,
+          cancelled_by: "buyer",
+          statusText: "Cancelled by Buyer",
+          orderStateText: "Cancelled by Buyer",
+          reason_for_rejection: "Cancelled by Buyer",
+          cancelRemark: "Cancelled by Buyer",
+          payment_method: slipData ? slipData.method : 1,
+          payee_recipients_name: slipData ? slipData.pnname : "",
+          payee_bank_account: slipData ? slipData.upi : "",
+          ctime: slipData ? slipData.ctime : Math.floor(Date.now() / 1000),
+          type: 'sell',
+          currency: 3
+        }).catch(() => {})
+      ]);
     }
 
     // 5. Update PaymentNode if applicable
@@ -8486,7 +8521,15 @@ async function getSellHistory(req: any, res: any) {
   );
   const statusStr = String(rawStatus).toLowerCase().trim();
 
-  const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 });
+  const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).lean();
+
+  // BATCH QUERY BUYER COUNTERPARTS FOR ULTRA-FAST RESOLUTION (NO N+1 QUERIES)
+  const baseRpts = Array.from(new Set(allSellerTxs.map(tx => String(tx.rptNo || '').replace(/^SELL_/i, '').trim()).filter(Boolean)));
+  const buyerTxsList = baseRpts.length > 0 ? await Transaction.find({ rptNo: { $in: baseRpts } }).lean() : [];
+  const buyerTxMap = new Map<string, any>();
+  for (const bTx of buyerTxsList) {
+    if (bTx && bTx.rptNo) buyerTxMap.set(String(bTx.rptNo).trim(), bTx);
+  }
 
   // DEDUPLICATE CLONE ORDERS AND SYNC REAL COUNTERPART STATUS
   const uniqueTxMap = new Map<string, any>();
@@ -8494,7 +8537,7 @@ async function getSellHistory(req: any, res: any) {
     const rawRpt = tx.rptNo || (tx._id ? tx._id.toString() : '');
     const baseRpt = rawRpt.replace(/^SELL_/i, '').trim();
 
-    const buyerTx = baseRpt ? await Transaction.findOne({ rptNo: baseRpt }).lean() : null;
+    const buyerTx = buyerTxMap.get(baseRpt);
     const isCancelled = (
       tx.payer_status === 4 ||
       tx.payer_status === 5 ||
@@ -8510,6 +8553,7 @@ async function getSellHistory(req: any, res: any) {
     else if (isSuccess) realStatus = 3;
 
     tx.payer_status = realStatus;
+    if (buyerTx?.cancelled_by) tx.cancelled_by = buyerTx.cancelled_by;
 
     const existing = uniqueTxMap.get(baseRpt);
     if (!existing) {
@@ -8550,7 +8594,7 @@ async function getSellHistory(req: any, res: any) {
     else if (effectivePayerStatus === 4 || effectivePayerStatus === 5) orderState = 5; // timeout / cancelled for sell history view
 
     const obj = tx.toObject ? tx.toObject() : { ...tx };
-    const cancelReason = (tx as any).cancelRemark || (tx as any).cancel_remark || (tx as any).rejectionReason || (tx as any).reason || (tx as any).adminReason || "Order timed out / cancelled";
+    const cancelReason = (tx as any).cancelRemark || (tx as any).cancel_remark || (tx as any).rejectionReason || (tx as any).reason || (tx as any).adminReason || "Cancelled by Buyer";
 
     // Find seller KYC Partner / CT Type: PhonePe=1, MobiKwik=4, Paytm=8
     let sellerCtType = (tx as any).sellerCtType;
@@ -8589,6 +8633,7 @@ async function getSellHistory(req: any, res: any) {
       payer_status: userPayerStatus,
       status: userPayerStatus,
       real_payer_status: effectivePayerStatus,
+      cancelled_by: isCancelled ? "buyer" : (tx as any).cancelled_by,
       cancel_remark: cancelReason,
       cancelRemark: cancelReason,
       rejectionReason: cancelReason,
@@ -8596,9 +8641,12 @@ async function getSellHistory(req: any, res: any) {
       adminReason: (tx as any).adminReason || cancelReason,
       payment_method: isUpi ? 1 : 2,
       method: "inr",
-      orderStateText: (effectivePayerStatus === 3 || orderState === 3) ? "Success" : (effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (effectivePayerStatus === 1 || orderState === 1) ? "Paying" : "In Review",
-      statusText: (effectivePayerStatus === 3 || orderState === 3) ? "Success" : (effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (effectivePayerStatus === 1 || orderState === 1) ? "Paying" : "In Review",
+      orderStateText: (effectivePayerStatus === 3 || orderState === 3) ? "Success" : (effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5) ? "Cancelled by Buyer" : (effectivePayerStatus === 1 || orderState === 1) ? "Paying" : "In Review",
+      statusText: (effectivePayerStatus === 3 || orderState === 3) ? "Success" : (effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5) ? "Cancelled by Buyer" : (effectivePayerStatus === 1 || orderState === 1) ? "Paying" : "In Review",
       status_str: (effectivePayerStatus === 3 || orderState === 3) ? "Success" : (effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (effectivePayerStatus === 1 || orderState === 1) ? "Paying" : "In Review",
+      canConfirm: isCancelled ? false : (effectivePayerStatus === 2 || effectivePayerStatus === 1),
+      canAccept: isCancelled ? false : (effectivePayerStatus === 2 || effectivePayerStatus === 1),
+      canPay: isCancelled ? false : (effectivePayerStatus === 1),
       payType: sellerCtType,
       isBank: !isUpi,
       ctType: sellerCtType,
@@ -8724,13 +8772,17 @@ async function handleSellDetail(req: any, res: any) {
         payer_status: userPayerStatus,
         status: userPayerStatus,
         real_payer_status: effectiveStatus,
+        cancelled_by: isCancelled ? "buyer" : (tx as any).cancelled_by,
         cancel_remark: cancelReason,
         cancelRemark: cancelReason,
         rejectionReason: cancelReason,
         reason: cancelReason,
-        orderStateText: isCancelled ? "Cancelled" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
-        statusText: isCancelled ? "Cancelled" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
+        orderStateText: isCancelled ? "Cancelled by Buyer" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
+        statusText: isCancelled ? "Cancelled by Buyer" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
         status_str: isCancelled ? "Cancelled" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
+        canConfirm: isCancelled ? false : (effectiveStatus === 2 || effectiveStatus === 1),
+        canAccept: isCancelled ? false : (effectiveStatus === 2 || effectiveStatus === 1),
+        canPay: isCancelled ? false : (effectiveStatus === 1),
         utr: tx.utr || "",
         receiveAccount: tx.payee_bank_account || tx.upi || "",
         upi: tx.payee_bank_account || tx.upi || "",
