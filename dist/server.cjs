@@ -5509,6 +5509,32 @@ app.post("/xxapi/collectiontoolStatus", async (req, res) => {
   const tool = getOrCreateUserTool(user, toolId);
   const statusNum = status !== void 0 ? Number(status) : void 0;
   const stateNum = state !== void 0 ? Number(state) : void 0;
+  const isRelinkRequested = statusNum === 5 || stateNum === 5 || statusNum === 7 || stateNum === 7 || req.body.needRelink === "1" || req.body.mode === "relink";
+  if (isRelinkRequested) {
+    if (tool) {
+      if (tool.upi && tool.upi.includes("@") && tool.upi !== "Pending verification") {
+        tool.savedUpi = tool.upi;
+      }
+      if (Array.isArray(tool.backup_upi) && tool.backup_upi.length > 0) {
+        tool.savedBackupUpi = tool.backup_upi;
+      }
+      tool.state = 5;
+      tool.status = 0;
+      tool.relinkPending = true;
+      tool.inSell = 0;
+      tool.in_sell = 0;
+      tool.insell = 0;
+      tool.upi = "Pending verification";
+      tool.backup_upi = [];
+      user.markModified("collectionTools");
+      await user.save();
+    }
+    return res.json({
+      code: 0,
+      msg: "Relink required. Redirecting to OTP verification...",
+      data: { needRelink: true, ctId: tool ? tool.id : toolId, ct_id: tool ? tool.id : toolId }
+    });
+  }
   const hasValidUpi = tool && tool.upi && typeof tool.upi === "string" && tool.upi.includes("@") && tool.upi !== "Pending verification";
   if (tool) {
     if (hasValidUpi) {
@@ -5519,7 +5545,7 @@ app.post("/xxapi/collectiontoolStatus", async (req, res) => {
       const isUnlinked = !hasValidUpi;
       const targetInSell = Number(inSell);
       if (targetInSell === 1 && isUnlinked) {
-        return res.json({ code: 400, msg: "UPI unlinked - Please relink first" });
+        return res.json({ code: 400, msg: "UPI unlinked - Please relink first", data: { needRelink: true, ctId: tool.id, ct_id: tool.id } });
       }
       tool.inSell = targetInSell;
       tool.in_sell = targetInSell;
@@ -5527,26 +5553,6 @@ app.post("/xxapi/collectiontoolStatus", async (req, res) => {
     }
     if (state !== void 0 && !hasValidUpi) tool.state = Number(state);
     if (status !== void 0 && !hasValidUpi) tool.status = Number(status);
-  }
-  if (!hasValidUpi && (statusNum === 5 || stateNum === 5 || statusNum === 7 || stateNum === 7)) {
-    if (tool) {
-      if (tool.upi && tool.upi.includes("@") && tool.upi !== "Pending verification") {
-        tool.savedUpi = tool.upi;
-      }
-      if (Array.isArray(tool.backup_upi) && tool.backup_upi.length > 0) {
-        tool.savedBackupUpi = tool.backup_upi;
-      }
-      tool.state = 5;
-      tool.inSell = 0;
-      tool.in_sell = 0;
-      tool.insell = 0;
-      if (!tool.upi || tool.upi === "Pending verification") {
-        tool.upi = tool.savedUpi || tool.upi || "Pending verification";
-      }
-      user.markModified("collectionTools");
-      await user.save();
-    }
-    return res.json({ code: 300, msg: "Relink required. Redirecting to OTP verification..." });
   }
   if (tool && tool.zoopayToolId && !String(tool.zoopayToolId).startsWith("zoopay-mock-tool-")) {
     try {
@@ -5747,7 +5753,14 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
     let existingTool = user.collectionTools ? user.collectionTools.find(
       (t) => ct_id && (t.id === ct_id || t._id === ct_id) || account && t.account === account && (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType) || (t.type === normCtType || t.ctType === normCtType || t.ct_type === normCtType)
     ) : null;
+    let isRelinkRequired = false;
     if (existingTool) {
+      if (existingTool.upi && existingTool.upi !== "Pending verification") {
+        isRelinkRequired = true;
+      }
+      if (req.body.needRelink === "1" || req.body.needRelink === "true" || req.query?.needRelink === "1") {
+        isRelinkRequired = true;
+      }
       if (!existingTool.savedOriginalState) {
         existingTool.savedOriginalState = {
           upi: existingTool.upi,
@@ -5776,7 +5789,7 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
       code: 0,
       msg: "success",
       data: {
-        needRelink: false,
+        needRelink: isRelinkRequired,
         sessionId,
         ctId: returnToolId,
         ct_id: returnToolId,
