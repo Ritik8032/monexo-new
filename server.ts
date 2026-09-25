@@ -4190,7 +4190,15 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
         if (cachedAmt < minAmt || cachedAmt > maxAmt) amountMatches = false;
       }
 
-      if (cached && cached.createdAt && (Date.now() - cached.createdAt < 600000) && amountMatches) { // 10 min session
+      const cachedRpt = cached?.rptNo || cached?.orderObj?.rptNo || "";
+      const isCancelledInDb = cachedRpt ? await Transaction.exists({
+        rptNo: { $in: [cachedRpt, `SELL_${cachedRpt}`, cachedRpt.replace(/^SELL_/i, '')] },
+        payer_status: { $in: [4, 5] }
+      }) : false;
+      const isSlipCancelled = cachedRpt ? orderSlipMap.get(cachedRpt)?.payer_status === 4 : false;
+      const isUserCancelled = cachedRpt ? (isOrderCancelledForUser(userPhone, cachedRpt) || (cached?.orderObj?.nodeId && isOrderCancelledForUser(userPhone, cached.orderObj.nodeId))) : false;
+
+      if (cached && !isCancelledInDb && !isSlipCancelled && !isUserCancelled && cached.createdAt && (Date.now() - cached.createdAt < 600000) && amountMatches) { // 10 min session
         let isNodeStillActive = true;
         if (cached.orderObj?.isAdminNode || cached.orderObj?.nodeId || cached.slipItem?.nodeId) {
           const nId = cached.orderObj?.nodeId || cached.slipItem?.nodeId;
@@ -4205,7 +4213,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
             }
           }
         }
-        if (isNodeStillActive && !isOrderCancelledForUser(userPhone, cached.rptNo) && !isOrderCancelledForUser(userPhone, cached.orderObj?.nodeId)) {
+        if (isNodeStillActive) {
           return res.json({
             code: 0,
             msg: 'success',
@@ -6295,10 +6303,15 @@ function markOrderCancelledForUser(userPhone: string, rptNoOrNodeId: string) {
   if (userPhone && rptNoOrNodeId) {
     userCancelledOrdersSet.add(`${userPhone}_${rptNoOrNodeId}`);
   }
+  if (rptNoOrNodeId) {
+    userCancelledOrdersSet.add(`GLOBAL_${rptNoOrNodeId}`);
+  }
 }
 
 function isOrderCancelledForUser(userPhone: string, rptNoOrNodeId: string): boolean {
-  if (!userPhone || !rptNoOrNodeId) return false;
+  if (!rptNoOrNodeId) return false;
+  if (userCancelledOrdersSet.has(`GLOBAL_${rptNoOrNodeId}`)) return true;
+  if (!userPhone) return false;
   return userCancelledOrdersSet.has(`${userPhone}_${rptNoOrNodeId}`);
 }
 
@@ -7934,48 +7947,65 @@ app.get('/xxapi/chargeUtr/:rptNo/:utr', async (req, res) => {
 async function cancelTransactionHandler(req: any, res: any) {
   const rptNo = req.params.rptNo || req.body?.rptNo || req.body?.order_id || req.body?.orderId || req.body?.id || req.query?.rptNo || req.query?.order_id || req.query?.id || req.body?.rpt_no || req.query?.rpt_no;
   if (rptNo) {
-    const rptStr = String(rptNo);
-    const slipData = orderSlipMap.get(rptStr);
+    const rptStr = String(rptNo).trim();
+    const cleanRptStr = rptStr.replace(/^SELL_/i, '').trim();
+
+    // 1. Mark global cancellation in set
+    markOrderCancelledForUser("", rptStr);
+    markOrderCancelledForUser("", cleanRptStr);
+
+    // 2. Clear from orderSlipMap
+    const slipData = orderSlipMap.get(rptStr) || orderSlipMap.get(cleanRptStr);
     if (slipData) {
       slipData.payer_status = 4;
+      if ((slipData as any).nodeId) {
+        markOrderCancelledForUser("", String((slipData as any).nodeId));
+      }
     }
-    const user = await getUserByToken(req);
+
+    // 3. Purge from buyerActiveOrderMap across ALL users
+    for (const [phone, cached] of buyerActiveOrderMap.entries()) {
+      if (
+        cached.rptNo === rptStr ||
+        cached.rptNo === cleanRptStr ||
+        cached.orderObj?.rptNo === rptStr ||
+        cached.orderObj?.rptNo === cleanRptStr ||
+        cached.orderObj?.order_id === rptStr ||
+        cached.orderObj?.order_id === cleanRptStr ||
+        (cached.orderObj?.nodeId && String(cached.orderObj.nodeId) === rptStr)
+      ) {
+        buyerActiveOrderMap.delete(phone);
+      }
+    }
+
+    const user = await getUserByToken(req).catch(() => null);
     if (user && user.phone) {
       markOrderCancelledForUser(user.phone, rptStr);
-      if (slipData && (slipData as any).nodeId) {
-        markOrderCancelledForUser(user.phone, String((slipData as any).nodeId));
-      }
-      if (buyerActiveOrderMap.has(user.phone)) {
-        buyerActiveOrderMap.delete(user.phone);
-      }
+      markOrderCancelledForUser(user.phone, cleanRptStr);
     }
-    let tx = await Transaction.findOne({ rptNo: rptStr });
-    if (tx) {
-      if (tx.payer_status === 4) {
-        return res.json({ code: 0, msg: 'success', data: tx });
-      }
-      tx.payer_status = 4; // Cancelled
-      if (user && !tx.userId) tx.userId = user._id;
-      await tx.save();
 
-      // Sync cancellation to counterpart transaction
-      const isSellTx = tx.type === 'sell' || String(tx.rptNo).startsWith('SELL_');
-      const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, '') : `SELL_${tx.rptNo}`;
-      const counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
-      if (counterpartTx && counterpartTx.payer_status !== 4) {
-        counterpartTx.payer_status = 4;
-        await counterpartTx.save();
+    // 4. Update ALL matching database Transaction records
+    const matchingTxs = await Transaction.find({
+      $or: [
+        { rptNo: rptStr },
+        { rptNo: cleanRptStr },
+        { rptNo: `SELL_${cleanRptStr}` }
+      ]
+    });
+
+    if (matchingTxs.length > 0) {
+      for (const txItem of matchingTxs) {
+        txItem.payer_status = 4; // Cancelled
+        txItem.statusText = "Cancelled";
+        txItem.orderStateText = "Cancelled";
+        if (user && !txItem.userId) txItem.userId = user._id;
+        await txItem.save();
       }
     } else {
-      const sellCounterpart = await Transaction.findOne({ rptNo: `SELL_${rptStr}` });
-      if (sellCounterpart) {
-        sellCounterpart.payer_status = 4;
-        await sellCounterpart.save();
-      }
       await Transaction.create({
         userId: user ? user._id : undefined,
         phone: user ? user.phone : (slipData ? slipData.sellerPhone : undefined),
-        rptNo: rptStr,
+        rptNo: cleanRptStr,
         amount: slipData ? slipData.amount : 100,
         payer_status: 4,
         payment_method: slipData ? slipData.method : 1,
@@ -7986,6 +8016,23 @@ async function cancelTransactionHandler(req: any, res: any) {
         currency: 3
       }).catch(() => {});
     }
+
+    // 5. Update PaymentNode if applicable
+    await PaymentNode.updateMany(
+      {
+        $or: [
+          { _id: isValidObjectId(rptStr) ? rptStr : null },
+          { claimedRptNo: rptStr },
+          { claimedRptNo: cleanRptStr }
+        ].filter(Boolean)
+      },
+      {
+        orderState: 'CANCELLED',
+        status: false,
+        claimedByPhone: '',
+        claimedRptNo: ''
+      }
+    ).catch(() => {});
   }
   return res.json({ code: 0, msg: 'success' });
 }
@@ -8151,9 +8198,9 @@ async function getRechargeHistory(req: any, res: any) {
       status: tx.payer_status,
       payment_method: isUpi ? 1 : 2,
       method: isUsdtTx ? "usdt" : "inr",
-      orderStateText: orderState === 3 ? "Success" : orderState === 1 ? "Paying" : orderState === 2 ? "In Review" : orderState === 4 ? "Cancel" : "Fail",
-      statusText: orderState === 3 ? "Success" : orderState === 1 ? "Paying" : orderState === 2 ? "In Review" : orderState === 4 ? "Cancel" : "Fail",
-      status_str: orderState === 3 ? "Success" : orderState === 1 ? "Paying" : orderState === 2 ? "In Review" : orderState === 4 ? "Cancel" : "Fail",
+      orderStateText: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
+      statusText: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
+      status_str: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
       payType: isUpi ? ctTypeVal : 2,
       isBank: !isUpi,
       currency: tx.currency || (isUsdtTx ? 1 : 3),
@@ -8209,6 +8256,12 @@ app.get('/xxapi/buyitoken/cancel', cancelTransactionHandler);
 app.post('/xxapi/buyitoken/cancel', cancelTransactionHandler);
 app.get('/xxapi/rechargeCancel', cancelTransactionHandler);
 app.post('/xxapi/rechargeCancel', cancelTransactionHandler);
+app.get('/xxapi/sell/cancel/:rptNo', cancelTransactionHandler);
+app.post('/xxapi/sell/cancel/:rptNo', cancelTransactionHandler);
+app.get('/xxapi/sell/cancel', cancelTransactionHandler);
+app.post('/xxapi/sell/cancel', cancelTransactionHandler);
+app.get('/xxapi/sellCancel', cancelTransactionHandler);
+app.post('/xxapi/sellCancel', cancelTransactionHandler);
 
 app.get('/xxapi/chargeStatus/:rptNo', async (req, res) => {
   const { rptNo } = req.params;
@@ -8486,9 +8539,9 @@ async function getSellHistory(req: any, res: any) {
       adminReason: (tx as any).adminReason || cancelReason,
       payment_method: isUpi ? 1 : 2,
       method: "inr",
-      orderStateText: orderState === 3 ? "Success" : orderState === 1 ? "Paying" : orderState === 2 ? "In Review" : orderState === 4 ? "Cancel" : "Fail",
-      statusText: orderState === 3 ? "Success" : orderState === 1 ? "Paying" : orderState === 2 ? "In Review" : orderState === 4 ? "Cancel" : "Fail",
-      status_str: orderState === 3 ? "Success" : orderState === 1 ? "Paying" : orderState === 2 ? "In Review" : orderState === 4 ? "Cancel" : "Fail",
+      orderStateText: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
+      statusText: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
+      status_str: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
       payType: sellerCtType,
       isBank: !isUpi,
       ctType: sellerCtType,
@@ -11390,7 +11443,8 @@ app.get('/xxapi/admin/paymentHistory', requireAdmin, async (req, res) => {
       // Status label
       let orderStatusLabel = 'In Review';
       if (tx.payer_status === 3) orderStatusLabel = 'Successfully';
-      else if (tx.payer_status === 4) orderStatusLabel = 'Rejected';
+      else if (tx.payer_status === 4 || tx.payer_status === 5) orderStatusLabel = 'Cancelled';
+      else if (tx.payer_status === 1) orderStatusLabel = 'Paying';
 
       return {
         _id: txObj._id,
@@ -11821,10 +11875,30 @@ app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
         }
       }
     } else if (action === 'reject' || action === 'failed' || action === 'cancel') {
-      tx.payer_status = 4; // Rejected / Failed
+      tx.payer_status = 4; // Rejected / Failed / Cancelled
       tx.adminReason = adminReason || 'Order rejected by admin';
       tx.adminActionAt = new Date();
       await tx.save();
+
+      const rptStr = String(tx.rptNo || '').trim();
+      const cleanRptStr = rptStr.replace(/^SELL_/i, '').trim();
+
+      markOrderCancelledForUser("", rptStr);
+      markOrderCancelledForUser("", cleanRptStr);
+
+      for (const [phone, cached] of buyerActiveOrderMap.entries()) {
+        if (
+          cached.rptNo === rptStr ||
+          cached.rptNo === cleanRptStr ||
+          cached.orderObj?.rptNo === rptStr ||
+          cached.orderObj?.rptNo === cleanRptStr
+        ) {
+          buyerActiveOrderMap.delete(phone);
+        }
+      }
+
+      const slipData = orderSlipMap.get(rptStr) || orderSlipMap.get(cleanRptStr);
+      if (slipData) slipData.payer_status = 4;
 
       // Sync counterpart transaction (buy/sell pair)
       const isSellTx = tx.type === 'sell' || String(tx.rptNo).startsWith('SELL_');
