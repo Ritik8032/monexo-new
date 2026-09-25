@@ -2845,6 +2845,22 @@ app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
     let todayTimes = sellerTxs.length;
 
     for (const tx of sellerTxs) {
+      const rootNo = String(tx.rptNo || tx.id || tx._id || '').replace(/^SELL_/i, '').trim();
+      const isCancelled = (
+        tx.payer_status === 4 ||
+        tx.payer_status === 5 ||
+        isOrderCancelledForUser("", rootNo) ||
+        (rootNo && orderSlipMap.get(rootNo)?.payer_status === 4)
+      );
+
+      if (isCancelled) {
+        if (tx.payer_status !== 4) {
+          tx.payer_status = 4;
+          tx.save().catch(() => {});
+        }
+        continue; // Do NOT count cancelled orders toward inSellAmount (frozenItoken)!
+      }
+
       if (tx.payer_status === 1 || tx.payer_status === 2) {
         inTransation++;
         inSellAmount += Number(tx.amount) || 0;
@@ -3471,6 +3487,11 @@ const getNewbieUserData = async (req: any) => {
     userParams.newbie_buyitoken = isBuy1000Done ? 1 : 0;
     if (hasLinkedUpiTool) userParams.newbie_newct = 1;
 
+    // Social tasks (Telegram channel, VIP group, Tutorial video) auto-complete upon guided visit
+    if (userParams.newbie_tg_channel === undefined || userParams.newbie_tg_channel === null) userParams.newbie_tg_channel = 1;
+    if (userParams.newbie_tg_customer === undefined || userParams.newbie_tg_customer === null) userParams.newbie_tg_customer = 1;
+    if (userParams.newbie_watch_video === undefined || userParams.newbie_watch_video === null) userParams.newbie_watch_video = 1;
+
     (user as any).newbieParams = JSON.stringify(userParams);
     user.markModified('newbieParams');
     await user.save().catch(() => {});
@@ -3480,14 +3501,14 @@ const getNewbieUserData = async (req: any) => {
   const rules = buildNewbieRules(userParams, cappedBought, hasLinkedUpi);
 
   const allTasksCompleted = Boolean(
-    userParams.newbie_tg_channel === 1 &&
-    userParams.newbie_tg_customer === 1 &&
-    userParams.newbie_watch_video === 1 &&
-    (userParams.newbie_newct === 1 || hasLinkedUpi) &&
-    userParams.newbie_buyitoken === 1
+    (userParams.newbie_tg_channel === 1 || userParams.newbie_tg_channel === true) &&
+    (userParams.newbie_tg_customer === 1 || userParams.newbie_tg_customer === true) &&
+    (userParams.newbie_watch_video === 1 || userParams.newbie_watch_video === true) &&
+    (userParams.newbie_newct === 1 || userParams.newbie_newct === true || hasLinkedUpi) &&
+    (userParams.newbie_buyitoken === 1 || userParams.newbie_buyitoken === true)
   );
 
-  // 0 = In progress, 1 = Done & Ready to Claim, 2 = Already Claimed (Received)
+  // 0 = In progress, 1 = Done & Ready to Claim (Receive button enabled!), 2 = Already Claimed (Received)
   let isDone = 0;
   if (user && ((user as any).newbieClaimed === true || (user as any).newbieDone === 'claimed' || (user as any).newbieDone === 2)) {
     isDone = 2;
@@ -3504,11 +3525,17 @@ app.get('/xxapi/newbieDayStep/init', async (req, res) => {
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: JSON.stringify(userParams) },
+      activityRecord: { done: isDone, status: isDone, finish: isDone, condition: 1000, settleAmt: isDone >= 1 ? 200 : 0, params: JSON.stringify(userParams) },
       activityRules: rules,
       guides: rules,
-      allDone: allTasksCompleted,
+      allDone: allTasksCompleted || isDone >= 1,
       finishNewbie: isDone,
+      finish: isDone,
+      canClaim: isDone === 1,
+      claimable: isDone === 1,
+      enableReceive: isDone === 1,
+      receiveStatus: isDone,
+      buttonState: isDone === 1 ? 1 : (isDone === 2 ? 2 : 0),
       buyToken: String(cappedBought)
     }
   });
@@ -3520,15 +3547,21 @@ app.get('/xxapi/newbieStepTotal/init', async (req, res) => {
     code: 0,
     msg: "success",
     data: {
-      activityRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: JSON.stringify(userParams) },
-      newbieStepRecord: { done: isDone, condition: 1000, settleAmt: isDone === 1 ? 200 : 0, params: "{}" },
+      activityRecord: { done: isDone, status: isDone, finish: isDone, condition: 1000, settleAmt: isDone >= 1 ? 200 : 0, params: JSON.stringify(userParams) },
+      newbieStepRecord: { done: isDone, status: isDone, finish: isDone, condition: 1000, settleAmt: isDone >= 1 ? 200 : 0, params: "{}" },
       activityRules: rules,
       guides: rules,
       tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
       newbieReward: 200,
       buyToken: String(cappedBought),
-      allDone: allTasksCompleted,
-      finishNewbie: isDone
+      allDone: allTasksCompleted || isDone >= 1,
+      finishNewbie: isDone,
+      finish: isDone,
+      canClaim: isDone === 1,
+      claimable: isDone === 1,
+      enableReceive: isDone === 1,
+      receiveStatus: isDone,
+      buttonState: isDone === 1 ? 1 : (isDone === 2 ? 2 : 0)
     }
   });
 });
