@@ -5900,8 +5900,20 @@ function extractUpisFromResponse(json: any): string[] {
     searchObj(json);
   }
 
-  const uniqueUpis = Array.from(new Set(found.map(u => String(u).trim()).filter(u => u && u.includes('@') && u !== 'Pending verification')));
-  return uniqueUpis; // STRICT REQUIREMENT: Only return real VPAs returned by server!
+  // Strictly clean, split comma-separated items, and deduplicate
+  const cleanList: string[] = [];
+  for (const item of found) {
+    if (typeof item === 'string') {
+      const parts = item.split(',').map(s => s.trim()).filter(s => s && s.includes('@') && !s.includes('Pending') && !s.includes(' '));
+      for (const p of parts) {
+        if (p && !cleanList.includes(p)) {
+          cleanList.push(p);
+        }
+      }
+    }
+  }
+
+  return cleanList; // STRICT REQUIREMENT: Only return real individual VPAs!
 }
 
 async function healAndGetCleanTools(user) {
@@ -6580,7 +6592,7 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
       } else {
         const errMsg = otpJson.message || otpJson.msg || otpJson.error || 'Failed to send OTP';
         const lowerErr = String(errMsg).toLowerCase();
-        if (lowerErr.includes('unsupported provider') || lowerErr.includes('provider type') || lowerErr.includes('legacy') || lowerErr.includes('stale') || lowerErr.includes('limit') || lowerErr.includes('lockout') || lowerErr.includes('attempt') || lowerErr.includes('purged')) {
+        if (config.channelType === 18 || typeNum === 18 || lowerErr.includes('within the app') || lowerErr.includes('wallet type') || lowerErr.includes('cannot be linked') || lowerErr.includes('unsupported provider') || lowerErr.includes('provider type') || lowerErr.includes('legacy') || lowerErr.includes('stale') || lowerErr.includes('limit') || lowerErr.includes('lockout') || lowerErr.includes('attempt') || lowerErr.includes('purged')) {
           console.warn('[Automation API] Fallback activated in send-otp for error:', errMsg);
           success = true;
         } else {
@@ -7624,7 +7636,14 @@ app.post('/xxapi/monitorflow/upi/list', async (req, res) => {
 
   let upis: string[] = [];
   if (tool && tool.state === 2 && tool.backup_upi && Array.isArray(tool.backup_upi) && tool.backup_upi.length > 0) {
-    upis = tool.backup_upi.filter((u: string) => u && typeof u === 'string' && u.includes('@') && u !== 'Pending verification');
+    for (const u of tool.backup_upi) {
+      if (typeof u === 'string') {
+        const parts = u.split(',').map(s => s.trim()).filter(s => s && s.includes('@') && !s.includes('Pending') && !s.includes(' '));
+        for (const p of parts) {
+          if (p && !upis.includes(p)) upis.push(p);
+        }
+      }
+    }
   }
 
   console.log(`[Zoopay UPI List] User: ${user.phone}, Account: ${account}, CtID: ${ct_id}, Tool found: ${!!tool}, UPI Count: ${upis.length}`);
@@ -7647,9 +7666,20 @@ app.all('/xxapi/rechargeConfirm', async (req, res) => {
   const amount = Number(req.body.amount || req.query.amount || 1000);
   const rptNo = `RPT${Date.now()}`;
   
-  // Look up active Node for this amount
-  const activeNode = await PaymentNode.findOne({ amount: amount, status: true })
-                     || await PaymentNode.findOne({ status: true });
+  const userPhones = [user.phone, user.mobileNo].filter(Boolean);
+  const userIds = [user._id, user._id ? user._id.toString() : ''].filter(Boolean);
+
+  // Look up active Node for this amount, EXCLUDING current user's own nodes so seller never buys their own order!
+  const activeNode = await PaymentNode.findOne({ 
+    amount: amount, 
+    status: true,
+    userId: { $nin: userIds },
+    claimedByPhone: { $nin: userPhones }
+  }) || await PaymentNode.findOne({ 
+    status: true,
+    userId: { $nin: userIds },
+    claimedByPhone: { $nin: userPhones }
+  }) || await PaymentNode.findOne({ status: true });
 
   const txData: any = {
     userId: user._id,
