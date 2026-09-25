@@ -4253,12 +4253,6 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       if (userPhone && (isOrderCancelledForUser(userPhone, nodeIdStr) || isOrderCancelledForUser(userPhone, node.claimedRptNo))) {
         continue; // Skip admin orders canceled by this user!
       }
-      if (reqAmtParam !== undefined && reqAmtParam > 0 && node.amount !== reqAmtParam) {
-        continue;
-      }
-      if (minAmt !== undefined && maxAmt !== undefined && (node.amount < minAmt || node.amount > maxAmt)) {
-        continue;
-      }
       activeAdminNodes.push(node);
     }
 
@@ -11584,14 +11578,31 @@ app.get('/xxapi/admin/paymentHistory', requireAdmin, async (req, res) => {
 
       // Status label
       const cleanRptNo = String(txObj.rptNo || '').replace(/^SELL_/i, '').trim();
-      const isCancelled = txObj.payer_status === 4 || txObj.payer_status === 5 || isOrderCancelledForUser("", cleanRptNo);
+      const counterpartRpt = String(txObj.rptNo || '').startsWith('SELL_') ? cleanRptNo : `SELL_${cleanRptNo}`;
+
+      const counterpartTx = cleanRptNo ? await Transaction.findOne({ rptNo: counterpartRpt }).lean() : null;
+
+      const isCancelled = (
+        txObj.payer_status === 4 ||
+        txObj.payer_status === 5 ||
+        counterpartTx?.payer_status === 4 ||
+        counterpartTx?.payer_status === 5 ||
+        isOrderCancelledForUser("", cleanRptNo) ||
+        (cleanRptNo && orderSlipMap.get(cleanRptNo)?.payer_status === 4)
+      );
+
+      const isSuccess = (txObj.payer_status === 3 || counterpartTx?.payer_status === 3);
+
+      let effectivePayerStatus = txObj.payer_status;
+      if (isCancelled) effectivePayerStatus = 4;
+      else if (isSuccess) effectivePayerStatus = 3;
+
+      txObj.payer_status = effectivePayerStatus;
 
       let orderStatusLabel = 'In Review';
-      if (txObj.payer_status === 3) orderStatusLabel = 'Successfully';
-      else if (isCancelled || txObj.payer_status === 4 || txObj.payer_status === 5) {
-        orderStatusLabel = 'Cancelled';
-        txObj.payer_status = 4;
-      } else if (txObj.payer_status === 1) orderStatusLabel = 'Paying';
+      if (effectivePayerStatus === 3) orderStatusLabel = 'Successfully';
+      else if (effectivePayerStatus === 4 || effectivePayerStatus === 5) orderStatusLabel = 'Cancelled';
+      else if (effectivePayerStatus === 1) orderStatusLabel = 'Paying';
 
       return {
         _id: txObj._id,
@@ -11838,10 +11849,26 @@ app.get('/xxapi/admin/matchingOrders', requireAdmin, async (req, res) => {
       else if (chType === 1) toolName = 'PhonePe';
 
       const baseRpt = String(orderObj.rptNo || '').replace(/^SELL_/i, '').trim();
-      const isCancelled = orderObj.payer_status === 4 || orderObj.payer_status === 5 || isOrderCancelledForUser("", baseRpt);
-      if (isCancelled) {
-        orderObj.payer_status = 4;
-      }
+      const counterpartRpt = String(orderObj.rptNo || '').startsWith('SELL_') ? baseRpt : `SELL_${baseRpt}`;
+
+      const counterpartTx = baseRpt ? await Transaction.findOne({ rptNo: counterpartRpt }).lean() : null;
+
+      const isCancelled = (
+        orderObj.payer_status === 4 ||
+        orderObj.payer_status === 5 ||
+        counterpartTx?.payer_status === 4 ||
+        counterpartTx?.payer_status === 5 ||
+        isOrderCancelledForUser("", baseRpt) ||
+        (baseRpt && orderSlipMap.get(baseRpt)?.payer_status === 4)
+      );
+
+      const isSuccess = (orderObj.payer_status === 3 || counterpartTx?.payer_status === 3);
+
+      let effectiveStatus = orderObj.payer_status;
+      if (isCancelled) effectiveStatus = 4;
+      else if (isSuccess) effectiveStatus = 3;
+
+      orderObj.payer_status = effectiveStatus;
 
       return {
         order: {
