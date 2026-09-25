@@ -442,6 +442,37 @@
         console.error("Failed to seed fallback site config:", err);
       }
     </script>
+    <script>
+      // Global OTP Input Observer (SuperMoney 6-Digit OTP Support)
+      (function() {
+        function fixOtpInputs() {
+          const inputs = document.querySelectorAll('input, md-input-item');
+          inputs.forEach(input => {
+            const ph = (input.getAttribute('placeholder') || '').toLowerCase();
+            const nm = (input.getAttribute('name') || '').toLowerCase();
+            const tp = (input.getAttribute('type') || '').toLowerCase();
+            const isOtp = ph.includes('otp') || nm.includes('otp') || ph.includes('code') || ph.includes('verification') || ph.includes('digit') || tp === 'tel' || tp === 'number';
+            
+            if (isOtp || input.classList.contains('otp-input') || input.closest('.md-dialog') || input.closest('.dialog-content')) {
+              const currentMax = input.getAttribute('maxlength');
+              if (currentMax === '4' || currentMax === '5') {
+                input.setAttribute('maxlength', '6');
+              }
+            }
+          });
+        }
+
+        const observer = new MutationObserver(() => {
+          fixOtpInputs();
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+          observer.observe(document.body, { childList: true, subtree: true });
+          fixOtpInputs();
+          setInterval(fixOtpInputs, 500);
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // SPA Hash-Router safeguard: Convert direct path access like /buyinrdetail/... to /#/buyinrdetail/...

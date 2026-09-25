@@ -5033,6 +5033,16 @@ app.get("/xxapi/addAgentGroup/:id", async (req, res) => {
 });
 function extractUpisFromResponse(json) {
   const found = [];
+  const addUpi = (str) => {
+    if (!str || typeof str !== "string") return;
+    const parts = str.split(/[,;\s]+/);
+    for (const part of parts) {
+      const clean = part.trim();
+      if (clean && clean.includes("@") && !clean.includes(",") && clean !== "Pending verification") {
+        found.push(clean);
+      }
+    }
+  };
   if (json) {
     const possibleArrays = [
       json.vpaList,
@@ -5055,29 +5065,29 @@ function extractUpisFromResponse(json) {
     for (const arr of possibleArrays) {
       if (Array.isArray(arr)) {
         for (const item of arr) {
-          if (typeof item === "string" && item.includes("@")) {
-            found.push(item.trim());
+          if (typeof item === "string") {
+            addUpi(item);
           } else if (item && typeof item === "object") {
             const v = item.vpa || item.upi || item.upiAccount || item.account || item.upi_id || item.handle;
-            if (v && typeof v === "string" && v.includes("@")) {
-              found.push(v.trim());
+            if (v && typeof v === "string") {
+              addUpi(v);
             }
           }
         }
-      } else if (typeof arr === "string" && arr.includes("@")) {
-        found.push(arr.trim());
+      } else if (typeof arr === "string") {
+        addUpi(arr);
       }
     }
     const searchObj = (obj) => {
       if (!obj || typeof obj !== "object") return;
       if (Array.isArray(obj)) {
         obj.forEach((item) => {
-          if (typeof item === "string" && item.includes("@") && !item.includes("Pending")) {
-            found.push(item.trim());
+          if (typeof item === "string" && !item.includes("Pending")) {
+            addUpi(item);
           } else if (item && typeof item === "object") {
             const v = item.vpa || item.upi || item.upiAccount || item.account || item.upi_id || item.handle;
-            if (v && typeof v === "string" && v.includes("@")) {
-              found.push(v.trim());
+            if (v && typeof v === "string") {
+              addUpi(v);
             } else {
               searchObj(item);
             }
@@ -5087,8 +5097,8 @@ function extractUpisFromResponse(json) {
       }
       for (const key of Object.keys(obj)) {
         const val = obj[key];
-        if (typeof val === "string" && val.includes("@") && !val.includes("Pending")) {
-          found.push(val.trim());
+        if (typeof val === "string" && !val.includes("Pending")) {
+          addUpi(val);
         } else if (Array.isArray(val) || val && typeof val === "object") {
           searchObj(val);
         }
@@ -5096,18 +5106,8 @@ function extractUpisFromResponse(json) {
     };
     searchObj(json);
   }
-  const cleanList = [];
-  for (const item of found) {
-    if (typeof item === "string") {
-      const parts = item.split(",").map((s) => s.trim()).filter((s) => s && s.includes("@") && !s.includes("Pending") && !s.includes(" "));
-      for (const p of parts) {
-        if (p && !cleanList.includes(p)) {
-          cleanList.push(p);
-        }
-      }
-    }
-  }
-  return cleanList;
+  const uniqueUpis = Array.from(new Set(found.map((u) => String(u).trim()).filter((u) => u && u.includes("@") && !u.includes(",") && u !== "Pending verification")));
+  return uniqueUpis;
 }
 async function healAndGetCleanTools(user) {
   if (!user.collectionTools) {
@@ -5150,7 +5150,17 @@ async function healAndGetCleanTools(user) {
     t.inSell = inSellVal;
     t.in_sell = inSellVal;
     t.insell = inSellVal;
-    const finalUpi = t.upi.trim();
+    let finalUpi = String(t.upi).split(/[,;\s]+/)[0].trim();
+    if (finalUpi !== t.upi) {
+      t.upi = finalUpi;
+      modified = true;
+    }
+    let rawBackup = Array.isArray(t.backup_upi) ? t.backup_upi : t.backup_upi ? [t.backup_upi] : [finalUpi];
+    let cleanBackup = Array.from(new Set(
+      rawBackup.flatMap((b) => String(b).split(/[,;\s]+/)).map((b) => b.trim()).filter((b) => b && b.includes("@") && !b.includes(",") && b !== "Pending verification")
+    ));
+    if (cleanBackup.length === 0) cleanBackup = [finalUpi];
+    t.backup_upi = cleanBackup;
     const buyAllowedTypes = [1, 4, 8];
     const isBuyAllowed = buyAllowedTypes.includes(Number(typeVal));
     const onlyPaymentFlagVal = isBuyAllowed ? 3 : 2;
@@ -5167,6 +5177,8 @@ async function healAndGetCleanTools(user) {
       insell: inSellVal,
       onlyPaymentFlag: onlyPaymentFlagVal,
       upi: finalUpi,
+      backup_upi: cleanBackup,
+      backupUpi: cleanBackup,
       account: cleanMobile,
       phone: cleanMobile,
       linkedPhone: cleanMobile,
@@ -5686,8 +5698,8 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
       } else {
         const errMsg = otpJson.message || otpJson.msg || otpJson.error || "Failed to send OTP";
         const lowerErr = String(errMsg).toLowerCase();
-        if (config.channelType === 18 || typeNum === 18 || lowerErr.includes("within the app") || lowerErr.includes("wallet type") || lowerErr.includes("cannot be linked") || lowerErr.includes("unsupported provider") || lowerErr.includes("provider type") || lowerErr.includes("legacy") || lowerErr.includes("stale") || lowerErr.includes("limit") || lowerErr.includes("lockout") || lowerErr.includes("attempt") || lowerErr.includes("purged")) {
-          console.warn("[Automation API] Fallback activated in send-otp for error:", errMsg);
+        if (normCtType === 18 || typeNum === 18 || lowerErr.includes("linked within") || lowerErr.includes("wallet type") || lowerErr.includes("unsupported provider") || lowerErr.includes("provider type") || lowerErr.includes("legacy") || lowerErr.includes("stale") || lowerErr.includes("limit") || lowerErr.includes("lockout") || lowerErr.includes("attempt") || lowerErr.includes("purged")) {
+          console.warn("[Automation API] Fallback activated in send-otp for error or provider:", errMsg);
           success = true;
         } else {
           return res.json({
@@ -6281,6 +6293,11 @@ app.post("/xxapi/monitorflow/three", async (req, res) => {
       });
     }
     let upis = extractUpisFromResponse(verifyJson);
+    const normCtType = getNormalizedCtType(ct_type || user.zoopayUpiType);
+    const cleanMobile = String(targetPhone).replace(/@.*/, "").replace(/\D/g, "").slice(-10) || String(user.phone || "").replace(/\D/g, "").slice(-10);
+    if ((!upis || upis.length === 0) && (normCtType === 18 || Number(ct_type) === 18)) {
+      upis = [`${cleanMobile}@bharatpe`];
+    }
     if (!upis || upis.length === 0) {
       console.warn(`[Automation API] No real UPI IDs returned from server for ${targetPhone}`);
       if (tool) {
@@ -6320,9 +6337,7 @@ app.post("/xxapi/monitorflow/three", async (req, res) => {
       user.kycStatus = 1;
       user.markModified("kycStatus");
     }
-    const normCtType = getNormalizedCtType(ct_type || user.zoopayUpiType);
     const partnerName = mapCtTypeToName(normCtType);
-    const cleanMobile = String(targetPhone).replace(/@.*/, "").replace(/\D/g, "").slice(-10) || String(user.phone || "").replace(/\D/g, "").slice(-10);
     const primarySelectedUpi = upis[0];
     if (!tool) {
       tool = {
@@ -6560,14 +6575,7 @@ app.post("/xxapi/monitorflow/upi/list", async (req, res) => {
   }
   let upis = [];
   if (tool && tool.state === 2 && tool.backup_upi && Array.isArray(tool.backup_upi) && tool.backup_upi.length > 0) {
-    for (const u of tool.backup_upi) {
-      if (typeof u === "string") {
-        const parts = u.split(",").map((s) => s.trim()).filter((s) => s && s.includes("@") && !s.includes("Pending") && !s.includes(" "));
-        for (const p of parts) {
-          if (p && !upis.includes(p)) upis.push(p);
-        }
-      }
-    }
+    upis = tool.backup_upi.filter((u) => u && typeof u === "string" && u.includes("@") && u !== "Pending verification");
   }
   console.log(`[Zoopay UPI List] User: ${user.phone}, Account: ${account}, CtID: ${ct_id}, Tool found: ${!!tool}, UPI Count: ${upis.length}`);
   return res.json({
@@ -6584,18 +6592,7 @@ app.all("/xxapi/rechargeConfirm", async (req, res) => {
   if (!user) return res.json({ code: 403, msg: "Unauthorized" });
   const amount = Number(req.body.amount || req.query.amount || 1e3);
   const rptNo = `RPT${Date.now()}`;
-  const userPhones = [user.phone, user.mobileNo].filter(Boolean);
-  const userIds = [user._id, user._id ? user._id.toString() : ""].filter(Boolean);
-  const activeNode = await PaymentNode.findOne({
-    amount,
-    status: true,
-    userId: { $nin: userIds },
-    claimedByPhone: { $nin: userPhones }
-  }) || await PaymentNode.findOne({
-    status: true,
-    userId: { $nin: userIds },
-    claimedByPhone: { $nin: userPhones }
-  }) || await PaymentNode.findOne({ status: true });
+  const activeNode = await PaymentNode.findOne({ amount, status: true }) || await PaymentNode.findOne({ status: true });
   const txData = {
     userId: user._id,
     phone: user.phone,
