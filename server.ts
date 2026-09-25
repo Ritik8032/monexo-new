@@ -887,72 +887,25 @@ interface OrderSlipItem {
 
 const orderSlipMap = new Map<string, OrderSlipItem>();
 
-function generateOrderChunks(balance: number): number[] {
+function generateOrderChunks(balance: number, requestedAmt?: number): number[] {
   if (balance < 100) return [];
 
-  // 10-minute time slot index
-  const slot10Min = Math.floor(Date.now() / (10 * 60 * 1000));
-  const isRoundedSlot = (slot10Min % 2 === 1); // Rotates every 10 minutes
+  // If a specific amount is requested (e.g. 100), return exact requested amount if seller balance allows
+  if (requestedAmt && requestedAmt >= 100) {
+    if (balance >= requestedAmt) {
+      return [requestedAmt];
+    }
+    return [];
+  }
 
+  // Split available seller balance into 100-denominated independent orders (e.g. 200 balance -> [100, 100])
   const chunks: number[] = [];
   let remaining = Math.floor(balance);
-
-  if (!isRoundedSlot) {
-    // Slot 1 (First 10 min): Granular split chunks like 110, 220, 240, 500, 560, 1000
-    const granularPattern = [110, 220, 240, 500, 560, 1000, 1500, 2000];
-    let idx = 0;
-    while (remaining >= 100) {
-      let target = granularPattern[idx % granularPattern.length];
-      if (target > remaining) {
-        const possible = granularPattern.filter(s => s <= remaining);
-        if (possible.length > 0) {
-          target = possible[possible.length - 1];
-        } else {
-          target = remaining;
-        }
-      }
-      if (target >= 100) {
-        chunks.push(Math.floor(target));
-        remaining -= target;
-      } else {
-        break;
-      }
-      idx++;
-    }
-  } else {
-    // Slot 2 (After 10 min if unclicked): Clean rounded denominations ending in 00 or 000 (100, 200, 500, 1000, 2000, 5000)
-    const roundedPattern = [100, 200, 500, 1000, 2000, 5000];
-    let idx = 0;
-    while (remaining >= 100) {
-      let target = roundedPattern[idx % roundedPattern.length];
-      if (target > remaining) {
-        const possible = roundedPattern.filter(r => r <= remaining);
-        if (possible.length > 0) {
-          target = possible[possible.length - 1];
-        } else {
-          target = Math.floor(remaining / 100) * 100;
-        }
-      }
-      if (target >= 100) {
-        chunks.push(Math.floor(target));
-        remaining -= target;
-      } else {
-        break;
-      }
-      idx++;
-    }
+  while (remaining >= 100) {
+    chunks.push(100);
+    remaining -= 100;
   }
-
-  // Handle leftover >= 100
-  if (remaining >= 100) {
-    if (isRoundedSlot) {
-      chunks.push(Math.floor(remaining / 100) * 100);
-    } else {
-      chunks.push(Math.floor(remaining));
-    }
-  }
-
-  return chunks.filter(c => c >= 100);
+  return chunks;
 }
 
 const paymentNodeSchema = new mongoose.Schema({
@@ -4236,7 +4189,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
         if (cachedAmt < minAmt || cachedAmt > maxAmt) amountMatches = false;
       }
 
-      if (cached && cached.createdAt && (Date.now() - cached.createdAt < 900000) && amountMatches) { // 15 min session
+      if (cached && cached.createdAt && (Date.now() - cached.createdAt < 600000) && amountMatches) { // 10 min session
         let isNodeStillActive = true;
         if (cached.orderObj?.isAdminNode || cached.orderObj?.nodeId || cached.slipItem?.nodeId) {
           const nId = cached.orderObj?.nodeId || cached.slipItem?.nodeId;
@@ -4443,9 +4396,13 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
 
           if (availableBalance < 1) continue;
 
-          const baseChunks = generateOrderChunks(availableBalance);
-          const standardAmounts = CLEAN_DENOMINATIONS.filter(a => a <= availableBalance);
-          const combinedAmounts = Array.from(new Set([...baseChunks, ...standardAmounts.filter(a => a <= availableBalance)]));
+          const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
+          let combinedAmounts = baseChunks;
+          if (minAmt !== undefined || maxAmt !== undefined) {
+            const lower = minAmt !== undefined ? minAmt : 0;
+            const upper = maxAmt !== undefined ? maxAmt : 99999999;
+            combinedAmounts = combinedAmounts.filter(a => a >= lower && a <= upper);
+          }
 
           combinedAmounts.forEach((amt) => {
             const rptNo = generate15DigitRptNo();
@@ -5023,6 +4980,13 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       sellerUserId = sellerObj._id;
       sellerPhoneVal = sellerObj.phone;
     }
+  }
+
+  if (sellerUserId && user._id && String(sellerUserId) === String(user._id)) {
+    return res.json({ code: 400, msg: 'Cannot purchase your own sell order.' });
+  }
+  if (sellerPhoneVal && user.phone && String(sellerPhoneVal) === String(user.phone)) {
+    return res.json({ code: 400, msg: 'Cannot purchase your own sell order.' });
   }
 
   if (sellerUserId || sellerPhoneVal) {
@@ -12204,15 +12168,27 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
 
       // 1. Auto-cancel transactions exceeding 29 minutes (1740 seconds)
       const nowSec = Math.floor(Date.now() / 1000);
-      const expiredTxs = await Transaction.find({
-        payer_status: { $in: [1, 2] },
+      const expiredUnpaidTxs = await Transaction.find({
+        payer_status: 1,
+        ctime: { $lt: nowSec - 600 }
+      });
+
+      for (const tx of expiredUnpaidTxs) {
+        tx.payer_status = 4; // Auto cancel after 10 min
+        tx.reason_for_rejection = 'Order expired after 10 minutes';
+        await tx.save();
+        console.log(`[P2P Sweeper] Unpaid order ${tx.rptNo} expired after 10 minutes and was auto-cancelled.`);
+      }
+
+      const expiredReviewTxs = await Transaction.find({
+        payer_status: 2,
         ctime: { $lt: nowSec - 1740 }
       });
 
-      for (const tx of expiredTxs) {
-        tx.payer_status = 4; // Auto cancel
+      for (const tx of expiredReviewTxs) {
+        tx.payer_status = 4; // Auto cancel after 29 min
         await tx.save();
-        console.log(`[P2P Sweeper] Order ${tx.rptNo} expired after 29 minutes and was auto-cancelled.`);
+        console.log(`[P2P Sweeper] In-review order ${tx.rptNo} expired after 29 minutes and was auto-cancelled.`);
       }
 
       // 2. Automated History Polling for Orders in Review (every 10s for up to 29 minutes)

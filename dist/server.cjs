@@ -805,63 +805,21 @@ function generate15DigitRptNo() {
   return result;
 }
 var orderSlipMap = /* @__PURE__ */ new Map();
-function generateOrderChunks(balance) {
+function generateOrderChunks(balance, requestedAmt) {
   if (balance < 100) return [];
-  const slot10Min = Math.floor(Date.now() / (10 * 60 * 1e3));
-  const isRoundedSlot = slot10Min % 2 === 1;
+  if (requestedAmt && requestedAmt >= 100) {
+    if (balance >= requestedAmt) {
+      return [requestedAmt];
+    }
+    return [];
+  }
   const chunks = [];
   let remaining = Math.floor(balance);
-  if (!isRoundedSlot) {
-    const granularPattern = [110, 220, 240, 500, 560, 1e3, 1500, 2e3];
-    let idx = 0;
-    while (remaining >= 100) {
-      let target = granularPattern[idx % granularPattern.length];
-      if (target > remaining) {
-        const possible = granularPattern.filter((s) => s <= remaining);
-        if (possible.length > 0) {
-          target = possible[possible.length - 1];
-        } else {
-          target = remaining;
-        }
-      }
-      if (target >= 100) {
-        chunks.push(Math.floor(target));
-        remaining -= target;
-      } else {
-        break;
-      }
-      idx++;
-    }
-  } else {
-    const roundedPattern = [100, 200, 500, 1e3, 2e3, 5e3];
-    let idx = 0;
-    while (remaining >= 100) {
-      let target = roundedPattern[idx % roundedPattern.length];
-      if (target > remaining) {
-        const possible = roundedPattern.filter((r) => r <= remaining);
-        if (possible.length > 0) {
-          target = possible[possible.length - 1];
-        } else {
-          target = Math.floor(remaining / 100) * 100;
-        }
-      }
-      if (target >= 100) {
-        chunks.push(Math.floor(target));
-        remaining -= target;
-      } else {
-        break;
-      }
-      idx++;
-    }
+  while (remaining >= 100) {
+    chunks.push(100);
+    remaining -= 100;
   }
-  if (remaining >= 100) {
-    if (isRoundedSlot) {
-      chunks.push(Math.floor(remaining / 100) * 100);
-    } else {
-      chunks.push(Math.floor(remaining));
-    }
-  }
-  return chunks.filter((c) => c >= 100);
+  return chunks;
 }
 var paymentNodeSchema = new import_mongoose.default.Schema({
   name: { type: String, required: true },
@@ -3590,7 +3548,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
       if (minAmt !== void 0 && maxAmt !== void 0) {
         if (cachedAmt < minAmt || cachedAmt > maxAmt) amountMatches = false;
       }
-      if (cached && cached.createdAt && Date.now() - cached.createdAt < 9e5 && amountMatches) {
+      if (cached && cached.createdAt && Date.now() - cached.createdAt < 6e5 && amountMatches) {
         let isNodeStillActive = true;
         if (cached.orderObj?.isAdminNode || cached.orderObj?.nodeId || cached.slipItem?.nodeId) {
           const nId = cached.orderObj?.nodeId || cached.slipItem?.nodeId;
@@ -3766,9 +3724,13 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
           const pendingSum = pendingTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
           const availableBalance = Math.max(0, (seller.balance || 0) - pendingSum);
           if (availableBalance < 1) continue;
-          const baseChunks = generateOrderChunks(availableBalance);
-          const standardAmounts = CLEAN_DENOMINATIONS.filter((a) => a <= availableBalance);
-          const combinedAmounts = Array.from(/* @__PURE__ */ new Set([...baseChunks, ...standardAmounts.filter((a) => a <= availableBalance)]));
+          const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
+          let combinedAmounts = baseChunks;
+          if (minAmt !== void 0 || maxAmt !== void 0) {
+            const lower = minAmt !== void 0 ? minAmt : 0;
+            const upper = maxAmt !== void 0 ? maxAmt : 99999999;
+            combinedAmounts = combinedAmounts.filter((a) => a >= lower && a <= upper);
+          }
           combinedAmounts.forEach((amt) => {
             const rptNo = generate15DigitRptNo();
             if (userPhone && isOrderCancelledForUser(userPhone, rptNo)) return;
@@ -4292,6 +4254,12 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
       sellerUserId = sellerObj._id;
       sellerPhoneVal = sellerObj.phone;
     }
+  }
+  if (sellerUserId && user._id && String(sellerUserId) === String(user._id)) {
+    return res.json({ code: 400, msg: "Cannot purchase your own sell order." });
+  }
+  if (sellerPhoneVal && user.phone && String(sellerPhoneVal) === String(user.phone)) {
+    return res.json({ code: 400, msg: "Cannot purchase your own sell order." });
   }
   if (sellerUserId || sellerPhoneVal) {
     const sellerObj = await User.findOne({
@@ -10502,14 +10470,24 @@ if (process.env.NODE_ENV !== "production" || !process.env.VERCEL && !process.env
     try {
       await connectToDatabase();
       const nowSec = Math.floor(Date.now() / 1e3);
-      const expiredTxs = await Transaction.find({
-        payer_status: { $in: [1, 2] },
+      const expiredUnpaidTxs = await Transaction.find({
+        payer_status: 1,
+        ctime: { $lt: nowSec - 600 }
+      });
+      for (const tx of expiredUnpaidTxs) {
+        tx.payer_status = 4;
+        tx.reason_for_rejection = "Order expired after 10 minutes";
+        await tx.save();
+        console.log(`[P2P Sweeper] Unpaid order ${tx.rptNo} expired after 10 minutes and was auto-cancelled.`);
+      }
+      const expiredReviewTxs = await Transaction.find({
+        payer_status: 2,
         ctime: { $lt: nowSec - 1740 }
       });
-      for (const tx of expiredTxs) {
+      for (const tx of expiredReviewTxs) {
         tx.payer_status = 4;
         await tx.save();
-        console.log(`[P2P Sweeper] Order ${tx.rptNo} expired after 29 minutes and was auto-cancelled.`);
+        console.log(`[P2P Sweeper] In-review order ${tx.rptNo} expired after 29 minutes and was auto-cancelled.`);
       }
       const activeReviewTxs = await Transaction.find({
         payer_status: 2,
