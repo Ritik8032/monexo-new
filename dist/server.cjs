@@ -5327,9 +5327,21 @@ app.post("/xxapi/collectiontool", async (req, res) => {
   if (!user.collectionTools) {
     user.collectionTools = [];
   }
-  const tool = user.collectionTools.find((t) => t.id === id);
+  let tool = user.collectionTools.find((t) => t && (t.id === id || t._id === id || String(t.id) === String(id)));
   if (!tool) {
-    return res.json({ code: 404, msg: "Collection tool not found" });
+    tool = user.collectionTools.slice().reverse().find((t) => t && (t.relinkPending || t.state === 7 || t.state === 5 || t.upi === "Pending verification" || !t.upi));
+  }
+  if (!tool) {
+    tool = {
+      id: id || `tool-${Date.now()}`,
+      type: req.body.type || req.body.ctType || 1,
+      upi: upi || "Pending verification",
+      state: 2,
+      status: 1,
+      inSell: 1,
+      account: account || user.phone || ""
+    };
+    user.collectionTools.push(tool);
   }
   try {
     let targetUpi = upi && upi !== "Pending verification" ? String(upi).trim() : tool.upi && tool.upi !== "Pending verification" ? tool.upi : "";
