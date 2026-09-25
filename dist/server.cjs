@@ -3580,7 +3580,21 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
     if (userPhone && buyerActiveOrderMap.has(userPhone)) {
       const cached = buyerActiveOrderMap.get(userPhone);
       if (cached && cached.createdAt && Date.now() - cached.createdAt < 9e5) {
-        if (!isOrderCancelledForUser(userPhone, cached.rptNo) && !isOrderCancelledForUser(userPhone, cached.orderObj?.nodeId)) {
+        let isNodeStillActive = true;
+        if (cached.orderObj?.isAdminNode || cached.orderObj?.nodeId || cached.slipItem?.nodeId) {
+          const nId = cached.orderObj?.nodeId || cached.slipItem?.nodeId;
+          if (nId) {
+            const activeNodeExists = await PaymentNode.exists({
+              _id: nId,
+              status: true,
+              orderState: { $nin: ["COMPLETED", "CANCELLED", "EXPIRED"] }
+            });
+            if (!activeNodeExists) {
+              isNodeStillActive = false;
+            }
+          }
+        }
+        if (isNodeStillActive && !isOrderCancelledForUser(userPhone, cached.rptNo) && !isOrderCancelledForUser(userPhone, cached.orderObj?.nodeId)) {
           return res.json({
             code: 0,
             msg: "success",
@@ -3978,6 +3992,38 @@ app.get("/xxapi/buyitoken/paymentslipdetail", async (req, res) => {
         isUpi = false;
         payee_bankname = activeNode.bankName;
         payee_ifsc = activeNode.ifsc;
+      }
+    }
+  }
+  if (tx) {
+    const buyerUpi = tx.ct_account || tx.payer_upi || "";
+    if (!payee_bank_account || buyerUpi && payee_bank_account === buyerUpi) {
+      if (slipData && slipData.upi) {
+        payee_bank_account = slipData.upi;
+        if (slipData.pnname) payee_recipients_name = slipData.pnname;
+      } else if (tx.sellerId || tx.sellerPhone) {
+        const sellerObj = await User.findOne({
+          $or: [
+            { _id: tx.sellerId },
+            { phone: tx.sellerPhone }
+          ]
+        });
+        if (sellerObj && sellerObj.collectionTools) {
+          const sTool = sellerObj.collectionTools.find((t) => t && t.state === 2 && (Number(t.inSell) === 1 || t.inSell === true || t.inSell === "1") && t.upi && t.upi.includes("@"));
+          if (sTool) {
+            payee_bank_account = sTool.upi;
+            if (sTool.pnname) payee_recipients_name = sTool.pnname;
+          }
+        }
+      }
+    }
+  }
+  if (!payee_bank_account) {
+    const activeNode = await PaymentNode.findOne({ status: true, orderState: { $nin: ["COMPLETED", "CANCELLED", "EXPIRED"] } }) || await PaymentNode.findOne({ status: true });
+    if (activeNode) {
+      payee_bank_account = activeNode.accountNumber;
+      if (!payee_recipients_name || payee_recipients_name === "Monexo Merchant") {
+        payee_recipients_name = activeNode.name;
       }
     }
   }
@@ -6971,7 +7017,11 @@ async function getRechargeHistory(req, res) {
     const ctTypeVal = tx.ctType || tx.ct_type || tx.payer_tool_type || 1;
     const isUpi = tx.payment_method === 1;
     const buyerSelectedUpi = tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || "";
-    const payeeUpi = tx.payee_bank_account || tx.upi || "";
+    let payeeUpi = tx.payee_bank_account || tx.upi || "";
+    if ((!payeeUpi || payeeUpi === buyerSelectedUpi) && tx.rptNo && orderSlipMap.has(tx.rptNo)) {
+      const slip = orderSlipMap.get(tx.rptNo);
+      if (slip && slip.upi) payeeUpi = slip.upi;
+    }
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1e3);
     const dealTimeSec = tx.dealTime || tx.utime || (tx.payer_status >= 2 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : debitTimeSec);
     const finishTimeSec = tx.finishTime || tx.fnsDate || (tx.payer_status >= 3 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : 0);
@@ -7021,14 +7071,18 @@ async function getRechargeHistory(req, res) {
       account: payeeUpi,
       acctNo: payeeUpi,
       payee_bank_account: payeeUpi,
-      payAccount: buyerSelectedUpi,
+      payee_upi: payeeUpi,
+      receiveAccount: payeeUpi,
+      payAccount: payeeUpi,
       payer_upi: buyerSelectedUpi,
       ctAccount: buyerSelectedUpi,
       ct_account: buyerSelectedUpi,
+      selected_upi: buyerSelectedUpi,
       utr: tx.utr || tx.ref_no || "",
       payee_recipients_name: tx.payee_recipients_name || "Monexo Merchant",
       pnname: tx.payee_recipients_name || "Monexo Merchant",
       name: tx.payee_recipients_name || "Monexo Merchant",
+      payeeName: tx.payee_recipients_name || "Monexo Merchant",
       payee_ifsc: isUpi ? "" : tx.payee_ifsc || "",
       payee_bankname: isUpi ? "" : tx.payee_bankname || "",
       crtDate: debitTimeSec * 1e3,
@@ -9638,6 +9692,7 @@ app.post("/xxapi/admin/nodes", requireAdmin, async (req, res) => {
       utr: ""
     });
     await node.save();
+    buyerActiveOrderMap.clear();
     return res.json({ code: 0, msg: "success", data: node });
   } catch (err) {
     console.error("Create node error:", err);
@@ -9669,6 +9724,7 @@ app.put("/xxapi/admin/nodes/:id", requireAdmin, async (req, res) => {
       node.utr = "";
     }
     await node.save();
+    buyerActiveOrderMap.clear();
     return res.json({ code: 0, msg: "success", data: node });
   } catch (err) {
     console.error("Update node error:", err);
@@ -9678,10 +9734,29 @@ app.put("/xxapi/admin/nodes/:id", requireAdmin, async (req, res) => {
 app.delete("/xxapi/admin/nodes/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await PaymentNode.findByIdAndDelete(id);
-    if (!deleted) {
+    const node = await PaymentNode.findById(id);
+    if (!node) {
       return res.json({ code: 404, msg: "Node not found" });
     }
+    const claimedRpt = node.claimedRptNo;
+    const acctNo = node.accountNumber;
+    await PaymentNode.findByIdAndDelete(id);
+    if (claimedRpt) {
+      orderSlipMap.delete(claimedRpt);
+      await Transaction.updateMany(
+        { rptNo: claimedRpt },
+        { $set: { payer_status: 4, reason_for_rejection: "Order deleted by admin" } }
+      ).catch(() => {
+      });
+    }
+    if (acctNo) {
+      await Transaction.updateMany(
+        { payee_bank_account: acctNo, payer_status: 1 },
+        { $set: { payer_status: 4, reason_for_rejection: "Node deleted by admin" } }
+      ).catch(() => {
+      });
+    }
+    buyerActiveOrderMap.clear();
     return res.json({ code: 0, msg: "success" });
   } catch (err) {
     console.error("Delete node error:", err);
