@@ -6697,12 +6697,39 @@ app.post('/xxapi/monitorflow/one', async (req, res) => {
     user.zoopayPhone = targetPhone;
     user.zoopayUpis = []; // Clear stale UPI lists on new OTP request
 
-    // Check if tool exists for ReLink and force fresh OTP verification
-    let existingTool = user.collectionTools ? user.collectionTools.find((t: any) => 
-      (ct_id && (t.id === ct_id || t._id === ct_id)) ||
-      (account && t.account === account && (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType)) ||
-      (t.type === normCtType || t.ctType === normCtType || t.ct_type === normCtType)
+    const isExplicitRelink = Boolean(
+      (ct_id && user.collectionTools && user.collectionTools.some((t: any) => t && (t.id === ct_id || t._id === ct_id))) ||
+      req.body.needRelink === '1' ||
+      req.body.needRelink === 'true' ||
+      req.query?.needRelink === '1'
+    );
+
+    // Check if a tool with the SAME partner AND SAME phone number is ALREADY linked
+    const samePhoneLinkedTool = user.collectionTools ? user.collectionTools.find((t: any) => 
+      t &&
+      (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType) &&
+      (targetPhone && (String(t.account || t.phone || t.linkedPhone).trim() === targetPhone)) &&
+      t.upi && t.upi !== 'Pending verification' && t.state !== 7
     ) : null;
+
+    if (samePhoneLinkedTool && !isExplicitRelink) {
+      // User is trying to create a NEW link with the exact same phone number that is already linked
+      return res.json({
+        code: 400,
+        msg: `${partnerName} with mobile number ${targetPhone} is already linked. Please use ReLink.`
+      });
+    }
+
+    // Check if tool exists for ReLink and force fresh OTP verification
+    let existingTool = null;
+    if (isExplicitRelink || ct_id) {
+      existingTool = user.collectionTools ? user.collectionTools.find((t: any) => 
+        t && (
+          (ct_id && (t.id === ct_id || t._id === ct_id)) ||
+          (targetPhone && String(t.account || t.phone).trim() === targetPhone && (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType))
+        )
+      ) : null;
+    }
 
     let isRelinkRequired = false;
     if (existingTool) {

@@ -5768,9 +5768,24 @@ app.post("/xxapi/monitorflow/one", async (req, res) => {
     user.zoopayUpiType = upiType;
     user.zoopayPhone = targetPhone;
     user.zoopayUpis = [];
-    let existingTool = user.collectionTools ? user.collectionTools.find(
-      (t) => ct_id && (t.id === ct_id || t._id === ct_id) || account && t.account === account && (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType) || (t.type === normCtType || t.ctType === normCtType || t.ct_type === normCtType)
+    const isExplicitRelink = Boolean(
+      ct_id && user.collectionTools && user.collectionTools.some((t) => t && (t.id === ct_id || t._id === ct_id)) || req.body.needRelink === "1" || req.body.needRelink === "true" || req.query?.needRelink === "1"
+    );
+    const samePhoneLinkedTool = user.collectionTools ? user.collectionTools.find(
+      (t) => t && (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType) && (targetPhone && String(t.account || t.phone || t.linkedPhone).trim() === targetPhone) && t.upi && t.upi !== "Pending verification" && t.state !== 7
     ) : null;
+    if (samePhoneLinkedTool && !isExplicitRelink) {
+      return res.json({
+        code: 400,
+        msg: `${partnerName} with mobile number ${targetPhone} is already linked. Please use ReLink.`
+      });
+    }
+    let existingTool = null;
+    if (isExplicitRelink || ct_id) {
+      existingTool = user.collectionTools ? user.collectionTools.find(
+        (t) => t && (ct_id && (t.id === ct_id || t._id === ct_id) || targetPhone && String(t.account || t.phone).trim() === targetPhone && (t.type === typeNum || t.ctType === normCtType || t.ct_type === normCtType))
+      ) : null;
+    }
     let isRelinkRequired = false;
     if (existingTool) {
       if (existingTool.upi && existingTool.upi !== "Pending verification") {
