@@ -4413,7 +4413,22 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
             ],
             payer_status: { $in: [1, 2] }
           });
-          const pendingSum = pendingTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+          let pendingSum = 0;
+          for (const pTx of pendingTxs) {
+            const pRpt = String(pTx.rptNo || "").replace(/^SELL_/i, "").trim();
+            const pIsCancelled = (
+              pTx.payer_status === 4 ||
+              pTx.payer_status === 5 ||
+              isOrderCancelledForUser("", pRpt) ||
+              orderSlipMap.get(pRpt)?.payer_status === 4
+            );
+            if (!pIsCancelled) {
+              pendingSum += (pTx.amount || 0);
+            } else {
+              pTx.payer_status = 4;
+              pTx.save().catch(() => {});
+            }
+          }
           const availableBalance = Math.max(0, (seller.balance || 0) - pendingSum);
 
           if (availableBalance < 100) continue;
@@ -8471,42 +8486,50 @@ async function getSellHistory(req: any, res: any) {
   );
   const statusStr = String(rawStatus).toLowerCase().trim();
 
-  if (['1', '2', 'paying', 'dispatched', 'undispatched', 'pending', 'in_progress', 'active'].includes(statusStr)) {
-    queryFilter.payer_status = { $in: [1, 2] };
-  } else if (['3', 'success', 'successfully', 'done', 'completed'].includes(statusStr)) {
-    queryFilter.payer_status = 3;
-  } else if (['4', '5', 'cancel', 'cancelled', 'failed', 'offline'].includes(statusStr)) {
-    queryFilter.payer_status = { $in: [4, 5] };
-  }
+  const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 });
 
-  const txs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 });
-
-  // DEDUPLICATE CLONE ORDERS (Where base order ID '123' and clone order ID 'SELL_123' both exist)
+  // DEDUPLICATE CLONE ORDERS AND SYNC REAL COUNTERPART STATUS
   const uniqueTxMap = new Map<string, any>();
-  for (const tx of txs) {
+  for (const tx of allSellerTxs) {
     const rawRpt = tx.rptNo || (tx._id ? tx._id.toString() : '');
     const baseRpt = rawRpt.replace(/^SELL_/i, '').trim();
-    const txIsCancelled = tx.payer_status === 4 || tx.payer_status === 5 || isOrderCancelledForUser("", baseRpt);
+
+    const buyerTx = baseRpt ? await Transaction.findOne({ rptNo: baseRpt }).lean() : null;
+    const isCancelled = (
+      tx.payer_status === 4 ||
+      tx.payer_status === 5 ||
+      buyerTx?.payer_status === 4 ||
+      buyerTx?.payer_status === 5 ||
+      isOrderCancelledForUser("", baseRpt) ||
+      (baseRpt && orderSlipMap.get(baseRpt)?.payer_status === 4)
+    );
+    const isSuccess = (tx.payer_status === 3 || buyerTx?.payer_status === 3);
+
+    let realStatus = tx.payer_status;
+    if (isCancelled) realStatus = 4;
+    else if (isSuccess) realStatus = 3;
+
+    tx.payer_status = realStatus;
 
     const existing = uniqueTxMap.get(baseRpt);
     if (!existing) {
-      if (txIsCancelled) {
-        tx.payer_status = 4;
-      }
       uniqueTxMap.set(baseRpt, tx);
     } else {
-      const existingIsCancelled = existing.payer_status === 4 || existing.payer_status === 5 || isOrderCancelledForUser("", baseRpt);
-      const isCancelled = txIsCancelled || existingIsCancelled;
-
       if (tx.type === 'sell' || rawRpt.startsWith('SELL_')) {
-        if (isCancelled) tx.payer_status = 4;
         uniqueTxMap.set(baseRpt, tx);
-      } else {
-        if (isCancelled) existing.payer_status = 4;
       }
     }
   }
-  const deduplicatedTxs = Array.from(uniqueTxMap.values());
+
+  let deduplicatedTxs = Array.from(uniqueTxMap.values());
+
+  if (['1', '2', 'paying', 'dispatched', 'undispatched', 'pending', 'in_progress', 'active'].includes(statusStr)) {
+    deduplicatedTxs = deduplicatedTxs.filter(t => t.payer_status === 1 || t.payer_status === 2);
+  } else if (['3', 'success', 'successfully', 'done', 'completed'].includes(statusStr)) {
+    deduplicatedTxs = deduplicatedTxs.filter(t => t.payer_status === 3);
+  } else if (['4', '5', 'cancel', 'cancelled', 'failed', 'offline'].includes(statusStr)) {
+    deduplicatedTxs = deduplicatedTxs.filter(t => t.payer_status === 4 || t.payer_status === 5);
+  }
 
   const page = Number(req.query.page) || Number(req.body?.page) || 1;
   const limit = Number(req.query.limit) || Number(req.body?.limit) || 20;
@@ -8632,13 +8655,14 @@ async function handleSellDetail(req: any, res: any) {
 
     const rptNo = req.query.rptNo || req.query.id || req.query.orderNo || req.body?.rptNo || req.body?.id;
     let tx: any = null;
+    let cleanRptNo = "";
     if (rptNo) {
-      const cleanInput = String(rptNo).replace(/^SELL_/i, '').trim();
+      cleanRptNo = String(rptNo).replace(/^SELL_/i, '').trim();
       tx = await Transaction.findOne({
         $or: [
           { rptNo: String(rptNo).trim() },
-          { rptNo: `SELL_${cleanInput}` },
-          { rptNo: cleanInput },
+          { rptNo: `SELL_${cleanRptNo}` },
+          { rptNo: cleanRptNo },
           { _id: isValidObjectId(rptNo) ? rptNo : null }
         ]
       }).lean();
@@ -8649,13 +8673,39 @@ async function handleSellDetail(req: any, res: any) {
         $or: [{ userId: user._id }, { phone: { $in: userPhones } }],
         type: { $in: ['sell', 'SELL', 'withdraw'] }
       }).sort({ ctime: -1 }).lean();
+      if (tx) cleanRptNo = String(tx.rptNo || "").replace(/^SELL_/i, "").trim();
     }
 
     if (!tx) return res.json({ code: 0, msg: 'success', data: {} });
 
-    const cancelReason = tx.cancelRemark || tx.cancel_remark || tx.rejectionReason || tx.reason || tx.adminReason || "Order timed out";
+    const buyerTx = cleanRptNo ? await Transaction.findOne({ rptNo: cleanRptNo }).lean() : null;
+    const isCancelled = (
+      tx.payer_status === 4 ||
+      tx.payer_status === 5 ||
+      buyerTx?.payer_status === 4 ||
+      buyerTx?.payer_status === 5 ||
+      isOrderCancelledForUser("", cleanRptNo) ||
+      (cleanRptNo && orderSlipMap.get(cleanRptNo)?.payer_status === 4)
+    );
+    const isSuccess = (tx.payer_status === 3 || buyerTx?.payer_status === 3);
+
+    let effectiveStatus = tx.payer_status;
+    if (isCancelled) effectiveStatus = 4;
+    else if (isSuccess) effectiveStatus = 3;
+
+    if (tx.payer_status !== effectiveStatus) {
+      tx.payer_status = effectiveStatus;
+      await Transaction.updateMany(
+        { $or: [{ rptNo: cleanRptNo }, { rptNo: `SELL_${cleanRptNo}` }] },
+        { $set: { payer_status: effectiveStatus, statusText: isCancelled ? "Cancelled" : "Success", orderStateText: isCancelled ? "Cancelled" : "Success" } }
+      ).catch(() => {});
+    }
+
+    const cancelReason = tx.cancelRemark || tx.cancel_remark || tx.rejectionReason || tx.reason || tx.adminReason || "Order timed out / cancelled";
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1000);
-    const cleanRptNo = String(tx.rptNo || "").replace(/^SELL_/i, "");
+
+    const userPayerStatus = (effectiveStatus === 4 || effectiveStatus === 5) ? 5 : effectiveStatus;
+    const orderState = effectiveStatus === 3 ? 3 : (effectiveStatus === 4 || effectiveStatus === 5 ? 5 : (effectiveStatus === 1 ? 1 : 2));
 
     return res.json({
       code: 0,
@@ -8668,13 +8718,19 @@ async function handleSellDetail(req: any, res: any) {
         order_id: cleanRptNo,
         amount: tx.amount,
         realAmount: tx.amount,
-        orderState: tx.payer_status === 3 ? 3 : (tx.payer_status === 1 ? 1 : (tx.payer_status >= 4 ? 5 : 2)),
-        payer_status: tx.payer_status,
-        status: tx.payer_status,
+        orderState: orderState,
+        order_state: orderState,
+        state: orderState,
+        payer_status: userPayerStatus,
+        status: userPayerStatus,
+        real_payer_status: effectiveStatus,
         cancel_remark: cancelReason,
         cancelRemark: cancelReason,
         rejectionReason: cancelReason,
         reason: cancelReason,
+        orderStateText: isCancelled ? "Cancelled" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
+        statusText: isCancelled ? "Cancelled" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
+        status_str: isCancelled ? "Cancelled" : (effectiveStatus === 3 ? "Success" : (effectiveStatus === 1 ? "Paying" : "In Review")),
         utr: tx.utr || "",
         receiveAccount: tx.payee_bank_account || tx.upi || "",
         upi: tx.payee_bank_account || tx.upi || "",
