@@ -4215,14 +4215,28 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
   try {
     const reqMethod = req.query.method !== undefined ? Number(req.query.method) : 1;
     const reqCtType = req.query.ctType !== undefined ? Number(req.query.ctType) : (req.query.ct_type !== undefined ? Number(req.query.ct_type) : undefined);
+    const minAmt = req.query.min_amount !== undefined && req.query.min_amount !== '' ? Number(req.query.min_amount) : undefined;
+    const maxAmt = req.query.max_amount !== undefined && req.query.max_amount !== '' ? Number(req.query.max_amount) : undefined;
+    const reqAmtParam = req.query.amount !== undefined && req.query.amount !== '' ? Number(req.query.amount) : undefined;
+
     const currentUser = await getUserByToken(req).catch(() => null);
     const userPhone = currentUser ? currentUser.phone : "";
     const userIdStr = currentUser ? currentUser._id.toString() : "";
     
-    // 0. Sticky active buyer order check: Return same order on refresh if active
+    // 0. Sticky active buyer order check: Return same order on refresh if active AND matching requested amount
     if (userPhone && buyerActiveOrderMap.has(userPhone)) {
       const cached = buyerActiveOrderMap.get(userPhone);
-      if (cached && cached.createdAt && (Date.now() - cached.createdAt < 900000)) { // 15 min session
+      const cachedAmt = Number(cached?.orderObj?.amount || 0);
+
+      let amountMatches = true;
+      if (reqAmtParam !== undefined && reqAmtParam > 0) {
+        if (cachedAmt !== reqAmtParam) amountMatches = false;
+      }
+      if (minAmt !== undefined && maxAmt !== undefined) {
+        if (cachedAmt < minAmt || cachedAmt > maxAmt) amountMatches = false;
+      }
+
+      if (cached && cached.createdAt && (Date.now() - cached.createdAt < 900000) && amountMatches) { // 15 min session
         let isNodeStillActive = true;
         if (cached.orderObj?.isAdminNode || cached.orderObj?.nodeId || cached.slipItem?.nodeId) {
           const nId = cached.orderObj?.nodeId || cached.slipItem?.nodeId;
@@ -4257,7 +4271,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
     const list: any[] = [];
     const nowMs = Date.now();
 
-    // 1. PRIORITY ADMIN NODE CHECK & EXPIRY VALIDATION
+    // 1. PRIORITY ADMIN NODE CHECK & EXPIRY VALIDATION (Filter by requested amount range if provided)
     const candidateAdminNodes = await PaymentNode.find({
       status: true,
       orderState: { $nin: ['CLAIMED', 'COMPLETED', 'CANCELLED', 'EXPIRED'] }
@@ -4276,6 +4290,12 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       const nodeIdStr = node._id.toString();
       if (userPhone && (isOrderCancelledForUser(userPhone, nodeIdStr) || isOrderCancelledForUser(userPhone, node.claimedRptNo))) {
         continue; // Skip admin orders canceled by this user!
+      }
+      if (reqAmtParam !== undefined && reqAmtParam > 0 && node.amount !== reqAmtParam) {
+        continue;
+      }
+      if (minAmt !== undefined && maxAmt !== undefined && (node.amount < minAmt || node.amount > maxAmt)) {
+        continue;
       }
       activeAdminNodes.push(node);
     }
@@ -4482,9 +4502,6 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       filteredList = list.filter(item => !(userPhone && (isOrderCancelledForUser(userPhone, item.rptNo) || isOrderCancelledForUser(userPhone, item.nodeId))));
     }
 
-    const minAmt = req.query.min_amount !== undefined && req.query.min_amount !== '' ? Number(req.query.min_amount) : undefined;
-    const maxAmt = req.query.max_amount !== undefined && req.query.max_amount !== '' ? Number(req.query.max_amount) : undefined;
-
     if (minAmt !== undefined || maxAmt !== undefined) {
       const lower = minAmt !== undefined ? minAmt : 0;
       const upper = maxAmt !== undefined ? maxAmt : 99999999;
@@ -4638,13 +4655,11 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
   let tx = await Transaction.findOne({ rptNo: id });
   const slipData = orderSlipMap.get(id);
 
-  let amount = 200;
+  let amount = reqAmt > 0 ? reqAmt : 100;
   if (tx) {
     amount = tx.amount;
   } else if (slipData) {
     amount = slipData.amount;
-  } else if (reqAmt > 0) {
-    amount = reqAmt;
   }
 
   let isUpi = true;
@@ -4965,7 +4980,7 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     slipData.ctime = ctime;
   }
 
-  let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 200);
+  let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 100);
   let payee_recipients_name = slipData ? slipData.pnname : "Monexo Merchant";
   let payee_bank_account = slipData ? slipData.upi : "";
 
@@ -11158,7 +11173,8 @@ app.get('/xxapi/admin/nodes', requireAdmin, async (req, res) => {
         verifiedName: vName
       };
     }));
-    return res.json({ code: 0, msg: 'success', data: enrichedNodes });
+    const activeOnlyNodes = enrichedNodes.filter((n: any) => n.orderState !== 'EXPIRED' && n.orderState !== 'COMPLETED' && n.orderState !== 'CANCELLED');
+    return res.json({ code: 0, msg: 'success', data: activeOnlyNodes });
   } catch (err) {
     console.error('Get nodes error:', err);
     return res.json({ code: 500, msg: 'Internal server error' });
