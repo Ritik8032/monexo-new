@@ -2846,9 +2846,13 @@ app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
 
     for (const tx of sellerTxs) {
       const rootNo = String(tx.rptNo || tx.id || tx._id || '').replace(/^SELL_/i, '').trim();
+      const buyerTx = rootNo ? await Transaction.findOne({ rptNo: rootNo }).lean() : null;
+
       const isCancelled = (
         tx.payer_status === 4 ||
         tx.payer_status === 5 ||
+        buyerTx?.payer_status === 4 ||
+        buyerTx?.payer_status === 5 ||
         isOrderCancelledForUser("", rootNo) ||
         (rootNo && orderSlipMap.get(rootNo)?.payer_status === 4)
       );
@@ -2861,11 +2865,31 @@ app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
         continue; // Do NOT count cancelled orders toward inSellAmount (frozenItoken)!
       }
 
-      if (tx.payer_status === 1 || tx.payer_status === 2) {
-        inTransation++;
-        inSellAmount += Number(tx.amount) || 0;
-      } else if (tx.payer_status === 3) {
+      const isSuccess = (tx.payer_status === 3 || buyerTx?.payer_status === 3);
+      if (isSuccess) {
         todaySuccess++;
+        continue;
+      }
+
+      // Check if order was actually picked up / claimed by a buyer
+      const isPickedByBuyer = Boolean(
+        buyerTx ||
+        (tx.buyerPhone && tx.buyerPhone !== tx.phone) ||
+        (rootNo && orderSlipMap.get(rootNo)?.isClaimed) ||
+        Array.from(buyerActiveOrderMap.values()).some((cached: any) => 
+          cached.rptNo === rootNo || 
+          cached.rptNo === `SELL_${rootNo}` || 
+          cached.orderObj?.rptNo === rootNo || 
+          cached.orderObj?.rptNo === `SELL_${rootNo}`
+        )
+      );
+
+      let effectiveStatus = tx.payer_status;
+      if (effectiveStatus === 1 || effectiveStatus === 2) {
+        if (isPickedByBuyer) {
+          inTransation++;
+          inSellAmount += Number(tx.amount) || 0;
+        }
       }
     }
 
