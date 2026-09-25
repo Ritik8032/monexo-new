@@ -890,8 +890,9 @@ const orderSlipMap = new Map<string, OrderSlipItem>();
 function generateOrderChunks(balance: number, requestedAmt?: number): number[] {
   if (balance < 100) return [];
 
-  // If a specific amount is requested (e.g. 100), return exact requested amount if seller balance allows
+  // If a specific amount is requested (e.g. 100, 200), return exact requested amount if seller balance allows AND amount is a multiple of 100
   if (requestedAmt && requestedAmt >= 100) {
+    if (requestedAmt % 100 !== 0) return [];
     if (balance >= requestedAmt) {
       return [requestedAmt];
     }
@@ -4336,8 +4337,20 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
         }
       }
 
-      // Fetch active selling users with wallet balance >= 1
-      const sellingUsers = await User.find({ balance: { $gte: 1 } });
+      // Build list of current buyer's own UPIs to strictly prevent buyer UPI from being used as seller UPI
+      const buyerUpiList: string[] = [];
+      if (currentUser) {
+        if (currentUser.phone) buyerUpiList.push(String(currentUser.phone).toLowerCase().trim());
+        if (currentUser.collectionTools) {
+          currentUser.collectionTools.forEach((t: any) => {
+            if (t.upi) buyerUpiList.push(String(t.upi).toLowerCase().trim());
+            if (t.account) buyerUpiList.push(String(t.account).toLowerCase().trim());
+          });
+        }
+      }
+
+      // Fetch active selling users with wallet balance >= 100
+      const sellingUsers = await User.find({ balance: { $gte: 100 }, status: { $nin: ['disabled', 'suspended'] } });
       
       // Seller Rotation for Buyer: Sort sellers to avoid assigning same seller consecutively
       const lastAssignedSellerId = userIdStr ? buyerLastSellerMap.get(userIdStr) : "";
@@ -4351,24 +4364,25 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
 
       for (const seller of sortedSellingUsers) {
         if (currentUser && (seller._id.toString() === userIdStr || seller.phone === userPhone)) {
-          continue;
+          continue; // Strict Rule 1 & 2: Never use buyer account as seller!
         }
         const tools = seller.collectionTools || [];
-        // Strict Seller Tool check: MUST be inSell == 1, active state 2, and valid UPI
+        // Strict Seller Tool check: MUST be inSell == 1, active state 2, and valid UPI NOT matching buyer's UPI
         const activeTools = tools.filter((t: any) => 
           t && 
           t.state === 2 && 
           (Number(t.inSell) === 1 || t.inSell === true || t.inSell === "1") && 
           t.upi && 
           t.upi.includes('@') && 
-          t.upi !== 'Pending verification'
+          t.upi !== 'Pending verification' &&
+          !buyerUpiList.includes(String(t.upi).toLowerCase().trim())
         );
         
         if (activeTools.length > 0) {
           const matchingTool = (reqCtType !== undefined ? activeTools.find((t: any) => t.type === reqCtType || t.ctType === reqCtType || t.ct_type === reqCtType) : undefined) || activeTools[0];
           const primaryTool = matchingTool;
           const upiId = primaryTool.upi || (primaryTool.backup_upi && primaryTool.backup_upi[0]);
-          if (!upiId || !upiId.includes('@')) continue;
+          if (!upiId || !upiId.includes('@') || buyerUpiList.includes(String(upiId).toLowerCase().trim())) continue;
 
           const toolCtType = primaryTool.ct_type || primaryTool.ctType || primaryTool.type || reqCtType || 1;
 
@@ -4394,7 +4408,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
           const pendingSum = pendingTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
           const availableBalance = Math.max(0, (seller.balance || 0) - pendingSum);
 
-          if (availableBalance < 1) continue;
+          if (availableBalance < 100) continue;
 
           const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
           let combinedAmounts = baseChunks;
@@ -4405,6 +4419,8 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
           }
 
           combinedAmounts.forEach((amt) => {
+            if (amt < 100 || amt % 100 !== 0) return; // Strict Rule 4: multiples of 100 only!
+
             const rptNo = generate15DigitRptNo();
             if (userPhone && isOrderCancelledForUser(userPhone, rptNo)) return;
 
@@ -4462,76 +4478,11 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
     if (minAmt !== undefined || maxAmt !== undefined) {
       const lower = minAmt !== undefined ? minAmt : 0;
       const upper = maxAmt !== undefined ? maxAmt : 99999999;
-      let rangeFiltered = filteredList.filter(item => {
-        if (item.isAdminNode) return true; // ALWAYS display active admin nodes regardless of min_amount/max_amount query!
+      filteredList = filteredList.filter(item => {
+        if (item.isAdminNode) return true;
         const amt = Number(item.amount);
         return amt >= lower && amt <= upper;
       });
-
-      if (rangeFiltered.length === 0 && !hasActiveAdminOrders) {
-        // Fallback for P2P when no admin order active
-        const fallbackCtType = reqCtType || 1;
-        let sampleAmounts: number[] = [];
-        if ((lower === 0 || lower === 100) && (upper === 999 || upper === 1000)) sampleAmounts = [100, 200, 300, 500, 750, 1000];
-        else if ((lower === 1000 || lower === 1010) && (upper === 2999 || upper === 3000)) sampleAmounts = [1010, 1500, 2000, 2500, 3000];
-        else if ((lower === 3000 || lower === 3010) && (upper === 4999 || upper === 5000)) sampleAmounts = [3010, 3500, 4000, 4500, 5000];
-        else if ((lower === 5000 || lower === 5010) && (upper === 7999 || upper === 8000)) sampleAmounts = [5010, 5500, 6000, 7000, 8000];
-        else if ((lower === 8000 || lower === 8010) && (upper === 9999 || upper === 10000)) sampleAmounts = [8010, 8500, 9000, 9500, 10000];
-        else if (lower >= 10000) sampleAmounts = [10000, 15000, 20000, 25000, 50000];
-        else {
-          const step = Math.max(100, Math.floor((upper - lower) / 4));
-          sampleAmounts = [lower, lower + step, lower + 2 * step, lower + 3 * step, Math.min(upper, lower + 4 * step)];
-        }
-
-        sampleAmounts.forEach((amt, idx) => {
-          const rptNo = generate15DigitRptNo();
-          if (userPhone && isOrderCancelledForUser(userPhone, rptNo)) return;
-
-          const toolItem = realToolsPool.length > 0 ? realToolsPool[idx % realToolsPool.length] : null;
-          const upiVal = toolItem ? toolItem.upi : "";
-          const nameVal = toolItem ? toolItem.pnname : "Rahul";
-          const sellerIdVal = toolItem ? toolItem.sellerId : "";
-          const sellerPhoneVal = toolItem ? toolItem.sellerPhone : "9199604613";
-          const ctIdVal = toolItem ? toolItem.ctId : "";
-          const ctTypeVal = toolItem ? toolItem.ctType : fallbackCtType;
-
-          const slipItem: OrderSlipItem = {
-            rptNo,
-            sellerId: sellerIdVal,
-            sellerPhone: sellerPhoneVal,
-            ctId: ctIdVal,
-            ctType: ctTypeVal,
-            amount: amt,
-            method: reqMethod,
-            upi: upiVal,
-            pnname: nameVal,
-            ctime: Math.floor(Date.now() / 1000)
-          };
-          orderSlipMap.set(rptNo, slipItem);
-          rangeFiltered.push({
-            rptNo,
-            amount: amt.toString(),
-            method: reqMethod,
-            payment_method: reqMethod,
-            ctType: ctTypeVal,
-            ct_type: ctTypeVal,
-            upi: upiVal,
-            account: upiVal,
-            ctAccount: upiVal,
-            pnaccount: upiVal,
-            accountNumber: upiVal,
-            payAccount: upiVal,
-            acctNo: upiVal,
-            pnname: nameVal,
-            name: nameVal,
-            account_name: nameVal,
-            sellerId: sellerIdVal,
-            sellerPhone: sellerPhoneVal,
-            ctId: ctIdVal
-          });
-        });
-      }
-      filteredList = rangeFiltered;
     }
 
     const ifAsc = req.query.if_asc !== undefined ? (req.query.if_asc === 'true' || req.query.if_asc === '1' || req.query.if_asc === true) : true;
@@ -4557,7 +4508,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       item.methodName = nameStr;
     });
 
-    // Record selected order for sticky persistence & seller rotation
+    // Record selected order for sticky persistence & seller rotation ONLY if eligible sellers exist
     if (userPhone && filteredList.length > 0) {
       const selectedItem = filteredList[0];
       buyerActiveOrderMap.set(userPhone, {
@@ -4569,6 +4520,8 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       if (userIdStr && selectedItem.sellerId) {
         buyerLastSellerMap.set(userIdStr, selectedItem.sellerId);
       }
+    } else if (userPhone) {
+      buyerActiveOrderMap.delete(userPhone);
     }
 
     return res.json({
@@ -4581,25 +4534,13 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching waitpayerpaymentslip:', err);
+    if (userPhone) buyerActiveOrderMap.delete(userPhone);
     return res.json({
       code: 0,
       msg: 'success',
       data: {
-        total: 5,
-        list: [100, 200, 300, 500, 1000].map(amt => {
-          const rptNo = generate15DigitRptNo();
-          return {
-            rptNo,
-            amount: amt.toString(),
-            method: 1,
-            payment_method: 1,
-            ctType: 1,
-            ct_type: 1,
-            upi: "", account: "", ctAccount: "", payAccount: "",
-            pnname: "Rahul",
-            name: "Rahul"
-          };
-        })
+        total: 0,
+        list: []
       }
     });
   }
@@ -4686,16 +4627,6 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
             if (sTool.pnname) payee_recipients_name = sTool.pnname;
           }
         }
-      }
-    }
-  }
-  if (!payee_bank_account) {
-    const activeNode = await PaymentNode.findOne({ status: true, orderState: { $nin: ['COMPLETED', 'CANCELLED', 'EXPIRED'] } })
-                       || await PaymentNode.findOne({ status: true });
-    if (activeNode) {
-      payee_bank_account = activeNode.accountNumber;
-      if (!payee_recipients_name || payee_recipients_name === 'Monexo Merchant') {
-        payee_recipients_name = activeNode.name;
       }
     }
   }
@@ -4937,12 +4868,18 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     slipData.ctime = ctime;
   }
 
-  let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 100);
-  let payee_recipients_name = slipData ? slipData.pnname : "Monexo Merchant";
+  let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 0);
+  if (amount < 100 || amount % 100 !== 0) {
+    return res.json({ code: 400, msg: 'Invalid order amount. Amount must be a multiple of 100.' });
+  }
+
+  let payee_recipients_name = slipData ? slipData.pnname : "";
   let payee_bank_account = slipData ? slipData.upi : "";
 
+  let isAdminOrder = false;
   // Check and claim Admin Node order if active
   if (slipData && (slipData as any).isAdminNode && (slipData as any).nodeId) {
+    isAdminOrder = true;
     await PaymentNode.findByIdAndUpdate((slipData as any).nodeId, {
       orderState: 'CLAIMED',
       claimedByPhone: user.phone,
@@ -4955,31 +4892,37 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       accountNumber: payee_bank_account
     });
     if (adminNode) {
+      isAdminOrder = true;
       adminNode.orderState = 'CLAIMED';
       adminNode.claimedByPhone = user.phone;
       adminNode.claimedRptNo = order_id;
       await adminNode.save();
     }
   }
+
   let payee_ifsc = "";
   let payee_bankname = "";
   let payment_method = slipData ? slipData.method : 1; // 1: upi, 2: bank
   let sellerUserId: any = slipData ? slipData.sellerId : null;
   let sellerPhoneVal = slipData ? slipData.sellerPhone : "";
 
-  if (!sellerUserId && !sellerPhoneVal && payee_bank_account) {
+  if (!sellerUserId && !sellerPhoneVal && payee_bank_account && !isAdminOrder) {
     const sellerObj = await User.findOne({
       $or: [
         { 'collectionTools.upi': payee_bank_account },
         { 'collectionTools.account': payee_bank_account },
-        { 'upiDetails.upi': payee_bank_account },
-        { phone: payee_bank_account.split('@')[0] }
+        { 'upiDetails.upi': payee_bank_account }
       ]
     });
     if (sellerObj) {
       sellerUserId = sellerObj._id;
       sellerPhoneVal = sellerObj.phone;
     }
+  }
+
+  // Strict Rule 1 & 2: Validate seller presence and prevent buyer account/UPI fallback
+  if (!isAdminOrder && !sellerUserId && !sellerPhoneVal) {
+    return res.json({ code: 400, msg: 'No eligible seller available for this order.' });
   }
 
   if (sellerUserId && user._id && String(sellerUserId) === String(user._id)) {
@@ -4989,6 +4932,19 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     return res.json({ code: 400, msg: 'Cannot purchase your own sell order.' });
   }
 
+  // Check buyer's own UPIs against payee_bank_account
+  const buyerUpiList: string[] = [];
+  if (user.phone) buyerUpiList.push(String(user.phone).toLowerCase().trim());
+  if (user.collectionTools) {
+    user.collectionTools.forEach((t: any) => {
+      if (t.upi) buyerUpiList.push(String(t.upi).toLowerCase().trim());
+      if (t.account) buyerUpiList.push(String(t.account).toLowerCase().trim());
+    });
+  }
+  if (payee_bank_account && buyerUpiList.includes(String(payee_bank_account).toLowerCase().trim())) {
+    return res.json({ code: 400, msg: 'Buyer UPI cannot be used as seller payment recipient.' });
+  }
+
   if (sellerUserId || sellerPhoneVal) {
     const sellerObj = await User.findOne({
       $or: [
@@ -4996,20 +4952,21 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
         { phone: sellerPhoneVal }
       ]
     });
-    if (sellerObj) {
-      const activePending = await Transaction.find({
-        $or: [
-          { sellerId: sellerObj._id },
-          { sellerPhone: sellerObj.phone }
-        ],
-        rptNo: { $ne: order_id },
-        payer_status: { $in: [1, 2] }
-      });
-      const activeSum = activePending.reduce((sum, t) => sum + (t.amount || 0), 0);
-      const remainingAvailable = Math.max(0, (sellerObj.balance || 0) - activeSum);
-      if (remainingAvailable < amount) {
-        return res.json({ code: 400, msg: 'Seller does not have enough available balance for this order.' });
-      }
+    if (!sellerObj || sellerObj.status === 'disabled' || sellerObj.status === 'suspended') {
+      return res.json({ code: 400, msg: 'Seller is no longer active.' });
+    }
+    const activePending = await Transaction.find({
+      $or: [
+        { sellerId: sellerObj._id },
+        { sellerPhone: sellerObj.phone }
+      ],
+      rptNo: { $ne: order_id },
+      payer_status: { $in: [1, 2] }
+    });
+    const activeSum = activePending.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const remainingAvailable = Math.max(0, (sellerObj.balance || 0) - activeSum);
+    if (remainingAvailable < amount) {
+      return res.json({ code: 400, msg: 'Seller does not have enough available balance for this order.' });
     }
   }
 
@@ -7994,6 +7951,9 @@ async function cancelTransactionHandler(req: any, res: any) {
     }
     let tx = await Transaction.findOne({ rptNo: rptStr });
     if (tx) {
+      if (tx.payer_status === 4) {
+        return res.json({ code: 0, msg: 'success', data: tx });
+      }
       tx.payer_status = 4; // Cancelled
       if (user && !tx.userId) tx.userId = user._id;
       await tx.save();
@@ -8002,7 +7962,7 @@ async function cancelTransactionHandler(req: any, res: any) {
       const isSellTx = tx.type === 'sell' || String(tx.rptNo).startsWith('SELL_');
       const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, '') : `SELL_${tx.rptNo}`;
       const counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
-      if (counterpartTx) {
+      if (counterpartTx && counterpartTx.payer_status !== 4) {
         counterpartTx.payer_status = 4;
         await counterpartTx.save();
       }
@@ -8016,15 +7976,15 @@ async function cancelTransactionHandler(req: any, res: any) {
         userId: user ? user._id : undefined,
         phone: user ? user.phone : (slipData ? slipData.sellerPhone : undefined),
         rptNo: rptStr,
-        amount: slipData ? slipData.amount : 200,
+        amount: slipData ? slipData.amount : 100,
         payer_status: 4,
         payment_method: slipData ? slipData.method : 1,
-        payee_recipients_name: slipData ? slipData.pnname : "Monexo Merchant",
+        payee_recipients_name: slipData ? slipData.pnname : "",
         payee_bank_account: slipData ? slipData.upi : "",
         ctime: slipData ? slipData.ctime : Math.floor(Date.now() / 1000),
         type: 'recharge',
         currency: 3
-      });
+      }).catch(() => {});
     }
   }
   return res.json({ code: 0, msg: 'success' });
@@ -8162,15 +8122,13 @@ async function getRechargeHistory(req: any, res: any) {
     const dealTimeSec = (tx as any).dealTime || (tx as any).utime || (tx.payer_status >= 2 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : debitTimeSec);
     const finishTimeSec = (tx as any).finishTime || (tx as any).fnsDate || (tx.payer_status >= 3 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : 0);
 
-    const isUsdtTx = tx.isUsdt || tx.currency === 1 || String(tx.rptNo || '').startsWith('USDT') || (tx.usdtAmount && tx.usdtAmount > 0);
-    let uAmt = Number(tx.usdtAmount || 1);
-    const rate = Number(tx.exchangeRate || 111);
+    const isUsdtTx = tx.isUsdt === true || String(tx.rptNo || '').startsWith('USDT');
     let effectiveAmount = Number(tx.amount || 0);
     if (isUsdtTx) {
+      let uAmt = Number(tx.usdtAmount || 1);
+      const rate = Number(tx.exchangeRate || 111);
       if (uAmt < 0.1 || effectiveAmount <= 10) {
         uAmt = 1;
-        effectiveAmount = Math.round(uAmt * rate);
-      } else if (effectiveAmount < Math.round(uAmt * rate)) {
         effectiveAmount = Math.round(uAmt * rate);
       }
     }
@@ -10251,19 +10209,23 @@ app.get('/xxapi/admin/usdtHistory', requireAdmin, async (req, res) => {
       const siteConf = await SiteConfig.findOne().lean();
       const defaultRate = Number(siteConf?.usdtExchangerate || 111);
       const buggedTxs = await Transaction.find({
-        $or: [{ isUsdt: true }, { currency: 1 }, { rptNo: /^USDT/ }],
-        $or: [
-          { usdtAmount: { $lt: 0.1 } },
-          { amount: { $lte: 10 } },
-          { usdtAmount: { $exists: false } },
-          { exchangeRate: { $lt: 90 } }
+        $and: [
+          { $or: [{ isUsdt: true }, { rptNo: /^USDT/ }] },
+          {
+            $or: [
+              { usdtAmount: { $lt: 0.1 } },
+              { amount: { $lte: 10 } },
+              { usdtAmount: { $exists: false } },
+              { exchangeRate: { $lt: 90 } }
+            ]
+          }
         ]
       });
       for (const bTx of buggedTxs) {
         let u = (bTx.usdtAmount && bTx.usdtAmount >= 0.1) ? bTx.usdtAmount : 1;
         let rate = (bTx.exchangeRate && bTx.exchangeRate >= 90) ? bTx.exchangeRate : defaultRate;
         let inr = bTx.amount;
-        if (!inr || inr <= 10 || inr < Math.round(u * rate)) {
+        if (!inr || inr <= 10) {
           inr = Math.round(u * rate);
         }
         bTx.usdtAmount = u;
@@ -10287,14 +10249,12 @@ app.get('/xxapi/admin/usdtHistory', requireAdmin, async (req, res) => {
     const defaultRate = Number(siteConf?.usdtExchangerate || 111);
 
     const mappedTxs = txs.map((t: any) => {
-      let uAmt = Number(t.usdtAmount || 1);
-      const rate = Number(t.exchangeRate || defaultRate);
       let inr = Number(t.amount || 0);
+      let uAmt = Number(t.usdtAmount || (t.isUsdt ? Math.round((inr / defaultRate) * 100) / 100 : 0));
+      const rate = Number(t.exchangeRate || defaultRate);
 
-      if (uAmt < 0.1 || inr <= 10) {
+      if (t.isUsdt && (uAmt < 0.1 || inr <= 10)) {
         uAmt = 1;
-        inr = Math.round(uAmt * rate);
-      } else if (inr < Math.round(uAmt * rate)) {
         inr = Math.round(uAmt * rate);
       }
 
