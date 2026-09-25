@@ -5926,15 +5926,21 @@ async function healAndGetCleanTools(user) {
   if (Array.isArray(user.collectionTools)) {
     user.collectionTools.forEach((t: any) => {
       if (t && t.savedOriginalState) {
-        t.upi = t.savedOriginalState.upi;
-        t.backup_upi = t.savedOriginalState.backup_upi;
-        t.account = t.savedOriginalState.account;
-        t.phone = t.savedOriginalState.phone;
+        if (t.savedOriginalState.upi) t.upi = t.savedOriginalState.upi;
+        if (t.savedOriginalState.backup_upi) t.backup_upi = t.savedOriginalState.backup_upi;
+        if (t.savedOriginalState.account) t.account = t.savedOriginalState.account;
+        if (t.savedOriginalState.phone) t.phone = t.savedOriginalState.phone;
         if (t.savedOriginalState.pnname) t.pnname = t.savedOriginalState.pnname;
-        t.state = t.savedOriginalState.state;
-        t.status = t.savedOriginalState.status;
-        t.inSell = t.savedOriginalState.inSell;
+        if (t.savedOriginalState.state !== undefined) t.state = t.savedOriginalState.state;
+        if (t.savedOriginalState.status !== undefined) t.status = t.savedOriginalState.status;
+        if (t.savedOriginalState.inSell !== undefined) t.inSell = t.savedOriginalState.inSell;
         delete t.savedOriginalState;
+        delete t.relinkPending;
+        modified = true;
+      } else if (t && t.savedUpi && (!t.upi || t.upi === 'Pending verification')) {
+        t.upi = t.savedUpi;
+        t.state = 2;
+        t.status = 1;
         delete t.relinkPending;
         modified = true;
       }
@@ -5947,7 +5953,7 @@ async function healAndGetCleanTools(user) {
          !t.id.startsWith('tool-paytm-business') && 
          !t.id.startsWith('tool-phonepe-business') && 
          !t.id.startsWith('tool-amazon') &&
-         t.upi && typeof t.upi === 'string' && t.upi.includes('@') && t.upi !== 'Pending verification' &&
+         ((t.upi && typeof t.upi === 'string' && t.upi.includes('@')) || t.savedUpi || t.savedOriginalState || t.account) &&
          !t.isNewDraft
   );
 
@@ -5976,6 +5982,11 @@ async function healAndGetCleanTools(user) {
   
   for (const t of deduplicatedTools) {
     let typeVal = getNormalizedCtType(t.type !== undefined ? t.type : t.ctType);
+
+    if (!t.upi || t.upi === 'Pending verification') {
+      if (t.savedUpi) t.upi = t.savedUpi;
+      else if (t.savedOriginalState?.upi) t.upi = t.savedOriginalState.upi;
+    }
 
     const hasValidUpi = t.upi && typeof t.upi === 'string' && t.upi.includes('@') && t.upi !== 'Pending verification';
     if (!hasValidUpi) continue;
@@ -6020,7 +6031,7 @@ async function healAndGetCleanTools(user) {
 
     const rawMob = t.linkedPhone || t.phone || t.account || user.phone || '';
     const cleanMobile = String(rawMob).replace(/@.*/, '').replace(/\D/g, '').slice(-10) || String(user.phone || '').replace(/\D/g, '').slice(-10);
-    const partnerName = mapCtTypeToName(typeVal);
+    const partnerName = t.pnname || mapCtTypeToName(typeVal);
 
     cleanTools.push({
       ...t,
@@ -6073,8 +6084,6 @@ app.get('/xxapi/collectiontool', async (req, res) => {
   const { id } = req.query;
   const toolId = String(id || '');
 
-  const cleanTools = await healAndGetCleanTools(user);
-
   let reqTypeNum = 0;
   if (toolId.includes('paytm') || toolId === '8' || toolId === '9' || toolId === '16') reqTypeNum = 8;
   else if (toolId.includes('mobikwik') || toolId === '4') reqTypeNum = 4;
@@ -6086,50 +6095,66 @@ app.get('/xxapi/collectiontool', async (req, res) => {
   else if (toolId.includes('amazon') || toolId === '-10' || toolId === '33') reqTypeNum = -10;
   else if (toolId.includes('phonepe') || toolId === '1') reqTypeNum = 1;
 
-  if (cleanTools && cleanTools.length > 0) {
-    const specificTool = cleanTools.find((t: any) => 
+  // Search directly in user's collectionTools first so we never miss pre-filling existing details
+  const rawList = Array.isArray(user.collectionTools) ? user.collectionTools : [];
+  let specificTool = rawList.find((t: any) => 
+    t && (
       String(t.id) === toolId || 
       String(t._id) === toolId || 
       t.upi === toolId || 
       (reqTypeNum > 0 && (t.type === reqTypeNum || t.ctType === reqTypeNum || t.ct_type === reqTypeNum))
-    );
-    if (specificTool && specificTool.upi && specificTool.upi.includes('@') && specificTool.upi !== 'Pending verification') {
-      let resolvedType = (specificTool.ctType && Number(specificTool.ctType) !== 7) ? Number(specificTool.ctType) : (specificTool.type || 1);
-      if (resolvedType === 9) resolvedType = 8;
-      if (resolvedType === 3) resolvedType = 2;
-      if (resolvedType === 33) resolvedType = -10;
-      const isRelinking = req.query.mode === 'relink' || req.query.relink === '1' || req.query.action === 'relink' || req.query.needRelink === '1' || specificTool.state === 5 || specificTool.state === 7 || specificTool.status === 0;
-      const resolvedUpi = isRelinking ? "" : specificTool.upi;
-      const resolvedBackupUpi = isRelinking ? [] : (specificTool.backup_upi || specificTool.backupUpi || []);
-      const phoneNum = specificTool.linkedPhone || specificTool.phone || specificTool.account || user.phone || "";
-      const userName = specificTool.pnname || user.phone || "Merchant Partner";
-      return res.json({
-        code: 0,
-        msg: 'success',
-        data: {
-          ...specificTool,
-          pnname: userName,
-          name: userName,
-          account: phoneNum,
-          phone: phoneNum,
-          upi: resolvedUpi,
-          backup_upi: resolvedBackupUpi,
-          backupUpi: resolvedBackupUpi,
-          ctAccount: resolvedUpi,
-          ct_account: resolvedUpi,
-          ctType: resolvedType,
-          ct_type: resolvedType,
-          type: resolvedType,
-          inSell: specificTool.inSell,
-          in_sell: specificTool.inSell,
-          insell: specificTool.inSell,
-          text: specificTool.text || mapCtTypeToName(resolvedType)
-        }
-      });
+    )
+  );
+
+  if (!specificTool) {
+    const cleanTools = await healAndGetCleanTools(user);
+    if (cleanTools && cleanTools.length > 0) {
+      specificTool = cleanTools.find((t: any) => 
+        String(t.id) === toolId || 
+        String(t._id) === toolId || 
+        t.upi === toolId || 
+        (reqTypeNum > 0 && (t.type === reqTypeNum || t.ctType === reqTypeNum || t.ct_type === reqTypeNum))
+      );
     }
   }
 
-  // If specific tool is not found or unverified, return unlinked tool structure for that requested partner
+  if (specificTool) {
+    let resolvedType = (specificTool.ctType && Number(specificTool.ctType) !== 7) ? Number(specificTool.ctType) : (specificTool.type || reqTypeNum || 1);
+    if (resolvedType === 9) resolvedType = 8;
+    if (resolvedType === 3) resolvedType = 2;
+    if (resolvedType === 33) resolvedType = -10;
+
+    const phoneNum = specificTool.linkedPhone || specificTool.phone || specificTool.account || user.phone || "";
+    const userName = specificTool.pnname || specificTool.name || user.phone || mapCtTypeToName(resolvedType);
+
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        ...specificTool,
+        id: specificTool.id || toolId,
+        pnname: userName,
+        name: userName,
+        account: phoneNum,
+        phone: phoneNum,
+        linkedPhone: phoneNum,
+        upi: "", // Blank UPI for new handle entry
+        backup_upi: [],
+        backupUpi: [],
+        ctAccount: "",
+        ct_account: "",
+        ctType: resolvedType,
+        ct_type: resolvedType,
+        type: resolvedType,
+        inSell: specificTool.inSell !== undefined ? specificTool.inSell : 1,
+        in_sell: specificTool.inSell !== undefined ? specificTool.inSell : 1,
+        insell: specificTool.inSell !== undefined ? specificTool.inSell : 1,
+        text: specificTool.text || mapCtTypeToName(resolvedType)
+      }
+    });
+  }
+
+  // If specific tool is not found or unverified, return unlinked tool structure with user phone/name pre-filled
   const targetType = reqTypeNum || 1;
   const targetName = mapCtTypeToName(targetType);
   const synthesized = {
@@ -6138,12 +6163,14 @@ app.get('/xxapi/collectiontool', async (req, res) => {
     ctType: targetType,
     ct_type: targetType,
     type: targetType,
-    account: "",
-    upi: "Pending verification",
+    account: user.phone || "",
+    phone: user.phone || "",
+    pnname: targetName,
+    name: targetName,
+    upi: "",
     ctAccount: "",
     ct_account: "",
     text: targetName,
-    name: targetName,
     status: 0,
     state: 7, // 7 = unlinked / waiting for auth
     confirm_mode: 0
