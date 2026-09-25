@@ -454,9 +454,17 @@
             const isOtp = ph.includes('otp') || nm.includes('otp') || ph.includes('code') || ph.includes('verification') || ph.includes('digit') || tp === 'tel' || tp === 'number';
             
             if (isOtp || input.classList.contains('otp-input') || input.closest('.md-dialog') || input.closest('.dialog-content')) {
-              const currentMax = input.getAttribute('maxlength');
-              if (currentMax === '4' || currentMax === '5') {
-                input.setAttribute('maxlength', '6');
+              const pageText = (document.body.innerText || '').toLowerCase();
+              if (pageText.includes('phonepe')) {
+                const currentMax = input.getAttribute('maxlength');
+                if (currentMax === '6') {
+                  input.setAttribute('maxlength', '5');
+                }
+              } else {
+                const currentMax = input.getAttribute('maxlength');
+                if (currentMax === '4' || currentMax === '5') {
+                  input.setAttribute('maxlength', '6');
+                }
               }
             }
           });

@@ -6397,9 +6397,15 @@ app.post('/xxapi/collectiontoolStatus', async (req, res) => {
   const statusNum = status !== undefined ? Number(status) : undefined;
   const stateNum = state !== undefined ? Number(state) : undefined;
 
+  const hasValidUpi = tool && tool.upi && typeof tool.upi === 'string' && tool.upi.includes('@') && tool.upi !== 'Pending verification';
+
   if (tool) {
+    if (hasValidUpi) {
+      tool.state = 2;
+      tool.status = 1;
+    }
     if (inSell !== undefined) {
-      const isUnlinked = tool.state === 5 || tool.state === 7 || tool.status === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.upi.includes('@');
+      const isUnlinked = !hasValidUpi;
       const targetInSell = Number(inSell);
       if (targetInSell === 1 && isUnlinked) {
         return res.json({ code: 400, msg: 'UPI unlinked - Please relink first' });
@@ -6408,11 +6414,11 @@ app.post('/xxapi/collectiontoolStatus', async (req, res) => {
       tool.in_sell = targetInSell;
       tool.insell = targetInSell;
     }
-    if (state !== undefined) tool.state = Number(state);
-    if (status !== undefined) tool.status = Number(status);
+    if (state !== undefined && !hasValidUpi) tool.state = Number(state);
+    if (status !== undefined && !hasValidUpi) tool.status = Number(status);
   }
   
-  if (statusNum === 5 || stateNum === 5 || statusNum === 7 || stateNum === 7) {
+  if (!hasValidUpi && (statusNum === 5 || stateNum === 5 || statusNum === 7 || stateNum === 7)) {
     if (tool) {
       if (tool.upi && tool.upi.includes('@') && tool.upi !== 'Pending verification') {
         tool.savedUpi = tool.upi;
@@ -6460,8 +6466,8 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   const toolId = req.body?.ct_id || req.body?.id || req.body?.ctId || req.body?.ct_type || req.body?.ctType || req.body?.type || req.query?.ct_id || req.query?.id;
   const tool = getOrCreateUserTool(user, toolId);
   
-  const isUnlinked = tool.state === 5 || tool.state === 7 || tool.status === 5 || !tool.upi || tool.upi === 'Pending verification' || !tool.upi.includes('@');
-  if (isUnlinked) {
+  const hasValidUpi = tool && tool.upi && typeof tool.upi === 'string' && tool.upi.includes('@') && tool.upi !== 'Pending verification';
+  if (!hasValidUpi) {
     return res.json({ code: 400, msg: 'UPI unlinked - Please relink first' });
   }
 
