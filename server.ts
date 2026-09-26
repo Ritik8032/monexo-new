@@ -889,10 +889,13 @@ interface OrderSlipItem {
 
 const orderSlipMap = new Map<string, OrderSlipItem>();
 
-function generateOrderChunks(balance: number, requestedAmt?: number): number[] {
+function generateOrderChunks(balance: number, requestedAmt?: number, isAdminOrder: boolean = false): number[] {
   if (balance < 1) return [];
 
-  // If a specific amount is requested (e.g. 1, 2, 10, 50, 100), return requested amount if seller balance allows
+  if (isAdminOrder) {
+    return [Math.floor(balance)];
+  }
+
   if (requestedAmt && requestedAmt >= 1) {
     if (balance >= requestedAmt) {
       return [requestedAmt];
@@ -900,20 +903,67 @@ function generateOrderChunks(balance: number, requestedAmt?: number): number[] {
     return [Math.min(balance, requestedAmt)];
   }
 
-  // Split available seller balance into independent orders
   const chunks: number[] = [];
   let remaining = Math.floor(balance);
-  if (remaining >= 100) {
+
+  // Seller balance chunking rules
+  if (remaining < 300) {
     while (remaining >= 100) {
       chunks.push(100);
       remaining -= 100;
     }
-    if (remaining >= 1) {
-      chunks.push(remaining);
-    }
-  } else if (remaining >= 1) {
-    chunks.push(remaining);
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
   }
+
+  if (remaining >= 300 && remaining < 500) {
+    chunks.push(300);
+    remaining -= 300;
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
+  }
+
+  if (remaining >= 500 && remaining < 700) {
+    chunks.push(500);
+    remaining -= 500;
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
+  }
+
+  if (remaining >= 700 && remaining <= 1000) {
+    if (remaining >= 1000) return [500, 500];
+    chunks.push(500);
+    remaining -= 500;
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
+  }
+
+  while (remaining >= 100) {
+    if (remaining >= 5000) {
+      chunks.push(5000);
+      remaining -= 5000;
+    } else if (remaining >= 3000) {
+      chunks.push(3000);
+      remaining -= 3000;
+    } else if (remaining >= 2000) {
+      chunks.push(2000);
+      remaining -= 2000;
+    } else if (remaining >= 1000) {
+      chunks.push(1000);
+      remaining -= 1000;
+    } else if (remaining >= 500) {
+      chunks.push(500);
+      remaining -= 500;
+    } else if (remaining >= 300) {
+      chunks.push(300);
+      remaining -= 300;
+    } else {
+      chunks.push(100);
+      remaining -= 100;
+    }
+  }
+  if (remaining >= 1) chunks.push(remaining);
+
   return chunks;
 }
 
@@ -3468,7 +3518,7 @@ const buildNewbieRules = (params: any, totalBought: number = 0, hasLinkedUpi: bo
 
   return [
     { id: 1, name: 'Subscribe to Official Channel', activityCode: 'newbie_tg_channel', title: 'Subscribe to Official Channel', reward: 40, status: isTgChannelDone ? 'done' : 'undone', frontd_url: 'https://t.me/+4F3O2KrkP98yZjk1', frontUrl: 'https://t.me/+4F3O2KrkP98yZjk1' },
-    { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: isTgCustomerDone ? 'done' : 'undone', frontd_url: 'https://t.me/+4F3O2KrkP98yZjk1', frontUrl: 'https://t.me/+4F3O2KrkP98yZjk1' },
+    { id: 2, name: 'Join VIP Group', activityCode: 'newbie_tg_customer', title: 'Join VIP Group', reward: 40, status: isTgCustomerDone ? 'done' : 'undone', frontd_url: 'https://t.me/+zms1goKw4qVmNzA1', frontUrl: 'https://t.me/+zms1goKw4qVmNzA1' },
     { id: 3, name: 'Watch Beginner Tutorial', activityCode: 'newbie_watch_video', title: 'Watch Beginner Tutorial', reward: 40, status: isWatchVideoDone ? 'done' : 'undone', frontd_url: '/newbie_watch_video', frontUrl: '/newbie_watch_video' },
     { id: 4, name: 'Add UPI reward', activityCode: 'newbie_newct', title: 'Add UPI reward', reward: 40, status: isNewCtDone ? 'done' : 'undone', frontd_url: '/collectiontool', frontUrl: '/collectiontool' },
     { id: 5, name: 'Purchase 1000 IToken', activityCode: 'newbie_buyitoken', title: 'Purchase 1000 IToken', reward: 200, status: isBuyDone ? 'done' : 'undone', frontd_url: '/buy', frontUrl: '/buy' }
@@ -9878,21 +9928,18 @@ app.post('/xxapi/admin/updateBalance', requireAdmin, async (req, res) => {
     let txType = 'transfer_in';
     let txAmount = val;
 
-    if (type === 'add') {
+    if (type === 'add' || type === 'set' || !type) {
       user.balance = (user.balance || 0) + val;
       txType = 'transfer_in';
       txAmount = val;
     } else if (type === 'subtract') {
-      user.balance = (user.balance || 0) - val;
+      user.balance = Math.max(0, (user.balance || 0) - val);
       txType = 'transfer_out';
       txAmount = val;
-    } else if (type === 'set') {
-      const diff = val - (user.balance || 0);
-      user.balance = val;
-      txType = diff >= 0 ? 'transfer_in' : 'transfer_out';
-      txAmount = Math.abs(diff);
     } else {
-      return res.json({ code: 400, msg: 'Invalid operation type' });
+      user.balance = (user.balance || 0) + val;
+      txType = 'transfer_in';
+      txAmount = val;
     }
     
     await user.save();

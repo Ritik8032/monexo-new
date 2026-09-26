@@ -807,8 +807,11 @@ function generate15DigitRptNo() {
   return result;
 }
 var orderSlipMap = /* @__PURE__ */ new Map();
-function generateOrderChunks(balance, requestedAmt) {
+function generateOrderChunks(balance, requestedAmt, isAdminOrder = false) {
   if (balance < 1) return [];
+  if (isAdminOrder) {
+    return [Math.floor(balance)];
+  }
   if (requestedAmt && requestedAmt >= 1) {
     if (balance >= requestedAmt) {
       return [requestedAmt];
@@ -817,17 +820,58 @@ function generateOrderChunks(balance, requestedAmt) {
   }
   const chunks = [];
   let remaining = Math.floor(balance);
-  if (remaining >= 100) {
+  if (remaining < 300) {
     while (remaining >= 100) {
       chunks.push(100);
       remaining -= 100;
     }
-    if (remaining >= 1) {
-      chunks.push(remaining);
-    }
-  } else if (remaining >= 1) {
-    chunks.push(remaining);
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
   }
+  if (remaining >= 300 && remaining < 500) {
+    chunks.push(300);
+    remaining -= 300;
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
+  }
+  if (remaining >= 500 && remaining < 700) {
+    chunks.push(500);
+    remaining -= 500;
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
+  }
+  if (remaining >= 700 && remaining <= 1e3) {
+    if (remaining >= 1e3) return [500, 500];
+    chunks.push(500);
+    remaining -= 500;
+    if (remaining >= 1) chunks.push(remaining);
+    return chunks;
+  }
+  while (remaining >= 100) {
+    if (remaining >= 5e3) {
+      chunks.push(5e3);
+      remaining -= 5e3;
+    } else if (remaining >= 3e3) {
+      chunks.push(3e3);
+      remaining -= 3e3;
+    } else if (remaining >= 2e3) {
+      chunks.push(2e3);
+      remaining -= 2e3;
+    } else if (remaining >= 1e3) {
+      chunks.push(1e3);
+      remaining -= 1e3;
+    } else if (remaining >= 500) {
+      chunks.push(500);
+      remaining -= 500;
+    } else if (remaining >= 300) {
+      chunks.push(300);
+      remaining -= 300;
+    } else {
+      chunks.push(100);
+      remaining -= 100;
+    }
+  }
+  if (remaining >= 1) chunks.push(remaining);
   return chunks;
 }
 var paymentNodeSchema = new import_mongoose.default.Schema({
@@ -2905,7 +2949,7 @@ var buildNewbieRules = (params, totalBought = 0, hasLinkedUpi = false) => {
   const isNewCtDone = Boolean(params.newbie_newct) || hasLinkedUpi;
   return [
     { id: 1, name: "Subscribe to Official Channel", activityCode: "newbie_tg_channel", title: "Subscribe to Official Channel", reward: 40, status: isTgChannelDone ? "done" : "undone", frontd_url: "https://t.me/+4F3O2KrkP98yZjk1", frontUrl: "https://t.me/+4F3O2KrkP98yZjk1" },
-    { id: 2, name: "Join VIP Group", activityCode: "newbie_tg_customer", title: "Join VIP Group", reward: 40, status: isTgCustomerDone ? "done" : "undone", frontd_url: "https://t.me/+4F3O2KrkP98yZjk1", frontUrl: "https://t.me/+4F3O2KrkP98yZjk1" },
+    { id: 2, name: "Join VIP Group", activityCode: "newbie_tg_customer", title: "Join VIP Group", reward: 40, status: isTgCustomerDone ? "done" : "undone", frontd_url: "https://t.me/+zms1goKw4qVmNzA1", frontUrl: "https://t.me/+zms1goKw4qVmNzA1" },
     { id: 3, name: "Watch Beginner Tutorial", activityCode: "newbie_watch_video", title: "Watch Beginner Tutorial", reward: 40, status: isWatchVideoDone ? "done" : "undone", frontd_url: "/newbie_watch_video", frontUrl: "/newbie_watch_video" },
     { id: 4, name: "Add UPI reward", activityCode: "newbie_newct", title: "Add UPI reward", reward: 40, status: isNewCtDone ? "done" : "undone", frontd_url: "/collectiontool", frontUrl: "/collectiontool" },
     { id: 5, name: "Purchase 1000 IToken", activityCode: "newbie_buyitoken", title: "Purchase 1000 IToken", reward: 200, status: isBuyDone ? "done" : "undone", frontd_url: "/buy", frontUrl: "/buy" }
@@ -8436,21 +8480,18 @@ app.post("/xxapi/admin/updateBalance", requireAdmin, async (req, res) => {
     }
     let txType = "transfer_in";
     let txAmount = val;
-    if (type === "add") {
+    if (type === "add" || type === "set" || !type) {
       user.balance = (user.balance || 0) + val;
       txType = "transfer_in";
       txAmount = val;
     } else if (type === "subtract") {
-      user.balance = (user.balance || 0) - val;
+      user.balance = Math.max(0, (user.balance || 0) - val);
       txType = "transfer_out";
       txAmount = val;
-    } else if (type === "set") {
-      const diff = val - (user.balance || 0);
-      user.balance = val;
-      txType = diff >= 0 ? "transfer_in" : "transfer_out";
-      txAmount = Math.abs(diff);
     } else {
-      return res.json({ code: 400, msg: "Invalid operation type" });
+      user.balance = (user.balance || 0) + val;
+      txType = "transfer_in";
+      txAmount = val;
     }
     await user.save();
     if (txAmount > 0) {
