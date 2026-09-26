@@ -6155,35 +6155,8 @@ async function verifyTransactionAndMatch4Fields(item, tx, expectedBillType = "PA
   }
   const itemPayerUpi = String(getItemProp(["payerUpi", "payer_upi", "senderUpi", "fromUpi", "sender", "account"])).toLowerCase().trim();
   const expPayerUpi = String(tx.payerUpi || tx.ct_account || tx.payer_upi || tx.selected_upi || tx.buyerUpi || "").toLowerCase().trim();
-  let payerMatches = false;
-  if (!itemPayerUpi || !expPayerUpi) {
-    payerMatches = true;
-  } else {
-    const itemPayerClean = itemPayerUpi.replace(/[^a-z0-9@.]/gi, "");
-    const expPayerClean = expPayerUpi.replace(/[^a-z0-9@.]/gi, "");
-    const itemPayerPrefix = itemPayerClean.split("@")[0];
-    const expPayerPrefix = expPayerClean.split("@")[0];
-    const itemPayerPhone = itemPayerPrefix.replace(/\D/g, "").slice(-10);
-    const expPayerPhone = expPayerPrefix.replace(/\D/g, "").slice(-10);
-    const rawBuyerPhone = String(tx.buyerPhone || tx.phone || "").replace(/\D/g, "").slice(-10);
-    if (itemPayerClean === expPayerClean) {
-      payerMatches = true;
-    } else if (itemPayerPrefix && expPayerPrefix && itemPayerPrefix === expPayerPrefix) {
-      payerMatches = true;
-    } else if (itemPayerPhone.length === 10 && expPayerPhone.length === 10 && itemPayerPhone === expPayerPhone) {
-      payerMatches = true;
-    } else if (rawBuyerPhone.length === 10 && itemPayerPhone.length === 10 && itemPayerPhone === rawBuyerPhone) {
-      payerMatches = true;
-    } else if (rawBuyerPhone.length === 10 && (itemPayerClean.includes(rawBuyerPhone) || itemPayerPrefix.includes(rawBuyerPhone))) {
-      payerMatches = true;
-    } else if (itemPayerClean.startsWith(expPayerPrefix) || expPayerClean.startsWith(itemPayerPrefix)) {
-      payerMatches = true;
-    } else if (Array.isArray(tx.buyerVpas) && tx.buyerVpas.some((vpa) => String(vpa).toLowerCase().trim() === itemPayerClean || itemPayerClean.includes(String(vpa).toLowerCase().trim().split("@")[0]))) {
-      payerMatches = true;
-    }
-  }
-  if (!payerMatches) {
-    return { isMatch: false, utr: "", reason: `payerUpi mismatch: got "${itemPayerUpi}", expected "${expPayerUpi}"` };
+  if (itemPayerUpi && expPayerUpi && itemPayerUpi !== expPayerUpi) {
+    console.log(`[4-Field Match Info] payerUpi mismatch ignored per rule (got "${itemPayerUpi}", expected "${expPayerUpi}")`);
   }
   const itemReceiverUpi = String(getItemProp(["receiverUpi", "receiver_upi", "payee_bank_account", "toUpi", "vpa", "receiver"])).toLowerCase().trim();
   const expReceiverUpi = String(tx.receiverUpi || tx.payee_bank_account || tx.upi || tx.payeeUpi || "").toLowerCase().trim();
