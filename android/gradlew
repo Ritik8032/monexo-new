@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+
+APP_HOME=$(cd "$(dirname "$0")" && pwd)
+WRAPPER_JAR="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
+
+if [ -f "$WRAPPER_JAR" ] && [ -s "$WRAPPER_JAR" ]; then
+    exec java -Xmx1024m -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"
+elif command -v gradle >/dev/null 2>&1; then
+    exec gradle "$@"
+else
+    echo "Gradle executable not found in PATH."
+    exit 1
+fi
+
