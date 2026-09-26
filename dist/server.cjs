@@ -7153,11 +7153,22 @@ async function getRechargeHistory(req, res) {
     const obj = tx.toObject ? tx.toObject() : { ...tx };
     const ctTypeVal = tx.ctType || tx.ct_type || tx.payer_tool_type || 1;
     const isUpi = tx.payment_method === 1;
-    const buyerSelectedUpi = tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || "";
-    let payeeUpi = tx.payee_bank_account || tx.upi || "";
-    if ((!payeeUpi || payeeUpi === buyerSelectedUpi) && tx.rptNo && orderSlipMap.has(tx.rptNo)) {
+    let payeeUpi = tx.payee_bank_account || "";
+    if (!payeeUpi && tx.rptNo && orderSlipMap.has(tx.rptNo)) {
       const slip = orderSlipMap.get(tx.rptNo);
       if (slip && slip.upi) payeeUpi = slip.upi;
+    }
+    if (!payeeUpi) payeeUpi = tx.upi || "";
+    let buyerSelectedUpi = tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || tx.payerUpi || "";
+    if (!buyerSelectedUpi || buyerSelectedUpi === payeeUpi) {
+      const bPhone = tx.buyerPhone || tx.phone || user.phone || user.mobileNo || "";
+      if (bPhone) {
+        const cleanBPhone = String(bPhone).replace(/\D/g, "").slice(-10);
+        if (cleanBPhone) {
+          const suffix = ctTypeVal === 4 ? "ikwik" : ctTypeVal === 2 ? "freecharge" : "ybl";
+          buyerSelectedUpi = `${cleanBPhone}-1@${suffix}`;
+        }
+      }
     }
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1e3);
     const dealTimeSec = tx.dealTime || tx.utime || (tx.payer_status >= 2 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : debitTimeSec);
@@ -7202,17 +7213,22 @@ async function getRechargeHistory(req, res) {
       ctName: mapCtTypeToName(ctTypeVal),
       ct_name: mapCtTypeToName(ctTypeVal),
       channel: mapCtTypeToUpiType(ctTypeVal),
-      upi: buyerSelectedUpi || payeeUpi,
-      account: buyerSelectedUpi || payeeUpi,
-      acctNo: buyerSelectedUpi || payeeUpi,
-      payAccount: buyerSelectedUpi || payeeUpi,
+      // BUYER UPI (UPI ID)
+      upi: buyerSelectedUpi,
+      account: buyerSelectedUpi,
+      acctNo: buyerSelectedUpi,
+      payAccount: buyerSelectedUpi,
+      payer_upi: buyerSelectedUpi,
+      ctAccount: buyerSelectedUpi,
+      ct_account: buyerSelectedUpi,
+      selected_upi: buyerSelectedUpi,
+      buyer_upi: buyerSelectedUpi,
+      // PAYEE UPI (jisko payment karna hai)
       payee_bank_account: payeeUpi,
       payee_upi: payeeUpi,
       receiveAccount: payeeUpi,
-      payer_upi: buyerSelectedUpi || payeeUpi,
-      ctAccount: buyerSelectedUpi || payeeUpi,
-      ct_account: buyerSelectedUpi || payeeUpi,
-      selected_upi: buyerSelectedUpi || payeeUpi,
+      payeeAccount: payeeUpi,
+      receiverUpi: payeeUpi,
       utr: tx.utr || tx.ref_no || "",
       payee_recipients_name: tx.payee_recipients_name || "Monexo Merchant",
       pnname: tx.payee_recipients_name || "Monexo Merchant",
