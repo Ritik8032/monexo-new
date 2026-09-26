@@ -5051,26 +5051,16 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
   let payee_bank_account = slipData ? slipData.upi : "";
 
   let isAdminOrder = false;
-  // Check and claim Admin Node order if active
-  if (slipData && (slipData as any).isAdminNode && (slipData as any).nodeId) {
+  // Check Admin Node order if active (Always stays active so all buyers and same buyer can buy multiple times)
+  if (slipData && (slipData as any).isAdminNode) {
     isAdminOrder = true;
-    await PaymentNode.findByIdAndUpdate((slipData as any).nodeId, {
-      orderState: 'CLAIMED',
-      claimedByPhone: user.phone,
-      claimedRptNo: order_id
-    });
   } else if (payee_bank_account) {
     const adminNode = await PaymentNode.findOne({
       status: true,
-      orderState: 'ACTIVE',
       accountNumber: payee_bank_account
     });
     if (adminNode) {
       isAdminOrder = true;
-      adminNode.orderState = 'CLAIMED';
-      adminNode.claimedByPhone = user.phone;
-      adminNode.claimedRptNo = order_id;
-      await adminNode.save();
     }
   }
 

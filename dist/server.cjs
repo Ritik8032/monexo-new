@@ -4295,25 +4295,15 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
   let payee_recipients_name = slipData ? slipData.pnname : "";
   let payee_bank_account = slipData ? slipData.upi : "";
   let isAdminOrder = false;
-  if (slipData && slipData.isAdminNode && slipData.nodeId) {
+  if (slipData && slipData.isAdminNode) {
     isAdminOrder = true;
-    await PaymentNode.findByIdAndUpdate(slipData.nodeId, {
-      orderState: "CLAIMED",
-      claimedByPhone: user.phone,
-      claimedRptNo: order_id
-    });
   } else if (payee_bank_account) {
     const adminNode = await PaymentNode.findOne({
       status: true,
-      orderState: "ACTIVE",
       accountNumber: payee_bank_account
     });
     if (adminNode) {
       isAdminOrder = true;
-      adminNode.orderState = "CLAIMED";
-      adminNode.claimedByPhone = user.phone;
-      adminNode.claimedRptNo = order_id;
-      await adminNode.save();
     }
   }
   let payee_ifsc = "";
