@@ -1,6 +1,6 @@
 {
   "name": "Monexo",
-  "description": "",
+  "description": "Monexo P2P Trading Platform",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -5318,24 +5318,50 @@ async function healAndGetCleanTools(user) {
       t.id = toolIdVal;
       modified = true;
     }
+    const hasActiveReviewOrder = await Transaction.exists({
+      $or: [
+        { userId: user._id },
+        { buyerUserId: user._id },
+        { sellerId: user._id },
+        { phone: user.phone },
+        { buyerPhone: user.phone },
+        { sellerPhone: user.phone },
+        { merchant_phone: user.phone }
+      ].filter(Boolean),
+      payer_status: 2
+    });
     let resolvedState = t.state !== void 0 && t.state !== null ? Number(t.state) : 2;
     let resolvedStatus = t.status !== void 0 && t.status !== null ? Number(t.status) : 1;
     const isPaytm = isPaytmTool(typeVal, t.pnname || t.name, t.upi || t.account);
-    if (isPaytm) {
-      if (resolvedState !== 7) {
-        resolvedState = 2;
-        resolvedStatus = 1;
-      }
-    } else {
-      if (resolvedState === 5 || resolvedStatus === 0) {
+    if (hasActiveReviewOrder) {
+      if (isPaytm) {
+        if (resolvedState !== 7) {
+          resolvedState = 2;
+          resolvedStatus = 1;
+        }
+      } else {
         resolvedState = 5;
         resolvedStatus = 0;
+      }
+    } else {
+      if (isPaytm) {
+        if (resolvedState !== 7) {
+          resolvedState = 2;
+          resolvedStatus = 1;
+        }
+      } else {
+        if (resolvedState === 5 || resolvedStatus === 0) {
+          resolvedState = 5;
+          resolvedStatus = 0;
+        }
       }
     }
     t.state = resolvedState;
     t.status = resolvedStatus;
     let inSellVal = t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1 ? 1 : 0;
-    if (isPaytm && resolvedState !== 7) {
+    if (hasActiveReviewOrder && !isPaytm) {
+      inSellVal = 0;
+    } else if (isPaytm && resolvedState !== 7) {
       inSellVal = 1;
     } else if (resolvedState === 5 || resolvedStatus === 0) {
       inSellVal = 0;
@@ -5779,6 +5805,22 @@ app.post("/xxapi/collectiontool/startsell", async (req, res) => {
   if (!user) return res.json({ code: 403, msg: "Unauthorized" });
   const toolId = req.body?.ct_id || req.body?.id || req.body?.ctId || req.body?.ct_type || req.body?.ctType || req.body?.type || req.query?.ct_id || req.query?.id;
   const tool = getOrCreateUserTool(user, toolId);
+  const hasActiveReviewOrder = await Transaction.exists({
+    $or: [
+      { userId: user._id },
+      { buyerUserId: user._id },
+      { sellerId: user._id },
+      { phone: user.phone },
+      { buyerPhone: user.phone },
+      { sellerPhone: user.phone },
+      { merchant_phone: user.phone }
+    ].filter(Boolean),
+    payer_status: 2
+  });
+  const isPaytm = tool ? isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account) : false;
+  if (hasActiveReviewOrder && !isPaytm) {
+    return res.json({ code: 400, msg: "Order is currently in review/interview. PhonePe and MobiKwik remain unlinked during order review." });
+  }
   const hasValidUpi = tool && tool.upi && typeof tool.upi === "string" && tool.upi.includes("@") && tool.upi !== "Pending verification";
   if (!hasValidUpi) {
     return res.json({ code: 400, msg: "UPI unlinked - Please relink first" });
@@ -6315,19 +6357,23 @@ async function fetchAutomationHistoryAndMatch(phone, channelType, tx) {
 async function handleOrderEnteredInReview(tx) {
   try {
     if (!tx || tx.payer_status !== 2) return;
-    const sellerQuery = [
+    const userQuery = [
+      tx.userId ? { _id: tx.userId } : null,
+      tx.buyerUserId ? { _id: tx.buyerUserId } : null,
       tx.sellerId ? { _id: tx.sellerId } : null,
+      tx.phone ? { phone: tx.phone } : null,
+      tx.buyerPhone ? { phone: tx.buyerPhone } : null,
       tx.sellerPhone ? { phone: tx.sellerPhone } : null,
       tx.merchant_phone ? { phone: tx.merchant_phone } : null,
       tx.payee_bank_account ? { "collectionTools.upi": tx.payee_bank_account } : null,
       tx.payee_bank_account ? { "collectionTools.account": tx.payee_bank_account } : null,
       tx.receiverUpi ? { "collectionTools.upi": tx.receiverUpi } : null
     ].filter(Boolean);
-    const sellers = sellerQuery.length > 0 ? await User.find({ $or: sellerQuery }) : [];
-    for (const seller of sellers) {
-      if (seller && seller.collectionTools && Array.isArray(seller.collectionTools)) {
+    const users = userQuery.length > 0 ? await User.find({ $or: userQuery }) : [];
+    for (const user of users) {
+      if (user && user.collectionTools && Array.isArray(user.collectionTools)) {
         let modified = false;
-        seller.collectionTools.forEach((tool) => {
+        user.collectionTools.forEach((tool) => {
           if (!tool) return;
           const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
           if (!isPaytm) {
@@ -6335,8 +6381,9 @@ async function handleOrderEnteredInReview(tx) {
               tool.status = 0;
               tool.inSell = 0;
               tool.state = 5;
+              tool.unlinkFlag = true;
               modified = true;
-              console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for order ${tx.rptNo}`);
+              console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for user ${user.phone} for order ${tx.rptNo}`);
             }
           } else {
             if (tool.state !== 7) {
@@ -6345,14 +6392,14 @@ async function handleOrderEnteredInReview(tx) {
                 tool.inSell = 1;
                 tool.state = 2;
                 modified = true;
-                console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept LINKED & ONLINE for order ${tx.rptNo}`);
+                console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept LINKED & ONLINE for user ${user.phone} for order ${tx.rptNo}`);
               }
             }
           }
         });
         if (modified) {
-          seller.markModified("collectionTools");
-          await seller.save().catch((err) => console.error("[In-Review Mode Tool Update Error]", err));
+          user.markModified("collectionTools");
+          await user.save().catch((err) => console.error("[In-Review Mode Tool Update Error]", err));
         }
       }
     }
@@ -8694,8 +8741,36 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
         }
       });
     }
+    const hasActiveReviewOrderForUser = await Transaction.exists({
+      $or: [
+        { userId: user._id },
+        { buyerUserId: user._id },
+        { sellerId: user._id },
+        { phone: user.phone },
+        { buyerPhone: user.phone },
+        { sellerPhone: user.phone },
+        { merchant_phone: user.phone }
+      ].filter(Boolean),
+      payer_status: 2
+    });
     const enrichedCollectionTools = await Promise.all(rawTools.map(async (tool) => {
       const toolObj = { ...tool };
+      const isPaytm = isPaytmTool(toolObj.type || toolObj.ctType, toolObj.pnname || toolObj.name, toolObj.upi || toolObj.account);
+      if (hasActiveReviewOrderForUser) {
+        if (!isPaytm) {
+          toolObj.state = 5;
+          toolObj.status = 0;
+          toolObj.inSell = 0;
+          toolObj.isUnlinked = true;
+        } else {
+          if (toolObj.state !== 7) {
+            toolObj.state = 2;
+            toolObj.status = 1;
+            toolObj.inSell = 1;
+            toolObj.isUnlinked = false;
+          }
+        }
+      }
       const upiVpa = toolObj.upi || toolObj.accountNumber || toolObj.account;
       if (upiVpa && typeof upiVpa === "string" && upiVpa.includes("@")) {
         const vName = await getVerifiedUpiName(upiVpa, toolObj.pnname || user.realName || user.fullName);
@@ -10954,12 +11029,16 @@ if (process.env.NODE_ENV !== "production" || !process.env.VERCEL && !process.env
           console.error(`[Auto History Check Error] Failed for order ${tx.rptNo}:`, txErr);
         }
       }
-      const users = await User.find({ "collectionTools.zoopayToolId": { $exists: true } });
+      const users = await User.find({ "collectionTools.0": { $exists: true } });
       for (const user of users) {
         if (!user.collectionTools) continue;
         const hasActiveReviewOrder = await Transaction.exists({
           $or: [
+            { userId: user._id },
+            { buyerUserId: user._id },
             { sellerId: user._id },
+            { phone: user.phone },
+            { buyerPhone: user.phone },
             { sellerPhone: user.phone },
             { merchant_phone: user.phone }
           ].filter(Boolean),
