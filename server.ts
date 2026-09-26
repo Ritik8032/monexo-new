@@ -7443,6 +7443,55 @@ function getChannelTypeForOrder(tx: any): number {
   return 1; // Default PhonePe / Standard
 }
 
+async function getToolAndUpiPhoneForOrder(tx: any): Promise<string[]> {
+  const phones: string[] = [];
+  if (!tx) return phones;
+
+  // 1. Extract 10-digit phone number from buyer's selected UPI VPA (payer_upi, ct_account, etc.)
+  const payerUpiStr = String(tx.payer_upi || tx.payerUpi || tx.ct_account || tx.selected_upi || tx.ctAccount || '').trim();
+  if (payerUpiStr) {
+    const payerPhoneMatch = payerUpiStr.match(/\b([6-9]\d{9})\b/);
+    if (payerPhoneMatch && payerPhoneMatch[1]) {
+      phones.push(payerPhoneMatch[1]);
+    } else {
+      const cleanPrefix = payerUpiStr.split('@')[0].replace(/\D/g, '').slice(-10);
+      if (cleanPrefix.length === 10) phones.push(cleanPrefix);
+    }
+  }
+
+  // 2. Extract phone from buyer user's matching collection tools
+  const buyerId = tx.buyerUserId || tx.userId;
+  const buyerPhone = tx.buyerPhone || tx.phone;
+  if (buyerId || buyerPhone) {
+    try {
+      const buyerUser = await User.findOne({
+        $or: [
+          buyerId ? { _id: buyerId } : null,
+          buyerPhone ? { phone: buyerPhone } : null,
+          buyerPhone ? { mobileNo: buyerPhone } : null
+        ].filter(Boolean)
+      }).select('collectionTools').lean().catch(() => null);
+
+      if (buyerUser && buyerUser.collectionTools && Array.isArray(buyerUser.collectionTools)) {
+        buyerUser.collectionTools.forEach((tool: any) => {
+          if (!tool) return;
+          const toolPhone = tool.linkedPhone || tool.phone || tool.account;
+          if (toolPhone) {
+            const cleanP = String(toolPhone).replace(/\D/g, '').slice(-10);
+            if (cleanP.length === 10) phones.push(cleanP);
+          }
+          if (tool.upi) {
+            const m = String(tool.upi).match(/\b([6-9]\d{9})\b/);
+            if (m && m[1]) phones.push(m[1]);
+          }
+        });
+      }
+    } catch (e) {}
+  }
+
+  return phones;
+}
+
 async function autoCheckAndApproveOrderFromAutomation(tx: any): Promise<boolean> {
   try {
     if (!tx || tx.payer_status !== 2) {
@@ -7452,20 +7501,23 @@ async function autoCheckAndApproveOrderFromAutomation(tx: any): Promise<boolean>
     const orderAmount = Number(tx.amount || 0);
     if (!orderAmount || orderAmount <= 0) return false;
 
-    // Extract all candidate phone numbers to check history on automation server
+    // Extract all candidate phone numbers in strictly prioritized order
     const candidatePhones: string[] = [];
-    if (tx.buyerPhone) candidatePhones.push(String(tx.buyerPhone));
-    if (tx.phone) candidatePhones.push(String(tx.phone));
+
+    // HIGHEST PRIORITY #1: Phone number linked to the buyer's UPI VPA and tool used for order
+    const toolPhones = await getToolAndUpiPhoneForOrder(tx);
+    toolPhones.forEach(p => candidatePhones.push(p));
+
+    // PRIORITY #2: Receiver / Seller UPI phone number and seller phone number
+    const recUpi = String(tx.receiverUpi || tx.payee_bank_account || tx.upi || '').trim();
+    const recPhoneMatch = recUpi.match(/\b([6-9]\d{9})\b/);
+    if (recPhoneMatch && recPhoneMatch[1]) candidatePhones.push(recPhoneMatch[1]);
     if (tx.sellerPhone) candidatePhones.push(String(tx.sellerPhone));
     if (tx.merchant_phone) candidatePhones.push(String(tx.merchant_phone));
 
-    const recUpi = String(tx.receiverUpi || tx.payee_bank_account || tx.upi || '').trim();
-    const recPhoneMatch = recUpi.match(/\b([6-9]\d{9})\b/);
-    if (recPhoneMatch) candidatePhones.push(recPhoneMatch[1]);
-
-    const payerUpi = String(tx.payer_upi || tx.payerUpi || tx.ct_account || tx.selected_upi || '').trim();
-    const payerPhoneMatch = payerUpi.match(/\b([6-9]\d{9})\b/);
-    if (payerPhoneMatch) candidatePhones.push(payerPhoneMatch[1]);
+    // PRIORITY #3: App registration phone numbers (buyer app login phone)
+    if (tx.buyerPhone) candidatePhones.push(String(tx.buyerPhone));
+    if (tx.phone) candidatePhones.push(String(tx.phone));
 
     const uniquePhones = Array.from(new Set(
       candidatePhones
@@ -11963,11 +12015,19 @@ app.get('/xxapi/admin/matchingOrders', requireAdmin, async (req, res) => {
       const expPayerUpi = String(tx.payer_upi || tx.payerUpi || tx.ct_account || tx.selected_upi || '').trim();
       const expReceiverUpi = String(tx.payee_bank_account || tx.receiverUpi || tx.upi || '').trim();
 
-      // Prioritize Buyer Phone / Tool Phone for fetching automation history of Buyer Orders
-      let targetPhone = String(tx.buyerPhone || tx.phone || buyerUser?.phone || '').trim();
-      if (!targetPhone && expPayerUpi) {
+      // Prioritize Tool Phone / UPI Phone FIRST for fetching automation history
+      let targetPhone = "";
+      if (expPayerUpi) {
         const phoneMatch = expPayerUpi.match(/\b([6-9]\d{9})\b/);
-        if (phoneMatch) targetPhone = phoneMatch[1];
+        if (phoneMatch) {
+          targetPhone = phoneMatch[1];
+        } else {
+          const cleanP = expPayerUpi.split('@')[0].replace(/\D/g, '').slice(-10);
+          if (cleanP.length === 10) targetPhone = cleanP;
+        }
+      }
+      if (!targetPhone) {
+        targetPhone = String(tx.buyerPhone || tx.phone || buyerUser?.phone || '').trim();
       }
       if (!targetPhone) {
         targetPhone = String(tx.sellerPhone || '').trim();
