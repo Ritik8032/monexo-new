@@ -6714,7 +6714,15 @@ app.get('/xxapi/availablect', async (req, res) => {
   if (isBuyRequest) {
     tools = tools.filter((t: any) => {
       const typeNum = Number(t.ctType || t.ct_type || t.type);
-      return typeNum === 1 || typeNum === 4 || typeNum === 8 || typeNum === 9;
+      const name = String(t.pnname || t.name || t.text || t.partnerName || '').toLowerCase();
+
+      // Strictly EXCLUDE Paytm Business, PhonePe Business, BharatPe, or any Business/Merchant tools
+      if (name.includes('business') || name.includes('biz') || name.includes('merchant') || typeNum === 14 || typeNum === 18) {
+        return false;
+      }
+
+      // ONLY ALLOW Personal PhonePe (1), MobiKwik (2, 4), and Personal Paytm (8, 9, 16)
+      return typeNum === 1 || typeNum === 2 || typeNum === 4 || typeNum === 8 || typeNum === 9 || typeNum === 16;
     });
   }
 
@@ -7290,23 +7298,23 @@ async function handleOrderEnteredInReview(tx: any) {
         if (!tool) return;
         const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
         if (!isPaytm) {
-          // PhonePe & MobiKwik go OFFLINE when order is in review
-          if (tool.status !== 0 || tool.inSell !== 0) {
+          // PhonePe & MobiKwik UNLINK & go OFFLINE when order is in review
+          if (tool.status !== 0 || tool.inSell !== 0 || tool.state !== 5) {
             tool.status = 0; // offline
-            tool.inSell = 0;
-            if (tool.state === 2) tool.state = 1;
+            tool.inSell = 0; // stop sell
+            tool.state = 5;  // unlinked/login error state
             modified = true;
-            console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) set OFFLINE for order ${tx.rptNo}`);
+            console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for order ${tx.rptNo}`);
           }
         } else {
-          // Paytm ALWAYS stays ONLINE unless unlinked (state 5 or 7)
-          if (tool.state !== 5 && tool.state !== 7) {
-            if (tool.status !== 1 || tool.inSell !== 1) {
+          // Paytm ALWAYS stays LINKED & ONLINE unless explicitly unlinked (state 7)
+          if (tool.state !== 7) {
+            if (tool.status !== 1 || tool.inSell !== 1 || tool.state !== 2) {
               tool.status = 1; // available online
-              tool.inSell = 1;
-              tool.state = 2; // active
+              tool.inSell = 1; // sell enabled
+              tool.state = 2;  // active linked
               modified = true;
-              console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept ONLINE for order ${tx.rptNo}`);
+              console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept LINKED & ONLINE for order ${tx.rptNo}`);
             }
           }
         }

@@ -5769,7 +5769,11 @@ app.get("/xxapi/availablect", async (req, res) => {
   if (isBuyRequest) {
     tools = tools.filter((t) => {
       const typeNum = Number(t.ctType || t.ct_type || t.type);
-      return typeNum === 1 || typeNum === 4 || typeNum === 8 || typeNum === 9;
+      const name = String(t.pnname || t.name || t.text || t.partnerName || "").toLowerCase();
+      if (name.includes("business") || name.includes("biz") || name.includes("merchant") || typeNum === 14 || typeNum === 18) {
+        return false;
+      }
+      return typeNum === 1 || typeNum === 2 || typeNum === 4 || typeNum === 8 || typeNum === 9 || typeNum === 16;
     });
   }
   return res.json({ code: 0, msg: "success", data: tools });
@@ -6216,21 +6220,21 @@ async function handleOrderEnteredInReview(tx) {
         if (!tool) return;
         const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
         if (!isPaytm) {
-          if (tool.status !== 0 || tool.inSell !== 0) {
+          if (tool.status !== 0 || tool.inSell !== 0 || tool.state !== 5) {
             tool.status = 0;
             tool.inSell = 0;
-            if (tool.state === 2) tool.state = 1;
+            tool.state = 5;
             modified = true;
-            console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) set OFFLINE for order ${tx.rptNo}`);
+            console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for order ${tx.rptNo}`);
           }
         } else {
-          if (tool.state !== 5 && tool.state !== 7) {
-            if (tool.status !== 1 || tool.inSell !== 1) {
+          if (tool.state !== 7) {
+            if (tool.status !== 1 || tool.inSell !== 1 || tool.state !== 2) {
               tool.status = 1;
               tool.inSell = 1;
               tool.state = 2;
               modified = true;
-              console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept ONLINE for order ${tx.rptNo}`);
+              console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept LINKED & ONLINE for order ${tx.rptNo}`);
             }
           }
         }
