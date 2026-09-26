@@ -7202,17 +7202,17 @@ async function getRechargeHistory(req, res) {
       ctName: mapCtTypeToName(ctTypeVal),
       ct_name: mapCtTypeToName(ctTypeVal),
       channel: mapCtTypeToUpiType(ctTypeVal),
-      upi: payeeUpi,
-      account: payeeUpi,
-      acctNo: payeeUpi,
+      upi: buyerSelectedUpi || payeeUpi,
+      account: buyerSelectedUpi || payeeUpi,
+      acctNo: buyerSelectedUpi || payeeUpi,
+      payAccount: buyerSelectedUpi || payeeUpi,
       payee_bank_account: payeeUpi,
       payee_upi: payeeUpi,
       receiveAccount: payeeUpi,
-      payAccount: payeeUpi,
-      payer_upi: buyerSelectedUpi,
-      ctAccount: buyerSelectedUpi,
-      ct_account: buyerSelectedUpi,
-      selected_upi: buyerSelectedUpi,
+      payer_upi: buyerSelectedUpi || payeeUpi,
+      ctAccount: buyerSelectedUpi || payeeUpi,
+      ct_account: buyerSelectedUpi || payeeUpi,
+      selected_upi: buyerSelectedUpi || payeeUpi,
       utr: tx.utr || tx.ref_no || "",
       payee_recipients_name: tx.payee_recipients_name || "Monexo Merchant",
       pnname: tx.payee_recipients_name || "Monexo Merchant",
@@ -7432,6 +7432,15 @@ async function getSellHistory(req, res) {
     }
   }
   let deduplicatedTxs = Array.from(uniqueTxMap.values());
+  deduplicatedTxs = deduplicatedTxs.filter((tx) => {
+    if (!tx) return false;
+    const txType = String(tx.type || "").toLowerCase();
+    const isUserBuyer = tx.buyerUserId && (tx.buyerUserId.toString() === user._id.toString() || userIds.includes(tx.buyerUserId.toString())) || tx.buyerPhone && phones.includes(tx.buyerPhone) || tx.userId && (tx.userId.toString() === user._id.toString() || userIds.includes(tx.userId.toString())) && ["buy", "recharge", "buyitoken", "deposit", "admin"].includes(txType);
+    if (isUserBuyer || ["buy", "recharge", "buyitoken", "deposit"].includes(txType)) {
+      return false;
+    }
+    return true;
+  });
   if (["1", "2", "paying", "dispatched", "undispatched", "pending", "in_progress", "active"].includes(statusStr)) {
     deduplicatedTxs = deduplicatedTxs.filter((t) => t.payer_status === 1 || t.payer_status === 2);
   } else if (["3", "success", "successfully", "done", "completed"].includes(statusStr)) {
@@ -10758,26 +10767,33 @@ if (process.env.NODE_ENV !== "production" || !process.env.VERCEL && !process.env
           const tool = user.collectionTools[i];
           if (tool) {
             const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
-            if (tool.inSell === 0 || tool.state === 5 || tool.state === 7) {
-              if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith("zoopay-mock-tool-")) {
-                try {
-                  await fetchZoopay(user, "https://api.zoopay.vip/api/collection/tools/updateState", {
-                    method: "POST",
-                    body: JSON.stringify({
-                      id: tool.zoopayToolId,
-                      state: "disabled"
-                    })
-                  });
-                } catch (err) {
+            if (hasActiveReviewOrder && !isPaytm) {
+              if (tool.status !== 0 || tool.state !== 5 || tool.inSell !== 0) {
+                tool.status = 0;
+                tool.state = 5;
+                tool.inSell = 0;
+                userUpdated = true;
+                console.log(`[P2P Sweeper In-Review] Unlinked non-Paytm tool (${tool.upi || tool.account}) for user ${user.phone}`);
+              }
+            } else if (hasActiveReviewOrder && isPaytm) {
+              if (tool.state !== 7) {
+                if (tool.status !== 1 || tool.state !== 2 || tool.inSell !== 1) {
+                  tool.status = 1;
+                  tool.state = 2;
+                  tool.inSell = 1;
+                  userUpdated = true;
                 }
               }
-              continue;
-            }
-            if (tool.status !== 1 || tool.state !== 2) {
-              tool.status = 1;
-              tool.state = 2;
-              if (tool.inSell === void 0) tool.inSell = 1;
-              userUpdated = true;
+            } else {
+              if (tool.inSell === 0 || tool.state === 5 || tool.state === 7) {
+                continue;
+              }
+              if (tool.status !== 1 || tool.state !== 2) {
+                tool.status = 1;
+                tool.state = 2;
+                if (tool.inSell === void 0) tool.inSell = 1;
+                userUpdated = true;
+              }
             }
             if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith("zoopay-mock-tool-")) {
               try {

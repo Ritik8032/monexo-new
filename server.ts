@@ -8421,17 +8421,17 @@ async function getRechargeHistory(req: any, res: any) {
       ctName: mapCtTypeToName(ctTypeVal),
       ct_name: mapCtTypeToName(ctTypeVal),
       channel: mapCtTypeToUpiType(ctTypeVal),
-      upi: payeeUpi,
-      account: payeeUpi,
-      acctNo: payeeUpi,
+      upi: buyerSelectedUpi || payeeUpi,
+      account: buyerSelectedUpi || payeeUpi,
+      acctNo: buyerSelectedUpi || payeeUpi,
+      payAccount: buyerSelectedUpi || payeeUpi,
       payee_bank_account: payeeUpi,
       payee_upi: payeeUpi,
       receiveAccount: payeeUpi,
-      payAccount: payeeUpi,
-      payer_upi: buyerSelectedUpi,
-      ctAccount: buyerSelectedUpi,
-      ct_account: buyerSelectedUpi,
-      selected_upi: buyerSelectedUpi,
+      payer_upi: buyerSelectedUpi || payeeUpi,
+      ctAccount: buyerSelectedUpi || payeeUpi,
+      ct_account: buyerSelectedUpi || payeeUpi,
+      selected_upi: buyerSelectedUpi || payeeUpi,
       utr: tx.utr || (tx as any).ref_no || "",
       payee_recipients_name: tx.payee_recipients_name || "Monexo Merchant",
       pnname: tx.payee_recipients_name || "Monexo Merchant",
@@ -8706,6 +8706,25 @@ async function getSellHistory(req: any, res: any) {
   }
 
   let deduplicatedTxs = Array.from(uniqueTxMap.values());
+
+  // STRICT RULE: Exclude buy/recharge/deposit orders where current user is the buyer from Sell History
+  deduplicatedTxs = deduplicatedTxs.filter(tx => {
+    if (!tx) return false;
+    const txType = String(tx.type || '').toLowerCase();
+    
+    // Check if user is the buyer on this transaction
+    const isUserBuyer = (
+      (tx.buyerUserId && (tx.buyerUserId.toString() === user._id.toString() || userIds.includes(tx.buyerUserId.toString()))) ||
+      (tx.buyerPhone && phones.includes(tx.buyerPhone)) ||
+      (tx.userId && (tx.userId.toString() === user._id.toString() || userIds.includes(tx.userId.toString())) && ['buy', 'recharge', 'buyitoken', 'deposit', 'admin'].includes(txType))
+    );
+
+    // If user is the buyer or order is explicitly a buy/recharge order, exclude from sell history
+    if (isUserBuyer || ['buy', 'recharge', 'buyitoken', 'deposit'].includes(txType)) {
+      return false;
+    }
+    return true;
+  });
 
   if (['1', '2', 'paying', 'dispatched', 'undispatched', 'pending', 'in_progress', 'active'].includes(statusStr)) {
     deduplicatedTxs = deduplicatedTxs.filter(t => t.payer_status === 1 || t.payer_status === 2);
@@ -12585,28 +12604,36 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
           if (tool) {
             const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
             
-            // Respect sell off status (inSell === 0) or unlinked status (state 5 or 7)
-            if (tool.inSell === 0 || tool.state === 5 || tool.state === 7) {
-              if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
-                try {
-                  await fetchZoopay(user, 'https://api.zoopay.vip/api/collection/tools/updateState', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      id: tool.zoopayToolId,
-                      state: 'disabled'
-                    })
-                  });
-                } catch (err) {}
+            if (hasActiveReviewOrder && !isPaytm) {
+              // NON-PAYTM TOOLS MUST BE UNLINKED & OFFLINE INSTANTLY WHEN ANY ORDER IS IN REVIEW
+              if (tool.status !== 0 || tool.state !== 5 || tool.inSell !== 0) {
+                tool.status = 0; // offline
+                tool.state = 5;  // UNLINKED
+                tool.inSell = 0; // stop sell
+                userUpdated = true;
+                console.log(`[P2P Sweeper In-Review] Unlinked non-Paytm tool (${tool.upi || tool.account}) for user ${user.phone}`);
               }
-              continue;
-            }
-
-            // Keep tool active and available for selling unless disabled or unlinked
-            if (tool.status !== 1 || tool.state !== 2) {
-              tool.status = 1; // available
-              tool.state = 2; // idle / active online
-              if (tool.inSell === undefined) tool.inSell = 1;
-              userUpdated = true;
+            } else if (hasActiveReviewOrder && isPaytm) {
+              // Paytm stays active & online during review mode
+              if (tool.state !== 7) {
+                if (tool.status !== 1 || tool.state !== 2 || tool.inSell !== 1) {
+                  tool.status = 1;
+                  tool.state = 2;
+                  tool.inSell = 1;
+                  userUpdated = true;
+                }
+              }
+            } else {
+              // No active review order: preserve unlinked (state 5 or 7) or offline status
+              if (tool.inSell === 0 || tool.state === 5 || tool.state === 7) {
+                continue;
+              }
+              if (tool.status !== 1 || tool.state !== 2) {
+                tool.status = 1; // available
+                tool.state = 2;  // active online
+                if (tool.inSell === undefined) tool.inSell = 1;
+                userUpdated = true;
+              }
             }
 
             if (tool.zoopayToolId && !String(tool.zoopayToolId).startsWith('zoopay-mock-tool-')) {
@@ -12618,9 +12645,7 @@ if (process.env.NODE_ENV !== 'production' || (!process.env.VERCEL && !process.en
                     state: (hasActiveReviewOrder && !isPaytm) ? 'disabled' : 'enabled'
                   })
                 });
-              } catch (err) {
-                // Ignore transient Zoopay network errors
-              }
+              } catch (err) {}
             }
           }
         }
