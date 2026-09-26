@@ -672,7 +672,10 @@ async function calculateUserDailyData(user, startSec, endSec) {
       { buyerPhone: { $in: userPhones } }
     ],
     payer_status: 3,
-    type: { $ne: "sell" },
+    type: { $in: ["recharge", "buy", "deposit", "buyitoken"] },
+    isAdminAddition: { $ne: true },
+    rptNo: { $not: /^ADM/i },
+    reason_for_rejection: { $not: /Admin Balance|Newbie Reward|Invite Reward|Bonus/i },
     ctime: { $gte: startSec, $lte: endSec }
   });
   const times = buyTxs.length;
@@ -7225,16 +7228,18 @@ async function getRechargeHistory(req, res) {
       query.payer_status = Number(statusVal);
     }
   } else if (isCancelRequest || statusVal === "4" || statusVal === "5") {
-    query.type = { $in: ["recharge", "buy", "deposit", "buyitoken", "admin"] };
+    query.type = { $in: ["recharge", "buy", "deposit", "buyitoken"] };
+    query.isAdminAddition = { $ne: true };
     query.isUsdt = { $ne: true };
     query.currency = { $ne: 1 };
-    query.rptNo = { $not: /^(USDT|SELL_)/i };
+    query.rptNo = { $not: /^(USDT|SELL_|ADM)/i };
     query.payer_status = { $in: [4, 5] };
   } else {
-    query.type = { $in: ["recharge", "buy", "deposit", "buyitoken", "admin"] };
+    query.type = { $in: ["recharge", "buy", "deposit", "buyitoken"] };
+    query.isAdminAddition = { $ne: true };
     query.isUsdt = { $ne: true };
     query.currency = { $ne: 1 };
-    query.rptNo = { $not: /^(USDT|SELL_)/i };
+    query.rptNo = { $not: /^(USDT|SELL_|ADM)/i };
     if (statusVal === "1" || statusVal === "2" || statusVal === "3") {
       query.payer_status = Number(statusVal);
     } else {
@@ -7419,43 +7424,71 @@ async function getTransferTokenHistory(req, res) {
   try {
     const user = await getUserByToken(req);
     if (!user) return res.json({ code: 403, msg: "Unauthorized" });
-    const inOut = req.query.in_out !== void 0 ? Number(req.query.in_out) : req.body?.in_out !== void 0 ? Number(req.body.in_out) : 0;
     const page = Number(req.query.page || req.body?.page) || 1;
     const limit = Number(req.query.limit || req.body?.limit) || 10;
-    let typeFilter;
-    if (inOut === 0) {
-      typeFilter = { $in: ["transfer_in", "admin", "recharge", "reward"] };
-    } else {
-      typeFilter = { $in: ["transfer_out", "sell", "admin_deduct"] };
-    }
     const query = {
-      $or: [
-        { userId: user._id },
-        { phone: user.phone },
-        { phone: user.mobileNo },
-        { sellerId: user._id },
-        { sellerPhone: user.phone }
-      ].filter(Boolean),
       payer_status: 3,
       // success
-      type: typeFilter
+      $and: [
+        {
+          $or: [
+            { userId: user._id },
+            { phone: user.phone },
+            { phone: user.mobileNo }
+          ].filter(Boolean)
+        },
+        {
+          $or: [
+            { isAdminAddition: true },
+            { type: "admin" },
+            { rptNo: { $regex: /^ADM/i } },
+            { reason_for_rejection: { $regex: /admin/i } }
+          ]
+        }
+      ]
     };
     const total = await Transaction.countDocuments(query);
     const txs = await Transaction.find(query).sort({ ctime: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit);
     const list = txs.map((tx) => {
       const crtTime = tx.ctime ? tx.ctime * 1e3 : tx.createdAt ? new Date(tx.createdAt).getTime() : Date.now();
+      const dateObj = new Date(crtTime);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const day = String(dateObj.getDate()).padStart(2, "0");
+      const hours = String(dateObj.getHours()).padStart(2, "0");
+      const minutes = String(dateObj.getMinutes()).padStart(2, "0");
+      const seconds = String(dateObj.getSeconds()).padStart(2, "0");
+      const formattedDateTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      let seqNoStr = tx.seqNo;
+      if (!seqNoStr || seqNoStr.length !== 5) {
+        if (tx.rptNo) {
+          const digits = String(tx.rptNo).replace(/\D/g, "");
+          if (digits.length >= 5) seqNoStr = digits.slice(-5);
+        }
+      }
+      if (!seqNoStr || seqNoStr.length !== 5) {
+        const idStr = String(tx._id || tx.rptNo || Date.now());
+        let hash = 0;
+        for (let i = 0; i < idStr.length; i++) hash = (hash << 5) - hash + idStr.charCodeAt(i);
+        seqNoStr = String(1e4 + Math.abs(hash) % 9e4);
+      }
       return {
         id: tx.rptNo || tx._id.toString(),
         rptNo: tx.rptNo || tx._id.toString(),
+        orderno: tx.rptNo || tx._id.toString(),
+        seqNo: seqNoStr,
+        seq_no: seqNoStr,
+        seq: seqNoStr,
         itoken: Math.abs(tx.amount || 0),
         amount: Math.abs(tx.amount || 0),
-        orderState: tx.payer_status === 3 ? 3 : tx.payer_status || 3,
-        order_state: tx.payer_status === 3 ? 3 : tx.payer_status || 3,
-        state: tx.payer_status === 3 ? 3 : tx.payer_status || 3,
-        crtDate: new Date(crtTime).toISOString().replace("T", " ").substring(0, 19),
+        orderState: 3,
+        order_state: 3,
+        state: 3,
+        crtDate: formattedDateTime,
         crtTime,
-        type: tx.type,
-        reason: tx.reason_for_rejection || "Transfer / Balance Adjustment"
+        timeStr: formattedDateTime,
+        type: "admin",
+        reason: tx.reason_for_rejection || "Admin Money Addition"
       };
     });
     return res.json({
@@ -7463,7 +7496,8 @@ async function getTransferTokenHistory(req, res) {
       msg: "success",
       data: {
         total,
-        list
+        list,
+        result: list
       }
     });
   } catch (err) {
