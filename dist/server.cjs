@@ -343,6 +343,8 @@ var transactionSchema = new import_mongoose.default.Schema({
   ct_account: { type: String, default: "" },
   payer_upi: { type: String, default: "" },
   payer_tool: { type: String, default: "" },
+  isAdminAddition: { type: Boolean, default: false },
+  seqNo: { type: String, default: "" },
   ctime: { type: Number, default: () => Math.floor(Date.now() / 1e3) },
   type: { type: String, default: "recharge" }
   // 'recharge' or 'sell'
@@ -2836,7 +2838,7 @@ app.get("/xxapi/config", async (req, res) => {
       usdtProtocolSwitchEnabled: false,
       currency: "INR",
       registerHost: req.protocol + "://" + req.get("host") + "/#/rs/",
-      tgChannelLink: "https://t.me/+AmPPZsOTjEBjMzg1",
+      tgChannelLink: "https://t.me/+4F3O2KrkP98yZjk1",
       rewardRules: {
         freeze_comp_reward: { name: "freeze_comp_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 0, rule: "{}" },
         inr_buy_dividend: { name: "inr_buy_dividend", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 1, rule: '{"1": 0.003, "2": 0.002, "3": 0.001}' },
@@ -2887,7 +2889,7 @@ app.get("/xxapi/simpConfig", async (req, res) => {
     data: {
       siteName: "Monexo",
       logo: "favicon.ico",
-      customerServiceUrl: "https://t.me/+AmPPZsOTjEBjMzg1",
+      customerServiceUrl: "https://t.me/+4F3O2KrkP98yZjk1",
       okTurnstileSitekey: "0",
       rsKeyMode: 0,
       sliderSmsCaptcha: 0,
@@ -2902,8 +2904,8 @@ var buildNewbieRules = (params, totalBought = 0, hasLinkedUpi = false) => {
   const isWatchVideoDone = Boolean(params.newbie_watch_video);
   const isNewCtDone = Boolean(params.newbie_newct) || hasLinkedUpi;
   return [
-    { id: 1, name: "Subscribe to Official Channel", activityCode: "newbie_tg_channel", title: "Subscribe to Official Channel", reward: 40, status: isTgChannelDone ? "done" : "undone", frontd_url: "https://t.me/+AmPPZsOTjEBjMzg1", frontUrl: "https://t.me/+AmPPZsOTjEBjMzg1" },
-    { id: 2, name: "Join VIP Group", activityCode: "newbie_tg_customer", title: "Join VIP Group", reward: 40, status: isTgCustomerDone ? "done" : "undone", frontd_url: "https://t.me/+AmPPZsOTjEBjMzg1", frontUrl: "https://t.me/+AmPPZsOTjEBjMzg1" },
+    { id: 1, name: "Subscribe to Official Channel", activityCode: "newbie_tg_channel", title: "Subscribe to Official Channel", reward: 40, status: isTgChannelDone ? "done" : "undone", frontd_url: "https://t.me/+4F3O2KrkP98yZjk1", frontUrl: "https://t.me/+4F3O2KrkP98yZjk1" },
+    { id: 2, name: "Join VIP Group", activityCode: "newbie_tg_customer", title: "Join VIP Group", reward: 40, status: isTgCustomerDone ? "done" : "undone", frontd_url: "https://t.me/+4F3O2KrkP98yZjk1", frontUrl: "https://t.me/+4F3O2KrkP98yZjk1" },
     { id: 3, name: "Watch Beginner Tutorial", activityCode: "newbie_watch_video", title: "Watch Beginner Tutorial", reward: 40, status: isWatchVideoDone ? "done" : "undone", frontd_url: "/newbie_watch_video", frontUrl: "/newbie_watch_video" },
     { id: 4, name: "Add UPI reward", activityCode: "newbie_newct", title: "Add UPI reward", reward: 40, status: isNewCtDone ? "done" : "undone", frontd_url: "/collectiontool", frontUrl: "/collectiontool" },
     { id: 5, name: "Purchase 1000 IToken", activityCode: "newbie_buyitoken", title: "Purchase 1000 IToken", reward: 200, status: isBuyDone ? "done" : "undone", frontd_url: "/buy", frontUrl: "/buy" }
@@ -3024,7 +3026,7 @@ app.get("/xxapi/newbieStepTotal/init", async (req, res) => {
       },
       activityRules: rules,
       guides: rules,
-      tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
+      tgGroup: "https://t.me/+4F3O2KrkP98yZjk1",
       newbieReward: 200,
       buyToken: String(cappedBought),
       allDone: isClaimed,
@@ -3167,7 +3169,7 @@ app.all([
       phone: user.phone || user.mobileNo,
       rptNo,
       amount: 200,
-      type: "transfer_in",
+      type: "reward",
       payer_status: 3,
       reason_for_rejection: "Newbie Reward (\u20B9200)",
       ctime: Math.floor(Date.now() / 1e3),
@@ -5091,7 +5093,7 @@ app.get("/xxapi/buyitoken/check", async (req, res) => {
   });
 });
 app.get("/xxapi/customerservice", async (req, res) => {
-  const telegramSupportUrl = "https://t.me/+AmPPZsOTjEBjMzg1";
+  const telegramSupportUrl = "https://t.me/+4F3O2KrkP98yZjk1";
   return res.json({
     code: 0,
     msg: "success",
@@ -7823,13 +7825,15 @@ app.get("/xxapi/teaminfo", async (req, res) => {
       },
       today: {
         recharge: todayDailyData.recharge,
-        dividend: todayDailyData.totalProfit,
+        dividend: todayDailyData.dividend,
+        // Strictly team commission L1+L2+L3
         reward: todayDailyData.reward,
         bonus: todayDailyData.bonus
       },
       yesterday: {
         recharge: yesterdayDailyData.recharge,
-        dividend: yesterdayDailyData.totalProfit,
+        dividend: yesterdayDailyData.dividend,
+        // Strictly team commission L1+L2+L3
         reward: yesterdayDailyData.reward,
         bonus: yesterdayDailyData.bonus
       },
@@ -8060,7 +8064,7 @@ app.get("/xxapi/bguide/guides", async (req, res) => {
       reward: "200",
       can_reward: !isClaimed,
       guides: rules,
-      tgGroup: "https://t.me/+rf1C5Z800BxiN2U1",
+      tgGroup: "https://t.me/+4F3O2KrkP98yZjk1",
       newbieReward: 200,
       buyToken: String(cappedBought),
       finishNewbie: isDone,
@@ -8450,13 +8454,16 @@ app.post("/xxapi/admin/updateBalance", requireAdmin, async (req, res) => {
     }
     await user.save();
     if (txAmount > 0) {
-      const rptNo = "ADM" + Date.now() + Math.floor(Math.random() * 1e3);
+      const seq5 = String(Math.floor(1e4 + Math.random() * 9e4));
+      const rptNo = "ADM" + Date.now() + seq5;
       const newTx = new Transaction({
         userId: user._id,
         phone: user.phone || user.mobileNo,
         rptNo,
         amount: txAmount,
-        type: txType,
+        type: "admin",
+        isAdminAddition: true,
+        seqNo: seq5,
         payer_status: 3,
         reason_for_rejection: "Admin Balance " + (type === "add" ? "Add" : type === "subtract" ? "Subtract" : "Set"),
         ctime: Math.floor(Date.now() / 1e3),

@@ -402,7 +402,7 @@
             usdtExchangerate: "111",
             currency: "INR",
             registerHost: window.location.origin + "/#/rs/",
-            tgChannelLink: "https://t.me/+AmPPZsOTjEBjMzg1",
+            tgChannelLink: "https://t.me/+4F3O2KrkP98yZjk1",
             rewardRules: {
               freeze_comp_reward: { name: "freeze_comp_reward", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 0, rule: "{}" },
               inr_buy_dividend: { name: "inr_buy_dividend", fixed: 0, ratio: 0, minCondi: 0, ruleActive: 1, rule: "{\"1\": 0.003, \"2\": 0.002, \"3\": 0.001}" },
@@ -530,7 +530,23 @@
       })();
     </script>
     <link rel="stylesheet" href="/assets/index.6361bc74.css">
-  </head>
+  
+    <script>
+      // Auto-trigger notice popup reminder on login/session initialization
+      (function() {
+        function triggerNoticePopup() {
+          try {
+            localStorage.removeItem('notice_dismissed');
+            localStorage.removeItem('official_notice_closed');
+            sessionStorage.removeItem('notice_shown');
+          } catch(e) {}
+        }
+        window.addEventListener('load', triggerNoticePopup);
+        window.addEventListener('hashchange', triggerNoticePopup);
+      })();
+    </script>
+
+</head>
   <body>
     <div id="root"></div>
     <div id="app"></div>
