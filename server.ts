@@ -5188,10 +5188,45 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     (tx as any).selected_upi = selectedUpi;
     (tx as any).payerUpi = selectedUpi;
     (tx as any).payer_tool = selectedToolName;
+    const buyerVpaList: string[] = [];
+    if (selectedUpi) buyerVpaList.push(selectedUpi);
+    const uPhone = user.phone || user.mobileNo || '';
+    if (uPhone) {
+      const cleanP = String(uPhone).replace(/\D/g, '').slice(-10);
+      if (cleanP) {
+        buyerVpaList.push(`${cleanP}@ptyes`, `${cleanP}@paytm`, `${cleanP}@ptaxis`, `${cleanP}@ptsbi`, `${cleanP}-1@ybl`, `${cleanP}@ybl`, `${cleanP}@ikwik`, `${cleanP}@freecharge`);
+      }
+    }
+    if (Array.isArray(user.collectionTools)) {
+      user.collectionTools.forEach((t: any) => {
+        if (t.upi) buyerVpaList.push(String(t.upi));
+        if (t.account) buyerVpaList.push(String(t.account));
+        if (Array.isArray(t.backup_upi)) t.backup_upi.forEach((b: any) => buyerVpaList.push(String(b)));
+      });
+    }
+    (tx as any).buyerVpas = Array.from(new Set(buyerVpaList.map(v => String(v).toLowerCase().trim()).filter(Boolean)));
     if (sellerUserId) (tx as any).sellerId = sellerUserId;
     if (sellerPhoneVal) (tx as any).sellerPhone = sellerPhoneVal;
     await tx.save();
   } else {
+    const buyerVpaList: string[] = [];
+    if (selectedUpi) buyerVpaList.push(selectedUpi);
+    const uPhone = user.phone || user.mobileNo || '';
+    if (uPhone) {
+      const cleanP = String(uPhone).replace(/\D/g, '').slice(-10);
+      if (cleanP) {
+        buyerVpaList.push(`${cleanP}@ptyes`, `${cleanP}@paytm`, `${cleanP}@ptaxis`, `${cleanP}@ptsbi`, `${cleanP}-1@ybl`, `${cleanP}@ybl`, `${cleanP}@ikwik`, `${cleanP}@freecharge`);
+      }
+    }
+    if (Array.isArray(user.collectionTools)) {
+      user.collectionTools.forEach((t: any) => {
+        if (t.upi) buyerVpaList.push(String(t.upi));
+        if (t.account) buyerVpaList.push(String(t.account));
+        if (Array.isArray(t.backup_upi)) t.backup_upi.forEach((b: any) => buyerVpaList.push(String(b)));
+      });
+    }
+    const cleanBuyerVpas = Array.from(new Set(buyerVpaList.map(v => String(v).toLowerCase().trim()).filter(Boolean)));
+
     tx = new Transaction({
       userId: user._id,
       phone: user.phone || user.mobileNo,
@@ -5215,6 +5250,7 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
       ct_account: selectedUpi,
       payer_upi: selectedUpi,
       payer_tool: selectedToolName,
+      buyerVpas: cleanBuyerVpas,
       ctime: ctime,
       type: 'recharge'
     });
@@ -6089,15 +6125,30 @@ async function healAndGetCleanTools(user) {
     let resolvedState = (t.state !== undefined && t.state !== null) ? Number(t.state) : 2;
     let resolvedStatus = (t.status !== undefined && t.status !== null) ? Number(t.status) : 1;
 
-    // Strictly preserve unlinked / offline state (state === 5 or status === 0)
-    if (resolvedState === 5 || resolvedStatus === 0) {
-      resolvedState = 5;
-      resolvedStatus = 0;
+    const isPaytm = isPaytmTool(typeVal, t.pnname || t.name, t.upi || t.account);
+
+    if (isPaytm) {
+      // Paytm tools ALWAYS stay active & online unless explicitly disabled (state 7)
+      if (resolvedState !== 7) {
+        resolvedState = 2;
+        resolvedStatus = 1;
+      }
+    } else {
+      // Non-Paytm tools (PhonePe & MobiKwik): strictly preserve unlinked/offline state (state === 5 or status === 0)
+      if (resolvedState === 5 || resolvedStatus === 0) {
+        resolvedState = 5;
+        resolvedStatus = 0;
+      }
     }
-    
+
+    t.state = resolvedState;
+    t.status = resolvedStatus;
+
     // Strictly preserve inSell state
     let inSellVal = (t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1) ? 1 : 0;
-    if (resolvedState === 5 || resolvedStatus === 0) {
+    if (isPaytm && resolvedState !== 7) {
+      inSellVal = 1;
+    } else if (resolvedState === 5 || resolvedStatus === 0) {
       inSellVal = 0;
     }
 
@@ -7160,21 +7211,27 @@ async function verifyTransactionAndMatch4Fields(
     const itemPayerClean = itemPayerUpi.replace(/[^a-z0-9@.]/gi, '');
     const expPayerClean = expPayerUpi.replace(/[^a-z0-9@.]/gi, '');
 
+    const itemPayerPrefix = itemPayerClean.split('@')[0];
+    const expPayerPrefix = expPayerClean.split('@')[0];
+    const itemPayerPhone = itemPayerPrefix.replace(/\D/g, '').slice(-10);
+    const expPayerPhone = expPayerPrefix.replace(/\D/g, '').slice(-10);
+
+    const rawBuyerPhone = String(tx.buyerPhone || tx.phone || '').replace(/\D/g, '').slice(-10);
+
     if (itemPayerClean === expPayerClean) {
       payerMatches = true;
-    } else {
-      const itemPayerPrefix = itemPayerClean.split('@')[0];
-      const expPayerPrefix = expPayerClean.split('@')[0];
-      const itemPayerPhone = itemPayerPrefix.replace(/\D/g, '').slice(-10);
-      const expPayerPhone = expPayerPrefix.replace(/\D/g, '').slice(-10);
-
-      if (itemPayerPrefix && expPayerPrefix && itemPayerPrefix === expPayerPrefix) {
-        payerMatches = true;
-      } else if (itemPayerPhone.length === 10 && expPayerPhone.length === 10 && itemPayerPhone === expPayerPhone) {
-        payerMatches = true;
-      } else if (itemPayerClean.startsWith(expPayerPrefix) || expPayerClean.startsWith(itemPayerPrefix)) {
-        payerMatches = true;
-      }
+    } else if (itemPayerPrefix && expPayerPrefix && itemPayerPrefix === expPayerPrefix) {
+      payerMatches = true;
+    } else if (itemPayerPhone.length === 10 && expPayerPhone.length === 10 && itemPayerPhone === expPayerPhone) {
+      payerMatches = true;
+    } else if (rawBuyerPhone.length === 10 && itemPayerPhone.length === 10 && itemPayerPhone === rawBuyerPhone) {
+      payerMatches = true;
+    } else if (rawBuyerPhone.length === 10 && (itemPayerClean.includes(rawBuyerPhone) || itemPayerPrefix.includes(rawBuyerPhone))) {
+      payerMatches = true;
+    } else if (itemPayerClean.startsWith(expPayerPrefix) || expPayerClean.startsWith(itemPayerPrefix)) {
+      payerMatches = true;
+    } else if (Array.isArray(tx.buyerVpas) && tx.buyerVpas.some((vpa: string) => String(vpa).toLowerCase().trim() === itemPayerClean || itemPayerClean.includes(String(vpa).toLowerCase().trim().split('@')[0]))) {
+      payerMatches = true;
     }
   }
 
