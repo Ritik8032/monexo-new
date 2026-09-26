@@ -4120,6 +4120,22 @@ app.get('/xxapi/bank/history', async (req, res) => {
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1000);
     const dealTimeSec = (tx as any).dealTime || (tx as any).utime || (tx.payer_status >= 2 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : debitTimeSec);
     const finishTimeSec = (tx as any).finishTime || (tx as any).fnsDate || (tx.payer_status >= 3 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : 0);
+
+    const formatTsString = (sec: number) => {
+      if (!sec || sec <= 0) return '';
+      const d = new Date(sec * 1000);
+      const YYYY = d.getFullYear();
+      const MM = String(d.getMonth() + 1).padStart(2, '0');
+      const DD = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      return ;
+    };
+
+    const debitTimeStr = formatTsString(debitTimeSec);
+    const dealTimeStr = formatTsString(dealTimeSec);
+    const finishTimeStr = formatTsString(finishTimeSec);
     const sellerReceiveUpi = tx.payee_bank_account || tx.upi || "";
 
     return {
@@ -8527,6 +8543,22 @@ async function getRechargeHistory(req: any, res: any) {
     const dealTimeSec = (tx as any).dealTime || (tx as any).utime || (tx.payer_status >= 2 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : debitTimeSec);
     const finishTimeSec = (tx as any).finishTime || (tx as any).fnsDate || (tx.payer_status >= 3 ? (tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1000) : debitTimeSec) : 0);
 
+    const formatTsString = (sec: number) => {
+      if (!sec || sec <= 0) return '';
+      const d = new Date(sec * 1000);
+      const YYYY = d.getFullYear();
+      const MM = String(d.getMonth() + 1).padStart(2, '0');
+      const DD = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      return ;
+    };
+
+    const debitTimeStr = formatTsString(debitTimeSec);
+    const dealTimeStr = formatTsString(dealTimeSec);
+    const finishTimeStr = formatTsString(finishTimeSec);
+
     const isUsdtTx = tx.isUsdt === true || String(tx.rptNo || '').startsWith('USDT');
     let effectiveAmount = Number(tx.amount || 0);
     if (isUsdtTx) {
@@ -8595,6 +8627,12 @@ async function getRechargeHistory(req: any, res: any) {
       crtDate: debitTimeSec * 1000,
       uptDate: dealTimeSec * 1000,
       fnsDate: finishTimeSec ? finishTimeSec * 1000 : 0,
+      debitTime: debitTimeStr,
+      debit_time: debitTimeStr,
+      dealTime: dealTimeStr,
+      deal_time: dealTimeStr,
+      finishTime: finishTimeStr,
+      finish_time: finishTimeStr,
       secLimit: tx.countdown || 1800
     };
   });
@@ -9009,6 +9047,12 @@ async function getSellHistory(req: any, res: any) {
       crtDate: debitTimeSec * 1000,
       uptDate: dealTimeSec * 1000,
       fnsDate: finishTimeSec ? finishTimeSec * 1000 : 0,
+      debitTime: debitTimeStr,
+      debit_time: debitTimeStr,
+      dealTime: dealTimeStr,
+      deal_time: dealTimeStr,
+      finishTime: finishTimeStr,
+      finish_time: finishTimeStr,
       secLimit: 0
     };
   });
