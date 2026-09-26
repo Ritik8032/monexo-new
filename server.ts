@@ -1137,6 +1137,27 @@ function isPaytmTool(ctType: any, toolName?: string, upi?: string): boolean {
   return false;
 }
 
+function isToolUsedForOrder(tool: any, tx: any): boolean {
+  if (!tool || !tx) return false;
+  
+  // 1. Tool ID match
+  const toolId = String(tool.id || tool._id || '').toLowerCase().trim();
+  const txCtId = String(tx.ct_id || tx.ctId || '').toLowerCase().trim();
+  if (toolId && txCtId && toolId === txCtId) return true;
+
+  // 2. UPI handle match
+  const toolUpi = String(tool.upi || tool.account || '').toLowerCase().trim();
+  const txUpi = String(tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || tx.payerUpi || '').toLowerCase().trim();
+  if (toolUpi && txUpi && (toolUpi === txUpi || txUpi.includes(toolUpi) || toolUpi.includes(txUpi))) return true;
+
+  // 3. Channel Type (ctType) match
+  const toolCtType = getNormalizedCtType(tool.type !== undefined ? tool.type : tool.ctType);
+  const txCtType = getNormalizedCtType(tx.ctType !== undefined ? tx.ctType : (tx.ct_type !== undefined ? tx.ct_type : 1));
+  if (toolCtType === txCtType) return true;
+
+  return false;
+}
+
 function extractUtrFromHistoryItem(item: any): string {
   if (!item) return '';
   let extractedUtr = String(item.utr || item.rrn || item.refNo || item.bankRrn || item.transactionId || '').trim();
@@ -5220,6 +5241,22 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     payee_bankname = "State Bank of India";
   }
 
+  if (!payee_bank_account || buyerUpiList.includes(String(payee_bank_account).toLowerCase().trim())) {
+    if (slipData && slipData.upi && !buyerUpiList.includes(String(slipData.upi).toLowerCase().trim())) {
+      payee_bank_account = slipData.upi;
+      payee_recipients_name = slipData.pnname || payee_recipients_name;
+    } else if (sellerUserId || sellerPhoneVal) {
+      const sUser = await User.findOne({ $or: [{ _id: sellerUserId }, { phone: sellerPhoneVal }].filter(Boolean) });
+      if (sUser) {
+        const activeTool = (sUser.collectionTools || []).find((t: any) => t && t.upi && t.upi.includes('@') && !buyerUpiList.includes(String(t.upi).toLowerCase().trim()));
+        if (activeTool) {
+          payee_bank_account = activeTool.upi;
+          payee_recipients_name = activeTool.pnname || sUser.realName || sUser.phone || payee_recipients_name;
+        }
+      }
+    }
+  }
+
   let tx = await Transaction.findOne({ rptNo: order_id });
   if (tx) {
     tx.userId = user._id;
@@ -6183,7 +6220,7 @@ async function healAndGetCleanTools(user) {
       modified = true;
     }
 
-    const hasActiveReviewOrder = await Transaction.exists({
+    const activeReviewOrders = await Transaction.find({
       $or: [
         { userId: user._id },
         { buyerUserId: user._id },
@@ -6200,18 +6237,12 @@ async function healAndGetCleanTools(user) {
     let resolvedStatus = (t.status !== undefined && t.status !== null) ? Number(t.status) : 1;
 
     const isPaytm = isPaytmTool(typeVal, t.pnname || t.name, t.upi || t.account);
+    const isUnlinkedByReview = activeReviewOrders.some(order => !isPaytm && isToolUsedForOrder(t, order));
 
-    if (hasActiveReviewOrder) {
-      if (isPaytm) {
-        if (resolvedState !== 7) {
-          resolvedState = 2;
-          resolvedStatus = 1;
-        }
-      } else {
-        // Non-Paytm tools (PhonePe & MobiKwik): strictly UNLINKED & OFFLINE when order is in review / interview
-        resolvedState = 5;
-        resolvedStatus = 0;
-      }
+    if (isUnlinkedByReview) {
+      // ONLY unlinks if this specific tool was used in an active review order
+      resolvedState = 5;
+      resolvedStatus = 0;
     } else {
       if (isPaytm) {
         if (resolvedState !== 7) {
@@ -6219,7 +6250,7 @@ async function healAndGetCleanTools(user) {
           resolvedStatus = 1;
         }
       } else {
-        // Non-Paytm tools (PhonePe & MobiKwik): strictly preserve unlinked/offline state (state === 5 or status === 0)
+        // Non-Paytm tools: strictly preserve unlinked/offline state if explicitly unlinked
         if (resolvedState === 5 || resolvedStatus === 0) {
           resolvedState = 5;
           resolvedStatus = 0;
@@ -6232,7 +6263,7 @@ async function healAndGetCleanTools(user) {
 
     // Strictly preserve inSell state
     let inSellVal = (t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1) ? 1 : 0;
-    if (hasActiveReviewOrder && !isPaytm) {
+    if (isUnlinkedByReview) {
       inSellVal = 0;
     } else if (isPaytm && resolvedState !== 7) {
       inSellVal = 1;
@@ -6755,7 +6786,7 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   const toolId = req.body?.ct_id || req.body?.id || req.body?.ctId || req.body?.ct_type || req.body?.ctType || req.body?.type || req.query?.ct_id || req.query?.id;
   const tool = getOrCreateUserTool(user, toolId);
   
-  const hasActiveReviewOrder = await Transaction.exists({
+  const activeReviewOrders = await Transaction.find({
     $or: [
       { userId: user._id },
       { buyerUserId: user._id },
@@ -6769,8 +6800,9 @@ app.post('/xxapi/collectiontool/startsell', async (req, res) => {
   });
 
   const isPaytm = tool ? isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account) : false;
-  if (hasActiveReviewOrder && !isPaytm) {
-    return res.json({ code: 400, msg: 'Order is currently in review/interview. PhonePe and MobiKwik remain unlinked during order review.' });
+  const isBlockedByReview = activeReviewOrders.some(order => !isPaytm && isToolUsedForOrder(tool, order));
+  if (isBlockedByReview) {
+    return res.json({ code: 400, msg: 'Order using this method is currently in review/interview. Relinking disabled during review.' });
   }
 
   const hasValidUpi = tool && tool.upi && typeof tool.upi === 'string' && tool.upi.includes('@') && tool.upi !== 'Pending verification';
@@ -7472,26 +7504,17 @@ async function handleOrderEnteredInReview(tx: any) {
         user.collectionTools.forEach((tool: any) => {
           if (!tool) return;
           const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
-          if (!isPaytm) {
-            // PhonePe & MobiKwik UNLINK & go OFFLINE when order is in review / interview
+          const isUsedForTx = isToolUsedForOrder(tool, tx);
+
+          if (isUsedForTx && !isPaytm) {
+            // ONLY the specific tool used to buy this order gets UNLINKED & set OFFLINE
             if (tool.status !== 0 || tool.inSell !== 0 || tool.state !== 5) {
               tool.status = 0; // offline
               tool.inSell = 0; // stop sell
               tool.state = 5;  // UNLINKED/OFFLINE
               tool.unlinkFlag = true;
               modified = true;
-              console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for user ${user.phone} for order ${tx.rptNo}`);
-            }
-          } else {
-            // Paytm ALWAYS stays LINKED & ONLINE unless explicitly unlinked (state 7)
-            if (tool.state !== 7) {
-              if (tool.status !== 1 || tool.inSell !== 1 || tool.state !== 2) {
-                tool.status = 1; // available online
-                tool.inSell = 1; // sell enabled
-                tool.state = 2;  // active linked
-                modified = true;
-                console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept LINKED & ONLINE for user ${user.phone} for order ${tx.rptNo}`);
-              }
+              console.log(`[In-Review Mode] Specific tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for user ${user.phone} for order ${tx.rptNo}`);
             }
           }
         });
@@ -7503,7 +7526,10 @@ async function handleOrderEnteredInReview(tx: any) {
       }
     }
 
-    await autoCheckAndApproveOrderFromAutomation(tx);
+    // Trigger automation check asynchronously in non-blocking background task for instant response!
+    setTimeout(() => {
+      autoCheckAndApproveOrderFromAutomation(tx).catch(err => console.error('[Background Automation Error]', err));
+    }, 0);
   } catch (err) {
     console.error('[handleOrderEnteredInReview Error]', err);
   }
@@ -8546,7 +8572,7 @@ async function getRechargeHistory(req: any, res: any) {
     }
   }
 
-  const mappedList = list.map((tx: any) => {
+  const mappedList = await Promise.all(list.map(async (tx: any) => {
     let orderState = 1; // Default to paying
     if (tx.payer_status === 1) orderState = 1; // paying
     else if (tx.payer_status === 2) orderState = 2; // pending
@@ -8558,17 +8584,21 @@ async function getRechargeHistory(req: any, res: any) {
     const ctTypeVal = (tx as any).ctType || (tx as any).ct_type || (tx as any).payer_tool_type || 1;
     const isUpi = tx.payment_method === 1;
 
-    // 1. Payee / Receiver UPI (jisko payment karna hai -> Seller/Merchant UPI)
-    let payeeUpi = tx.payee_bank_account || "";
-    if (!payeeUpi && tx.rptNo && orderSlipMap.has(tx.rptNo)) {
-      const slip = orderSlipMap.get(tx.rptNo);
-      if (slip && slip.upi) payeeUpi = slip.upi;
+    // Build buyer's known UPI list to prevent using buyer's UPI as payee UPI
+    const buyerUpis: string[] = [];
+    if (tx.buyerPhone) buyerUpis.push(String(tx.buyerPhone).toLowerCase().trim());
+    if (tx.phone) buyerUpis.push(String(tx.phone).toLowerCase().trim());
+    if (user.phone) buyerUpis.push(String(user.phone).toLowerCase().trim());
+    if (user.collectionTools) {
+      user.collectionTools.forEach((t: any) => {
+        if (t.upi) buyerUpis.push(String(t.upi).toLowerCase().trim());
+        if (t.account) buyerUpis.push(String(t.account).toLowerCase().trim());
+      });
     }
-    if (!payeeUpi) payeeUpi = tx.upi || "";
 
-    // 2. Buyer UPI (buyer ka upi -> selected UPI ID)
+    // 1. Buyer UPI (buyer ka upi -> selected UPI ID)
     let buyerSelectedUpi = (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (tx as any).selected_upi || (tx as any).payerUpi || "";
-    if (!buyerSelectedUpi || buyerSelectedUpi === payeeUpi) {
+    if (!buyerSelectedUpi) {
       const bPhone = tx.buyerPhone || tx.phone || user.phone || user.mobileNo || "";
       if (bPhone) {
         const cleanBPhone = String(bPhone).replace(/\D/g, '').slice(-10);
@@ -8577,6 +8607,32 @@ async function getRechargeHistory(req: any, res: any) {
           buyerSelectedUpi = `${cleanBPhone}-1@${suffix}`;
         }
       }
+    }
+    if (buyerSelectedUpi) buyerUpis.push(String(buyerSelectedUpi).toLowerCase().trim());
+
+    // 2. Payee / Receiver UPI (jisko payment karna hai -> Seller/Merchant UPI)
+    let payeeUpi = tx.payee_bank_account || tx.receiverUpi || tx.payeeAccount || "";
+    if (!payeeUpi || buyerUpis.some(b => b && payeeUpi.toLowerCase().trim().includes(b))) {
+      payeeUpi = "";
+      if (tx.rptNo && orderSlipMap.has(tx.rptNo)) {
+        const slip = orderSlipMap.get(tx.rptNo);
+        if (slip && slip.upi && !buyerUpis.some(b => b && slip.upi.toLowerCase().trim().includes(b))) {
+          payeeUpi = slip.upi;
+        }
+      }
+    }
+    if ((!payeeUpi || buyerUpis.some(b => b && payeeUpi.toLowerCase().trim().includes(b))) && (tx.sellerId || tx.sellerPhone)) {
+      const seller = await User.findOne({
+        $or: [{ _id: tx.sellerId }, { phone: tx.sellerPhone }].filter(Boolean)
+      });
+      if (seller) {
+        const sTool = (seller.collectionTools || []).find((t: any) => t && t.upi && t.upi.includes('@') && !buyerUpis.some(b => b && t.upi.toLowerCase().trim().includes(b)));
+        if (sTool) payeeUpi = sTool.upi;
+      }
+    }
+    if (!payeeUpi || buyerUpis.some(b => b && payeeUpi.toLowerCase().trim().includes(b))) {
+      const node = await PaymentNode.findOne({ status: true });
+      if (node && node.accountNumber) payeeUpi = node.accountNumber;
     }
 
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1000);
@@ -8592,7 +8648,7 @@ async function getRechargeHistory(req: any, res: any) {
       const hh = String(d.getHours()).padStart(2, '0');
       const mm = String(d.getMinutes()).padStart(2, '0');
       const ss = String(d.getSeconds()).padStart(2, '0');
-      return ;
+      return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
     };
 
     const debitTimeStr = formatTsString(debitTimeSec);
@@ -8675,7 +8731,7 @@ async function getRechargeHistory(req: any, res: any) {
       finish_time: finishTimeStr,
       secLimit: tx.countdown || 1800
     };
-  });
+  }));
 
   return res.json({
     code: 0,
@@ -10219,7 +10275,7 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
       });
     }
 
-    const hasActiveReviewOrderForUser = await Transaction.exists({
+    const activeReviewOrders = await Transaction.find({
       $or: [
         { userId: user._id },
         { buyerUserId: user._id },
@@ -10236,21 +10292,13 @@ app.get('/xxapi/admin/userDetail', requireAdmin, async (req, res) => {
     const enrichedCollectionTools = await Promise.all(rawTools.map(async (tool: any) => {
       const toolObj = { ...tool };
       const isPaytm = isPaytmTool(toolObj.type || toolObj.ctType, toolObj.pnname || toolObj.name, toolObj.upi || toolObj.account);
+      const isUnlinkedByReview = activeReviewOrders.some(order => !isPaytm && isToolUsedForOrder(toolObj, order));
 
-      if (hasActiveReviewOrderForUser) {
-        if (!isPaytm) {
-          toolObj.state = 5;
-          toolObj.status = 0;
-          toolObj.inSell = 0;
-          toolObj.isUnlinked = true;
-        } else {
-          if (toolObj.state !== 7) {
-            toolObj.state = 2;
-            toolObj.status = 1;
-            toolObj.inSell = 1;
-            toolObj.isUnlinked = false;
-          }
-        }
+      if (isUnlinkedByReview) {
+        toolObj.state = 5;
+        toolObj.status = 0;
+        toolObj.inSell = 0;
+        toolObj.isUnlinked = true;
       }
       const upiVpa = toolObj.upi || toolObj.accountNumber || toolObj.account;
       if (upiVpa && typeof upiVpa === 'string' && upiVpa.includes('@')) {

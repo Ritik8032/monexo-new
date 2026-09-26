@@ -1055,6 +1055,19 @@ function isPaytmTool(ctType, toolName, upi) {
   if (str.includes("paytm")) return true;
   return false;
 }
+function isToolUsedForOrder(tool, tx) {
+  if (!tool || !tx) return false;
+  const toolId = String(tool.id || tool._id || "").toLowerCase().trim();
+  const txCtId = String(tx.ct_id || tx.ctId || "").toLowerCase().trim();
+  if (toolId && txCtId && toolId === txCtId) return true;
+  const toolUpi = String(tool.upi || tool.account || "").toLowerCase().trim();
+  const txUpi = String(tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || tx.payerUpi || "").toLowerCase().trim();
+  if (toolUpi && txUpi && (toolUpi === txUpi || txUpi.includes(toolUpi) || toolUpi.includes(txUpi))) return true;
+  const toolCtType = getNormalizedCtType(tool.type !== void 0 ? tool.type : tool.ctType);
+  const txCtType = getNormalizedCtType(tx.ctType !== void 0 ? tx.ctType : tx.ct_type !== void 0 ? tx.ct_type : 1);
+  if (toolCtType === txCtType) return true;
+  return false;
+}
 function getAutomationConfig(ct_type) {
   const typeNum = Number(ct_type);
   const typeStr = String(ct_type || "").trim().toLowerCase();
@@ -4442,6 +4455,21 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
     payee_ifsc = "SBIN0001234";
     payee_bankname = "State Bank of India";
   }
+  if (!payee_bank_account || buyerUpiList.includes(String(payee_bank_account).toLowerCase().trim())) {
+    if (slipData && slipData.upi && !buyerUpiList.includes(String(slipData.upi).toLowerCase().trim())) {
+      payee_bank_account = slipData.upi;
+      payee_recipients_name = slipData.pnname || payee_recipients_name;
+    } else if (sellerUserId || sellerPhoneVal) {
+      const sUser = await User.findOne({ $or: [{ _id: sellerUserId }, { phone: sellerPhoneVal }].filter(Boolean) });
+      if (sUser) {
+        const activeTool = (sUser.collectionTools || []).find((t) => t && t.upi && t.upi.includes("@") && !buyerUpiList.includes(String(t.upi).toLowerCase().trim()));
+        if (activeTool) {
+          payee_bank_account = activeTool.upi;
+          payee_recipients_name = activeTool.pnname || sUser.realName || sUser.phone || payee_recipients_name;
+        }
+      }
+    }
+  }
   let tx = await Transaction.findOne({ rptNo: order_id });
   if (tx) {
     tx.userId = user._id;
@@ -5318,7 +5346,7 @@ async function healAndGetCleanTools(user) {
       t.id = toolIdVal;
       modified = true;
     }
-    const hasActiveReviewOrder = await Transaction.exists({
+    const activeReviewOrders = await Transaction.find({
       $or: [
         { userId: user._id },
         { buyerUserId: user._id },
@@ -5333,16 +5361,10 @@ async function healAndGetCleanTools(user) {
     let resolvedState = t.state !== void 0 && t.state !== null ? Number(t.state) : 2;
     let resolvedStatus = t.status !== void 0 && t.status !== null ? Number(t.status) : 1;
     const isPaytm = isPaytmTool(typeVal, t.pnname || t.name, t.upi || t.account);
-    if (hasActiveReviewOrder) {
-      if (isPaytm) {
-        if (resolvedState !== 7) {
-          resolvedState = 2;
-          resolvedStatus = 1;
-        }
-      } else {
-        resolvedState = 5;
-        resolvedStatus = 0;
-      }
+    const isUnlinkedByReview = activeReviewOrders.some((order) => !isPaytm && isToolUsedForOrder(t, order));
+    if (isUnlinkedByReview) {
+      resolvedState = 5;
+      resolvedStatus = 0;
     } else {
       if (isPaytm) {
         if (resolvedState !== 7) {
@@ -5359,7 +5381,7 @@ async function healAndGetCleanTools(user) {
     t.state = resolvedState;
     t.status = resolvedStatus;
     let inSellVal = t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1 ? 1 : 0;
-    if (hasActiveReviewOrder && !isPaytm) {
+    if (isUnlinkedByReview) {
       inSellVal = 0;
     } else if (isPaytm && resolvedState !== 7) {
       inSellVal = 1;
@@ -5805,7 +5827,7 @@ app.post("/xxapi/collectiontool/startsell", async (req, res) => {
   if (!user) return res.json({ code: 403, msg: "Unauthorized" });
   const toolId = req.body?.ct_id || req.body?.id || req.body?.ctId || req.body?.ct_type || req.body?.ctType || req.body?.type || req.query?.ct_id || req.query?.id;
   const tool = getOrCreateUserTool(user, toolId);
-  const hasActiveReviewOrder = await Transaction.exists({
+  const activeReviewOrders = await Transaction.find({
     $or: [
       { userId: user._id },
       { buyerUserId: user._id },
@@ -5818,8 +5840,9 @@ app.post("/xxapi/collectiontool/startsell", async (req, res) => {
     payer_status: 2
   });
   const isPaytm = tool ? isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account) : false;
-  if (hasActiveReviewOrder && !isPaytm) {
-    return res.json({ code: 400, msg: "Order is currently in review/interview. PhonePe and MobiKwik remain unlinked during order review." });
+  const isBlockedByReview = activeReviewOrders.some((order) => !isPaytm && isToolUsedForOrder(tool, order));
+  if (isBlockedByReview) {
+    return res.json({ code: 400, msg: "Order using this method is currently in review/interview. Relinking disabled during review." });
   }
   const hasValidUpi = tool && tool.upi && typeof tool.upi === "string" && tool.upi.includes("@") && tool.upi !== "Pending verification";
   if (!hasValidUpi) {
@@ -6376,24 +6399,15 @@ async function handleOrderEnteredInReview(tx) {
         user.collectionTools.forEach((tool) => {
           if (!tool) return;
           const isPaytm = isPaytmTool(tool.type || tool.ctType, tool.pnname || tool.name, tool.upi || tool.account);
-          if (!isPaytm) {
+          const isUsedForTx = isToolUsedForOrder(tool, tx);
+          if (isUsedForTx && !isPaytm) {
             if (tool.status !== 0 || tool.inSell !== 0 || tool.state !== 5) {
               tool.status = 0;
               tool.inSell = 0;
               tool.state = 5;
               tool.unlinkFlag = true;
               modified = true;
-              console.log(`[In-Review Mode] PhonePe/MobiKwik tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for user ${user.phone} for order ${tx.rptNo}`);
-            }
-          } else {
-            if (tool.state !== 7) {
-              if (tool.status !== 1 || tool.inSell !== 1 || tool.state !== 2) {
-                tool.status = 1;
-                tool.inSell = 1;
-                tool.state = 2;
-                modified = true;
-                console.log(`[In-Review Mode] Paytm tool (${tool.upi || tool.account}) kept LINKED & ONLINE for user ${user.phone} for order ${tx.rptNo}`);
-              }
+              console.log(`[In-Review Mode] Specific tool (${tool.upi || tool.account}) UNLINKED & set OFFLINE for user ${user.phone} for order ${tx.rptNo}`);
             }
           }
         });
@@ -6403,7 +6417,9 @@ async function handleOrderEnteredInReview(tx) {
         }
       }
     }
-    await autoCheckAndApproveOrderFromAutomation(tx);
+    setTimeout(() => {
+      autoCheckAndApproveOrderFromAutomation(tx).catch((err) => console.error("[Background Automation Error]", err));
+    }, 0);
   } catch (err) {
     console.error("[handleOrderEnteredInReview Error]", err);
   }
@@ -7312,7 +7328,7 @@ async function getRechargeHistory(req, res) {
       }, 0);
     }
   }
-  const mappedList = list.map((tx) => {
+  const mappedList = await Promise.all(list.map(async (tx) => {
     let orderState = 1;
     if (tx.payer_status === 1) orderState = 1;
     else if (tx.payer_status === 2) orderState = 2;
@@ -7322,14 +7338,18 @@ async function getRechargeHistory(req, res) {
     const obj = tx.toObject ? tx.toObject() : { ...tx };
     const ctTypeVal = tx.ctType || tx.ct_type || tx.payer_tool_type || 1;
     const isUpi = tx.payment_method === 1;
-    let payeeUpi = tx.payee_bank_account || "";
-    if (!payeeUpi && tx.rptNo && orderSlipMap.has(tx.rptNo)) {
-      const slip = orderSlipMap.get(tx.rptNo);
-      if (slip && slip.upi) payeeUpi = slip.upi;
+    const buyerUpis = [];
+    if (tx.buyerPhone) buyerUpis.push(String(tx.buyerPhone).toLowerCase().trim());
+    if (tx.phone) buyerUpis.push(String(tx.phone).toLowerCase().trim());
+    if (user.phone) buyerUpis.push(String(user.phone).toLowerCase().trim());
+    if (user.collectionTools) {
+      user.collectionTools.forEach((t) => {
+        if (t.upi) buyerUpis.push(String(t.upi).toLowerCase().trim());
+        if (t.account) buyerUpis.push(String(t.account).toLowerCase().trim());
+      });
     }
-    if (!payeeUpi) payeeUpi = tx.upi || "";
     let buyerSelectedUpi = tx.ct_account || tx.payer_upi || tx.ctAccount || tx.selected_upi || tx.payerUpi || "";
-    if (!buyerSelectedUpi || buyerSelectedUpi === payeeUpi) {
+    if (!buyerSelectedUpi) {
       const bPhone = tx.buyerPhone || tx.phone || user.phone || user.mobileNo || "";
       if (bPhone) {
         const cleanBPhone = String(bPhone).replace(/\D/g, "").slice(-10);
@@ -7338,6 +7358,30 @@ async function getRechargeHistory(req, res) {
           buyerSelectedUpi = `${cleanBPhone}-1@${suffix}`;
         }
       }
+    }
+    if (buyerSelectedUpi) buyerUpis.push(String(buyerSelectedUpi).toLowerCase().trim());
+    let payeeUpi = tx.payee_bank_account || tx.receiverUpi || tx.payeeAccount || "";
+    if (!payeeUpi || buyerUpis.some((b) => b && payeeUpi.toLowerCase().trim().includes(b))) {
+      payeeUpi = "";
+      if (tx.rptNo && orderSlipMap.has(tx.rptNo)) {
+        const slip = orderSlipMap.get(tx.rptNo);
+        if (slip && slip.upi && !buyerUpis.some((b) => b && slip.upi.toLowerCase().trim().includes(b))) {
+          payeeUpi = slip.upi;
+        }
+      }
+    }
+    if ((!payeeUpi || buyerUpis.some((b) => b && payeeUpi.toLowerCase().trim().includes(b))) && (tx.sellerId || tx.sellerPhone)) {
+      const seller = await User.findOne({
+        $or: [{ _id: tx.sellerId }, { phone: tx.sellerPhone }].filter(Boolean)
+      });
+      if (seller) {
+        const sTool = (seller.collectionTools || []).find((t) => t && t.upi && t.upi.includes("@") && !buyerUpis.some((b) => b && t.upi.toLowerCase().trim().includes(b)));
+        if (sTool) payeeUpi = sTool.upi;
+      }
+    }
+    if (!payeeUpi || buyerUpis.some((b) => b && payeeUpi.toLowerCase().trim().includes(b))) {
+      const node = await PaymentNode.findOne({ status: true });
+      if (node && node.accountNumber) payeeUpi = node.accountNumber;
     }
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1e3);
     const dealTimeSec = tx.dealTime || tx.utime || (tx.payer_status >= 2 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : debitTimeSec);
@@ -7351,7 +7395,7 @@ async function getRechargeHistory(req, res) {
       const hh = String(d.getHours()).padStart(2, "0");
       const mm = String(d.getMinutes()).padStart(2, "0");
       const ss = String(d.getSeconds()).padStart(2, "0");
-      return;
+      return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
     };
     const debitTimeStr2 = formatTsString(debitTimeSec);
     const dealTimeStr2 = formatTsString(dealTimeSec);
@@ -7430,7 +7474,7 @@ async function getRechargeHistory(req, res) {
       finish_time: finishTimeStr2,
       secLimit: tx.countdown || 1800
     };
-  });
+  }));
   return res.json({
     code: 0,
     msg: "success",
@@ -8741,7 +8785,7 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
         }
       });
     }
-    const hasActiveReviewOrderForUser = await Transaction.exists({
+    const activeReviewOrders = await Transaction.find({
       $or: [
         { userId: user._id },
         { buyerUserId: user._id },
@@ -8756,20 +8800,12 @@ app.get("/xxapi/admin/userDetail", requireAdmin, async (req, res) => {
     const enrichedCollectionTools = await Promise.all(rawTools.map(async (tool) => {
       const toolObj = { ...tool };
       const isPaytm = isPaytmTool(toolObj.type || toolObj.ctType, toolObj.pnname || toolObj.name, toolObj.upi || toolObj.account);
-      if (hasActiveReviewOrderForUser) {
-        if (!isPaytm) {
-          toolObj.state = 5;
-          toolObj.status = 0;
-          toolObj.inSell = 0;
-          toolObj.isUnlinked = true;
-        } else {
-          if (toolObj.state !== 7) {
-            toolObj.state = 2;
-            toolObj.status = 1;
-            toolObj.inSell = 1;
-            toolObj.isUnlinked = false;
-          }
-        }
+      const isUnlinkedByReview = activeReviewOrders.some((order) => !isPaytm && isToolUsedForOrder(toolObj, order));
+      if (isUnlinkedByReview) {
+        toolObj.state = 5;
+        toolObj.status = 0;
+        toolObj.inSell = 0;
+        toolObj.isUnlinked = true;
       }
       const upiVpa = toolObj.upi || toolObj.accountNumber || toolObj.account;
       if (upiVpa && typeof upiVpa === "string" && upiVpa.includes("@")) {
