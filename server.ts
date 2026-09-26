@@ -888,23 +888,29 @@ interface OrderSlipItem {
 const orderSlipMap = new Map<string, OrderSlipItem>();
 
 function generateOrderChunks(balance: number, requestedAmt?: number): number[] {
-  if (balance < 100) return [];
+  if (balance < 1) return [];
 
-  // If a specific amount is requested (e.g. 100, 200), return exact requested amount if seller balance allows AND amount is a multiple of 100
-  if (requestedAmt && requestedAmt >= 100) {
-    if (requestedAmt % 100 !== 0) return [];
+  // If a specific amount is requested (e.g. 1, 2, 10, 50, 100), return requested amount if seller balance allows
+  if (requestedAmt && requestedAmt >= 1) {
     if (balance >= requestedAmt) {
       return [requestedAmt];
     }
-    return [];
+    return [Math.min(balance, requestedAmt)];
   }
 
-  // Split available seller balance into 100-denominated independent orders (e.g. 200 balance -> [100, 100])
+  // Split available seller balance into independent orders
   const chunks: number[] = [];
   let remaining = Math.floor(balance);
-  while (remaining >= 100) {
-    chunks.push(100);
-    remaining -= 100;
+  if (remaining >= 100) {
+    while (remaining >= 100) {
+      chunks.push(100);
+      remaining -= 100;
+    }
+    if (remaining >= 1) {
+      chunks.push(remaining);
+    }
+  } else if (remaining >= 1) {
+    chunks.push(remaining);
   }
   return chunks;
 }
@@ -4431,8 +4437,8 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
         }
       }
 
-      // Fetch active selling users with wallet balance >= 100
-      const sellingUsers = await User.find({ balance: { $gte: 100 }, status: { $nin: ['disabled', 'suspended'] } });
+      // Fetch active selling users with wallet balance >= 1
+      const sellingUsers = await User.find({ balance: { $gte: 1 }, status: { $nin: ['disabled', 'suspended'] } });
       
       // Seller Rotation for Buyer: Sort sellers to avoid assigning same seller consecutively
       const lastAssignedSellerId = userIdStr ? buyerLastSellerMap.get(userIdStr) : "";
@@ -4505,7 +4511,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
           }
           const availableBalance = Math.max(0, (seller.balance || 0) - pendingSum);
 
-          if (availableBalance < 100) continue;
+          if (availableBalance < 1) continue;
 
           const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
           let combinedAmounts = baseChunks;
@@ -4516,7 +4522,7 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
           }
 
           combinedAmounts.forEach((amt) => {
-            if (amt < 100 || amt % 100 !== 0) return; // Strict Rule 4: multiples of 100 only!
+            if (amt < 1) return;
 
             const rptNo = generate15DigitRptNo();
             if (userPhone && isOrderCancelledForUser(userPhone, rptNo)) return;
@@ -4966,8 +4972,8 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
   }
 
   let amount = slipData ? slipData.amount : (req.body.amount ? Number(req.body.amount) : 0);
-  if (amount < 100 || amount % 100 !== 0) {
-    return res.json({ code: 400, msg: 'Invalid order amount. Amount must be a multiple of 100.' });
+  if (amount < 1) {
+    return res.json({ code: 400, msg: 'Invalid order amount. Amount must be at least ₹1.' });
   }
 
   let payee_recipients_name = slipData ? slipData.pnname : "";

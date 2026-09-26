@@ -806,19 +806,25 @@ function generate15DigitRptNo() {
 }
 var orderSlipMap = /* @__PURE__ */ new Map();
 function generateOrderChunks(balance, requestedAmt) {
-  if (balance < 100) return [];
-  if (requestedAmt && requestedAmt >= 100) {
-    if (requestedAmt % 100 !== 0) return [];
+  if (balance < 1) return [];
+  if (requestedAmt && requestedAmt >= 1) {
     if (balance >= requestedAmt) {
       return [requestedAmt];
     }
-    return [];
+    return [Math.min(balance, requestedAmt)];
   }
   const chunks = [];
   let remaining = Math.floor(balance);
-  while (remaining >= 100) {
-    chunks.push(100);
-    remaining -= 100;
+  if (remaining >= 100) {
+    while (remaining >= 100) {
+      chunks.push(100);
+      remaining -= 100;
+    }
+    if (remaining >= 1) {
+      chunks.push(remaining);
+    }
+  } else if (remaining >= 1) {
+    chunks.push(remaining);
   }
   return chunks;
 }
@@ -3756,7 +3762,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
           });
         }
       }
-      const sellingUsers = await User.find({ balance: { $gte: 100 }, status: { $nin: ["disabled", "suspended"] } });
+      const sellingUsers = await User.find({ balance: { $gte: 1 }, status: { $nin: ["disabled", "suspended"] } });
       const lastAssignedSellerId = userIdStr ? buyerLastSellerMap.get(userIdStr) : "";
       const sortedSellingUsers = [...sellingUsers].sort((a, b) => {
         if (lastAssignedSellerId) {
@@ -3809,7 +3815,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
             }
           }
           const availableBalance = Math.max(0, (seller.balance || 0) - pendingSum);
-          if (availableBalance < 100) continue;
+          if (availableBalance < 1) continue;
           const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
           let combinedAmounts = baseChunks;
           if (minAmt !== void 0 || maxAmt !== void 0) {
@@ -3818,7 +3824,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
             combinedAmounts = combinedAmounts.filter((a) => a >= lower && a <= upper);
           }
           combinedAmounts.forEach((amt) => {
-            if (amt < 100 || amt % 100 !== 0) return;
+            if (amt < 1) return;
             const rptNo = generate15DigitRptNo();
             if (userPhone2 && isOrderCancelledForUser(userPhone2, rptNo)) return;
             const slipItem = {
@@ -4220,8 +4226,8 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
     slipData.ctime = ctime;
   }
   let amount = slipData ? slipData.amount : req.body.amount ? Number(req.body.amount) : 0;
-  if (amount < 100 || amount % 100 !== 0) {
-    return res.json({ code: 400, msg: "Invalid order amount. Amount must be a multiple of 100." });
+  if (amount < 1) {
+    return res.json({ code: 400, msg: "Invalid order amount. Amount must be at least \u20B91." });
   }
   let payee_recipients_name = slipData ? slipData.pnname : "";
   let payee_bank_account = slipData ? slipData.upi : "";
