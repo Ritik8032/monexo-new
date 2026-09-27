@@ -8494,9 +8494,10 @@ async function getRechargeHistory(req: any, res: any) {
   const limit = Number(req.query.limit) || Number(req.body?.limit) || 20;
   const start = (page - 1) * limit;
 
-  const [total, list] = await Promise.all([
+  const [total, list, activeAdminNode] = await Promise.all([
     Transaction.countDocuments(query),
-    Transaction.find(query).sort({ ctime: -1 }).skip(start).limit(limit).lean()
+    Transaction.find(query).sort({ ctime: -1 }).skip(start).limit(limit).lean(),
+    PaymentNode.findOne({ status: true }).lean().catch(() => null)
   ]);
 
   // Non-blocking background trigger for in-review orders
@@ -8508,7 +8509,7 @@ async function getRechargeHistory(req: any, res: any) {
     }
   }
 
-  const mappedList = await Promise.all(list.map(async (tx: any) => {
+  const mappedList = list.map((tx: any) => {
     let orderState = 1; // Default to paying
     if (tx.payer_status === 1) orderState = 1; // paying
     else if (tx.payer_status === 2) orderState = 2; // pending
@@ -8533,14 +8534,14 @@ async function getRechargeHistory(req: any, res: any) {
     }
 
     // 1. Buyer UPI (buyer ka upi -> selected UPI ID)
-    let buyerSelectedUpi = (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (tx as any).selected_upi || (tx as any).payerUpi || "";
+    let buyerSelectedUpi = (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || (tx as any).selected_upi || (tx as any).payerUpi || (tx as any).buyerUpi || "";
     if (!buyerSelectedUpi) {
       const bPhone = tx.buyerPhone || tx.phone || user.phone || user.mobileNo || "";
       if (bPhone) {
         const cleanBPhone = String(bPhone).replace(/\D/g, '').slice(-10);
         if (cleanBPhone) {
           const suffix = ctTypeVal === 4 ? 'ikwik' : (ctTypeVal === 2 ? 'freecharge' : 'ybl');
-          buyerSelectedUpi = `${cleanBPhone}-1@${suffix}`;
+          buyerSelectedUpi = `${cleanBPhone}@${suffix}`;
         }
       }
     }
@@ -8557,18 +8558,8 @@ async function getRechargeHistory(req: any, res: any) {
         }
       }
     }
-    if ((!payeeUpi || buyerUpis.some(b => b && payeeUpi.toLowerCase().trim().includes(b))) && (tx.sellerId || tx.sellerPhone)) {
-      const seller = await User.findOne({
-        $or: [{ _id: tx.sellerId }, { phone: tx.sellerPhone }].filter(Boolean)
-      });
-      if (seller) {
-        const sTool = (seller.collectionTools || []).find((t: any) => t && t.upi && t.upi.includes('@') && !buyerUpis.some(b => b && t.upi.toLowerCase().trim().includes(b)));
-        if (sTool) payeeUpi = sTool.upi;
-      }
-    }
-    if (!payeeUpi || buyerUpis.some(b => b && payeeUpi.toLowerCase().trim().includes(b))) {
-      const node = await PaymentNode.findOne({ status: true });
-      if (node && node.accountNumber) payeeUpi = node.accountNumber;
+    if (!payeeUpi && activeAdminNode && activeAdminNode.accountNumber) {
+      payeeUpi = activeAdminNode.accountNumber;
     }
 
     const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1000);
@@ -8674,7 +8665,7 @@ async function getRechargeHistory(req: any, res: any) {
       finish_time: finishTimeStr,
       secLimit: tx.countdown || 1800
     };
-  }));
+  });
 
   return res.json({
     code: 0,
@@ -8890,7 +8881,15 @@ async function getSellHistory(req: any, res: any) {
   );
   const statusStr = String(rawStatus).toLowerCase().trim();
 
-  const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).lean();
+  if (['1', '2', 'paying', 'dispatched', 'undispatched', 'pending', 'in_progress', 'active'].includes(statusStr)) {
+    queryFilter.payer_status = { $in: [1, 2] };
+  } else if (['3', 'success', 'successfully', 'done', 'completed'].includes(statusStr)) {
+    queryFilter.payer_status = 3;
+  } else if (['4', '5', 'cancel', 'cancelled', 'failed', 'offline'].includes(statusStr)) {
+    queryFilter.payer_status = { $in: [4, 5] };
+  }
+
+  const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).limit(100).lean();
 
   // BATCH QUERY BUYER COUNTERPARTS FOR ULTRA-FAST RESOLUTION (NO N+1 QUERIES)
   const baseRpts = Array.from(new Set(allSellerTxs.map(tx => String(tx.rptNo || '').replace(/^SELL_/i, '').trim()).filter(Boolean)));
