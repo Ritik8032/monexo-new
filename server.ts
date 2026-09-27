@@ -5917,7 +5917,7 @@ app.post(['/xxapi/linkUpi/verifySms', '/xxapi/linkUpi/verify', '/xxapi/authupi']
   const targetPhone = phone || account || user.phone;
   const targetUpi = upi || (targetPhone.includes('@') ? targetPhone : 'Pending verification');
 
-  // Require 6-digit OTP verification
+  // Require OTP verification
   if (!inputOtp || String(inputOtp).trim().length < 4) {
     return res.json({
       code: 400,
@@ -5928,13 +5928,31 @@ app.post(['/xxapi/linkUpi/verifySms', '/xxapi/linkUpi/verify', '/xxapi/authupi']
   const isValidOtp = await verifyOtpCode(targetPhone, inputOtp);
   if (!isValidOtp) {
     console.log(`[UPI Link/Auth] OTP verification failed for user ${user.phone}, otp: ${inputOtp}`);
+    // EXPLICIT FAILURE: Keep tool unlinked!
+    if (user.collectionTools) {
+      const toolId = ctid || ct_id;
+      let tool = user.collectionTools.find((t: any) => t.id === toolId || t.account === targetPhone);
+      if (tool) {
+        tool.status = 0;
+        tool.state = 5;
+        tool.inSell = 0;
+        tool.in_sell = 0;
+        tool.insell = 0;
+        tool.upi = 'Pending verification';
+        tool.relinkPending = true;
+        delete tool.relinkedAt;
+        user.markModified('collectionTools');
+        await user.save().catch(() => {});
+      }
+    }
     return res.json({
       code: 400,
       msg: 'Invalid OTP code. Please try again.'
     });
   }
 
-  // OTP verified! Now activate the tool in user.collectionTools
+  // OTP verified! Check if we have a valid VPA
+  const hasRealUpi = targetUpi && targetUpi.includes('@') && targetUpi !== 'Pending verification';
   const toolId = ctid || ct_id || `tool-${Date.now()}`;
   if (!user.collectionTools) user.collectionTools = [];
   let tool = user.collectionTools.find((t: any) => t.id === toolId || t.upi === targetUpi || t.account === targetPhone);
@@ -5942,9 +5960,16 @@ app.post(['/xxapi/linkUpi/verifySms', '/xxapi/linkUpi/verify', '/xxapi/authupi']
   if (tool) {
     tool.upi = targetUpi;
     tool.account = targetPhone;
-    tool.state = 2; // Online / Idle
-    tool.inSell = 1; // Active in sell
-    tool.status = 1;
+    tool.state = hasRealUpi ? 2 : 5; // Online if valid VPA, Unlinked if pending VPA
+    tool.status = hasRealUpi ? 1 : 0;
+    tool.inSell = hasRealUpi ? 1 : 0;
+    tool.in_sell = hasRealUpi ? 1 : 0;
+    tool.insell = hasRealUpi ? 1 : 0;
+    tool.relinkPending = !hasRealUpi;
+    if (hasRealUpi) {
+      tool.relinkedAt = Date.now();
+      delete tool.savedOriginalState;
+    }
     if (pnname) tool.pnname = pnname;
   } else {
     tool = {
@@ -5952,20 +5977,24 @@ app.post(['/xxapi/linkUpi/verifySms', '/xxapi/linkUpi/verify', '/xxapi/authupi']
       upi: targetUpi,
       account: targetPhone,
       pnname: pnname || user.realName || 'Merchant Partner',
-      state: 2,
-      inSell: 1,
-      status: 1,
+      state: hasRealUpi ? 2 : 5,
+      inSell: hasRealUpi ? 1 : 0,
+      in_sell: hasRealUpi ? 1 : 0,
+      insell: hasRealUpi ? 1 : 0,
+      status: hasRealUpi ? 1 : 0,
       type: 1,
       ctType: 1,
-      ct_type: 1
+      ct_type: 1,
+      relinkPending: !hasRealUpi,
+      relinkedAt: hasRealUpi ? Date.now() : undefined
     };
     user.collectionTools.push(tool);
   }
 
   user.markModified('collectionTools');
   await user.save();
-  console.log(`[UPI Link/Auth] Verified and activated UPI tool for ${user.phone}: ${targetUpi}`);
-  return res.json({ code: 0, msg: 'UPI linked and verified successfully', data: tool });
+  console.log(`[UPI Link/Auth] Verified UPI tool for ${user.phone}: ${targetUpi} -> Status: ${tool.status}, State: ${tool.state}`);
+  return res.json({ code: 0, msg: 'UPI verified successfully', data: tool });
 });
 
 app.get('/xxapi/buyitoken/check', async (req, res) => {
@@ -6194,19 +6223,33 @@ async function healAndGetCleanTools(user) {
     const isPaytm = isPaytmTool(typeVal, t.pnname || t.name, t.upi || t.account);
     const isUnlinkedByReview = activeReviewOrders.some(order => !isPaytm && isToolUsedForOrder(t, order));
 
-    if (isUnlinkedByReview) {
-      // ONLY unlinks if this specific tool was used in an active review order
+    // Check if tool was explicitly relinked by user
+    const isRelinkedByUser = Boolean(
+      hasValidUpi && !t.relinkPending && (
+        (t.relinkedAt && (Date.now() - t.relinkedAt < 86400000)) || 
+        (t.status === 1 && t.state === 2)
+      )
+    );
+
+    if (isRelinkedByUser) {
+      // User successfully relinked and verified this tool -> ACTIVE & ONLINE
+      resolvedState = 2;
+      resolvedStatus = 1;
+    } else if (isUnlinkedByReview) {
+      // Unlinked due to order in review (user hasn't relinked it yet)
       resolvedState = 5;
       resolvedStatus = 0;
     } else {
       if (isPaytm) {
-        if (resolvedState !== 7) {
+        if (resolvedState !== 7 && hasValidUpi) {
           resolvedState = 2;
           resolvedStatus = 1;
+        } else if (!hasValidUpi) {
+          resolvedState = 5;
+          resolvedStatus = 0;
         }
       } else {
-        // Non-Paytm tools: strictly preserve unlinked/offline state if explicitly unlinked
-        if (resolvedState === 5 || resolvedStatus === 0) {
+        if (!hasValidUpi || t.relinkPending || resolvedState === 5 || resolvedStatus === 0) {
           resolvedState = 5;
           resolvedStatus = 0;
         }
@@ -6216,15 +6259,8 @@ async function healAndGetCleanTools(user) {
     t.state = resolvedState;
     t.status = resolvedStatus;
 
-    // Strictly preserve inSell state
-    let inSellVal = (t.inSell === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === true || t.insell === 1) ? 1 : 0;
-    if (isUnlinkedByReview) {
-      inSellVal = 0;
-    } else if (isPaytm && resolvedState !== 7) {
-      inSellVal = 1;
-    } else if (resolvedState === 5 || resolvedStatus === 0) {
-      inSellVal = 0;
-    }
+    // Strictly resolve inSell state: 1 if Active & Online, 0 if Unlinked
+    let inSellVal = (resolvedStatus === 1 && resolvedState === 2 && hasValidUpi) ? 1 : 0;
 
     t.inSell = inSellVal;
     t.in_sell = inSellVal;
