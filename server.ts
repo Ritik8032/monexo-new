@@ -2926,9 +2926,17 @@ app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
     let todayDeal = sellerTxs.length;
     let todayTimes = sellerTxs.length;
 
+    // Batch fetch all counterpart buyer transactions in a single DB query
+    const rootNos = sellerTxs.map(tx => String(tx.rptNo || tx.id || tx._id || '').replace(/^SELL_/i, '').trim()).filter(Boolean);
+    const buyerTxsList = rootNos.length > 0 ? await Transaction.find({ rptNo: { $in: rootNos } }).lean() : [];
+    const buyerTxMap = new Map<string, any>();
+    for (const bTx of buyerTxsList) {
+      buyerTxMap.set(bTx.rptNo, bTx);
+    }
+
     for (const tx of sellerTxs) {
       const rootNo = String(tx.rptNo || tx.id || tx._id || '').replace(/^SELL_/i, '').trim();
-      const buyerTx = rootNo ? await Transaction.findOne({ rptNo: rootNo }).lean() : null;
+      const buyerTx = rootNo ? buyerTxMap.get(rootNo) : null;
 
       const isCancelled = (
         tx.payer_status === 4 ||
@@ -2940,9 +2948,8 @@ app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
       );
 
       if (isCancelled) {
-        if (tx.payer_status !== 4) {
-          tx.payer_status = 4;
-          tx.save().catch(() => {});
+        if (tx.payer_status !== 4 && tx._id) {
+          Transaction.updateOne({ _id: tx._id }, { payer_status: 4 }).exec();
         }
         continue; // Do NOT count cancelled orders toward inSellAmount (frozenItoken)!
       }
@@ -7590,6 +7597,50 @@ async function autoCheckAndApproveOrderFromAutomation(tx: any): Promise<boolean>
 
     const orderAmount = Number(tx.amount || 0);
     if (!orderAmount || orderAmount <= 0) return false;
+
+    // PRIORITY CHECK: Is this an Admin Panel order?
+    let isAdminOrder = Boolean((tx as any).isAdminNode);
+    if (!isAdminOrder && tx.rptNo) {
+      const adminNode = await PaymentNode.findOne({ claimedRptNo: tx.rptNo });
+      if (adminNode) isAdminOrder = true;
+    }
+    if (!isAdminOrder && tx.payee_bank_account) {
+      const adminNode = await PaymentNode.findOne({ accountNumber: tx.payee_bank_account, status: true });
+      if (adminNode) isAdminOrder = true;
+    }
+
+    if (isAdminOrder) {
+      console.log(`[Admin Order Auto-Approve] Admin panel order ${tx.rptNo} automatically approved for buyer!`);
+      tx.payer_status = 3; // SUCCESS!
+      const nowSec = Math.floor(Date.now() / 1000);
+      (tx as any).finishTime = nowSec;
+      (tx as any).fnsDate = nowSec;
+
+      // Credit buyer balance (+ 4% reward)
+      const buyer = await User.findOne({
+        $or: [
+          { _id: tx.buyerUserId || tx.userId },
+          { phone: tx.buyerPhone || tx.phone },
+          { mobileNo: tx.phone }
+        ].filter(Boolean)
+      });
+
+      if (buyer) {
+        const reward4Pct = Math.round(((tx.amount || 0) * 0.04) * 100) / 100;
+        tx.reward = reward4Pct;
+        await tx.save().catch(() => {});
+        buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
+        buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
+        await buyer.save();
+        await distributeTeamCommission(buyer, tx.amount || 0).catch(() => {});
+        console.log(`[Admin Order Verified] Buyer ${buyer.phone} wallet credited +₹${tx.amount} + ₹${reward4Pct} reward. New balance: ${buyer.balance}`);
+      }
+
+      if (tx.rptNo) {
+        await PaymentNode.updateOne({ claimedRptNo: tx.rptNo }, { orderState: 'COMPLETED', utr: tx.utr || '' }).catch(() => {});
+      }
+      return true;
+    }
 
     // Extract all candidate phone numbers in strictly prioritized order
     const candidatePhones: string[] = [];

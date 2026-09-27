@@ -2438,15 +2438,19 @@ app.get(["/xxapi/userinfo", "/userinfo"], async (req, res) => {
     let todaySuccess = 0;
     let todayDeal = sellerTxs.length;
     let todayTimes = sellerTxs.length;
+    const rootNos = sellerTxs.map((tx) => String(tx.rptNo || tx.id || tx._id || "").replace(/^SELL_/i, "").trim()).filter(Boolean);
+    const buyerTxsList = rootNos.length > 0 ? await Transaction.find({ rptNo: { $in: rootNos } }).lean() : [];
+    const buyerTxMap = /* @__PURE__ */ new Map();
+    for (const bTx of buyerTxsList) {
+      buyerTxMap.set(bTx.rptNo, bTx);
+    }
     for (const tx of sellerTxs) {
       const rootNo = String(tx.rptNo || tx.id || tx._id || "").replace(/^SELL_/i, "").trim();
-      const buyerTx = rootNo ? await Transaction.findOne({ rptNo: rootNo }).lean() : null;
+      const buyerTx = rootNo ? buyerTxMap.get(rootNo) : null;
       const isCancelled = tx.payer_status === 4 || tx.payer_status === 5 || buyerTx?.payer_status === 4 || buyerTx?.payer_status === 5 || isOrderCancelledForUser("", rootNo) || rootNo && orderSlipMap.get(rootNo)?.payer_status === 4;
       if (isCancelled) {
-        if (tx.payer_status !== 4) {
-          tx.payer_status = 4;
-          tx.save().catch(() => {
-          });
+        if (tx.payer_status !== 4 && tx._id) {
+          Transaction.updateOne({ _id: tx._id }, { payer_status: 4 }).exec();
         }
         continue;
       }
@@ -6470,6 +6474,46 @@ async function autoCheckAndApproveOrderFromAutomation(tx) {
     }
     const orderAmount = Number(tx.amount || 0);
     if (!orderAmount || orderAmount <= 0) return false;
+    let isAdminOrder = Boolean(tx.isAdminNode);
+    if (!isAdminOrder && tx.rptNo) {
+      const adminNode = await PaymentNode.findOne({ claimedRptNo: tx.rptNo });
+      if (adminNode) isAdminOrder = true;
+    }
+    if (!isAdminOrder && tx.payee_bank_account) {
+      const adminNode = await PaymentNode.findOne({ accountNumber: tx.payee_bank_account, status: true });
+      if (adminNode) isAdminOrder = true;
+    }
+    if (isAdminOrder) {
+      console.log(`[Admin Order Auto-Approve] Admin panel order ${tx.rptNo} automatically approved for buyer!`);
+      tx.payer_status = 3;
+      const nowSec = Math.floor(Date.now() / 1e3);
+      tx.finishTime = nowSec;
+      tx.fnsDate = nowSec;
+      const buyer = await User.findOne({
+        $or: [
+          { _id: tx.buyerUserId || tx.userId },
+          { phone: tx.buyerPhone || tx.phone },
+          { mobileNo: tx.phone }
+        ].filter(Boolean)
+      });
+      if (buyer) {
+        const reward4Pct = Math.round((tx.amount || 0) * 0.04 * 100) / 100;
+        tx.reward = reward4Pct;
+        await tx.save().catch(() => {
+        });
+        buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
+        buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
+        await buyer.save();
+        await distributeTeamCommission(buyer, tx.amount || 0).catch(() => {
+        });
+        console.log(`[Admin Order Verified] Buyer ${buyer.phone} wallet credited +\u20B9${tx.amount} + \u20B9${reward4Pct} reward. New balance: ${buyer.balance}`);
+      }
+      if (tx.rptNo) {
+        await PaymentNode.updateOne({ claimedRptNo: tx.rptNo }, { orderState: "COMPLETED", utr: tx.utr || "" }).catch(() => {
+        });
+      }
+      return true;
+    }
     const candidatePhones = [];
     const toolPhones = await getToolAndUpiPhoneForOrder(tx);
     toolPhones.forEach((p) => candidatePhones.push(p));
