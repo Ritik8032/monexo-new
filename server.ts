@@ -614,9 +614,11 @@ async function distributeTeamCommission(buyer: any, buyAmount: number) {
       const l1Comm = Math.round((buyAmount * 0.003) * 10000) / 10000;
       if (l1Comm > 0) {
         level1Parent.commission = Math.round(((level1Parent.commission || 0) + l1Comm) * 10000) / 10000;
+        level1Parent.balance = Math.round(((level1Parent.balance || 0) + l1Comm) * 10000) / 10000;
         level1Parent.todayProfit = Math.round(((level1Parent.todayProfit || 0) + l1Comm) * 10000) / 10000;
+        level1Parent.totalProfit = Math.round(((level1Parent.totalProfit || 0) + l1Comm) * 10000) / 10000;
         await level1Parent.save();
-        console.log(`[Team Commission L1] Parent ${level1Parent.phone} received 0.3% (${l1Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+        console.log(`[Team Commission L1] Parent ${level1Parent.phone} received 0.3% (${l1Comm}) instantly credited to wallet from buyer ${buyer.phone} (Buy: ${buyAmount})`);
       }
 
       // Level 2 Parent -> 0.2%
@@ -625,9 +627,11 @@ async function distributeTeamCommission(buyer: any, buyAmount: number) {
         const l2Comm = Math.round((buyAmount * 0.002) * 10000) / 10000;
         if (l2Comm > 0) {
           level2Parent.commission = Math.round(((level2Parent.commission || 0) + l2Comm) * 10000) / 10000;
+          level2Parent.balance = Math.round(((level2Parent.balance || 0) + l2Comm) * 10000) / 10000;
           level2Parent.todayProfit = Math.round(((level2Parent.todayProfit || 0) + l2Comm) * 10000) / 10000;
+          level2Parent.totalProfit = Math.round(((level2Parent.totalProfit || 0) + l2Comm) * 10000) / 10000;
           await level2Parent.save();
-          console.log(`[Team Commission L2] Parent ${level2Parent.phone} received 0.2% (${l2Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+          console.log(`[Team Commission L2] Parent ${level2Parent.phone} received 0.2% (${l2Comm}) instantly credited to wallet from buyer ${buyer.phone} (Buy: ${buyAmount})`);
         }
 
         // Level 3 Parent -> 0.1%
@@ -636,9 +640,11 @@ async function distributeTeamCommission(buyer: any, buyAmount: number) {
           const l3Comm = Math.round((buyAmount * 0.001) * 10000) / 10000;
           if (l3Comm > 0) {
             level3Parent.commission = Math.round(((level3Parent.commission || 0) + l3Comm) * 10000) / 10000;
+            level3Parent.balance = Math.round(((level3Parent.balance || 0) + l3Comm) * 10000) / 10000;
             level3Parent.todayProfit = Math.round(((level3Parent.todayProfit || 0) + l3Comm) * 10000) / 10000;
+            level3Parent.totalProfit = Math.round(((level3Parent.totalProfit || 0) + l3Comm) * 10000) / 10000;
             await level3Parent.save();
-            console.log(`[Team Commission L3] Parent ${level3Parent.phone} received 0.1% (${l3Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+            console.log(`[Team Commission L3] Parent ${level3Parent.phone} received 0.1% (${l3Comm}) instantly credited to wallet from buyer ${buyer.phone} (Buy: ${buyAmount})`);
           }
         }
       }
@@ -4996,6 +5002,43 @@ app.get('/xxapi/buyitoken/paymentslipdetail', async (req, res) => {
       number: payee_bank_account,
 
       // Payer's selected tool & UPI account (The user's selected UPI ID to pay from)
+      "UPI ID": (function() {
+        if (!selectedPayerUpi) return "";
+        if (selectedPayerUpi.includes('@')) {
+          const parts = selectedPayerUpi.split('@');
+          const uP = parts[0];
+          const uD = parts[1];
+          if (uP.length >= 6) return `${uP.slice(0, 3)}****${uP.slice(-3)}@${uD}`;
+        }
+        return selectedPayerUpi;
+      })(),
+      upi_id: selectedPayerUpi,
+      "Kyc Partner": ctNameVal || "phonepe",
+      kycPartner: ctNameVal || "phonepe",
+      kyc_partner: ctNameVal || "phonepe",
+      "Payee Upi": payee_bank_account,
+      payeeUpi: payee_bank_account,
+      payee_upi: payee_bank_account,
+      "Debit time": (function() {
+        const orderCtimeRaw = tx && tx.ctime ? tx.ctime : (slipData && slipData.ctime ? slipData.ctime : Math.floor(Date.now() / 1000));
+        const d = new Date((orderCtimeRaw > 10000000000 ? Math.floor(orderCtimeRaw / 1000) : orderCtimeRaw) * 1000);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      })(),
+      "Deal time": (function() {
+        const dealSec = tx ? ((tx as any).dealTime || tx.ctime) : Math.floor(Date.now() / 1000);
+        const d = new Date((dealSec > 10000000000 ? Math.floor(dealSec / 1000) : dealSec) * 1000);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      })(),
+      Utr: tx ? (tx.utr || "") : "",
+      utr: tx ? (tx.utr || "") : "",
+      "Order status": currentPayerStatus === 3 ? "Success" : currentPayerStatus === 4 ? "Cancelled" : currentPayerStatus === 1 ? "Paying" : "In Review",
+      orderStatus: currentPayerStatus === 3 ? "Success" : currentPayerStatus === 4 ? "Cancelled" : currentPayerStatus === 1 ? "Paying" : "In Review",
+      "Finish time": (function() {
+        const fnsSec = tx ? ((tx as any).finishTime || (tx as any).fnsDate || 0) : 0;
+        if (!fnsSec) return "";
+        const d = new Date((fnsSec > 10000000000 ? Math.floor(fnsSec / 1000) : fnsSec) * 1000);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      })(),
       ctAccount: selectedPayerUpi,
       ct_account: selectedPayerUpi,
       payer_upi: selectedPayerUpi,
@@ -5055,6 +5098,25 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
   const { order_id, ct_id, ctType, ct_type, confirm_mode } = req.body;
   if (!order_id) {
     return res.json({ code: 400, msg: 'Missing order_id' });
+  }
+
+  // Race-condition check: prevent duplicate order pickup by different buyers
+  const existingTxCheck = await Transaction.findOne({ rptNo: order_id });
+  if (existingTxCheck) {
+    const existingBuyerId = existingTxCheck.buyerUserId ? String(existingTxCheck.buyerUserId) : (existingTxCheck.userId ? String(existingTxCheck.userId) : '');
+    const existingBuyerPhone = existingTxCheck.buyerPhone ? String(existingTxCheck.buyerPhone) : (existingTxCheck.phone ? String(existingTxCheck.phone) : '');
+    const currentBuyerId = String(user._id);
+    const currentBuyerPhone = String(user.phone || user.mobileNo || '');
+
+    if ((existingBuyerId && existingBuyerId !== currentBuyerId) || 
+        (existingBuyerPhone && existingBuyerPhone !== currentBuyerPhone)) {
+      if (existingTxCheck.payer_status === 1 || existingTxCheck.payer_status === 2 || existingTxCheck.payer_status === 3) {
+        return res.json({
+          code: 400,
+          msg: 'This order already selected by another user'
+        });
+      }
+    }
   }
 
   const ctime = Math.floor(Date.now() / 1000);
@@ -8669,6 +8731,19 @@ async function getRechargeHistory(req: any, res: any) {
     const calculatedReward = Math.round((effectiveAmount * 0.04) * 100) / 100;
     const rewardVal = (tx as any).reward && Number((tx as any).reward) > 0 ? Number((tx as any).reward) : calculatedReward;
 
+    let maskedBuyerUpi = buyerSelectedUpi;
+    if (buyerSelectedUpi && buyerSelectedUpi.includes('@')) {
+      const parts = buyerSelectedUpi.split('@');
+      const uPrefix = parts[0];
+      const uDomain = parts[1];
+      if (uPrefix.length >= 6) {
+        maskedBuyerUpi = `${uPrefix.slice(0, 3)}****${uPrefix.slice(-3)}@${uDomain}`;
+      }
+    }
+
+    const partnerNameVal = mapCtTypeToName(ctTypeVal) || "phonepe";
+    const statusStrVal = (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review";
+
     return {
       ...obj,
       id: tx._id ? tx._id.toString() : tx.rptNo,
@@ -8684,9 +8759,9 @@ async function getRechargeHistory(req: any, res: any) {
       status: tx.payer_status,
       payment_method: isUpi ? 1 : 2,
       method: isUsdtTx ? "usdt" : "inr",
-      orderStateText: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
-      statusText: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
-      status_str: (tx.payer_status === 3 || orderState === 3) ? "Success" : (tx.payer_status === 4 || tx.payer_status === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (tx.payer_status === 1 || orderState === 1) ? "Paying" : "In Review",
+      orderStateText: statusStrVal,
+      statusText: statusStrVal,
+      status_str: statusStrVal,
       payType: isUpi ? ctTypeVal : 2,
       isBank: !isUpi,
       currency: tx.currency || (isUsdtTx ? 1 : 3),
@@ -8694,10 +8769,12 @@ async function getRechargeHistory(req: any, res: any) {
       uReward: rewardVal,
       ctType: ctTypeVal,
       ct_type: ctTypeVal,
-      ctName: mapCtTypeToName(ctTypeVal),
-      ct_name: mapCtTypeToName(ctTypeVal),
+      ctName: partnerNameVal,
+      ct_name: partnerNameVal,
       channel: mapCtTypeToUpiType(ctTypeVal),
       // BUYER UPI (UPI ID)
+      "UPI ID": maskedBuyerUpi || buyerSelectedUpi,
+      upi_id: buyerSelectedUpi,
       upi: buyerSelectedUpi,
       account: buyerSelectedUpi,
       acctNo: buyerSelectedUpi,
@@ -8707,13 +8784,24 @@ async function getRechargeHistory(req: any, res: any) {
       ct_account: buyerSelectedUpi,
       selected_upi: buyerSelectedUpi,
       buyer_upi: buyerSelectedUpi,
+      // KYC PARTNER
+      "Kyc Partner": partnerNameVal,
+      kycPartner: partnerNameVal,
+      kyc_partner: partnerNameVal,
       // PAYEE UPI (jisko payment karna hai)
+      "Payee Upi": payeeUpi,
+      payeeUpi: payeeUpi,
       payee_bank_account: payeeUpi,
       payee_upi: payeeUpi,
       receiveAccount: payeeUpi,
       payeeAccount: payeeUpi,
       receiverUpi: payeeUpi,
+      // UTR & STATUS
+      "Utr": tx.utr || (tx as any).ref_no || "",
       utr: tx.utr || (tx as any).ref_no || "",
+      "Order status": statusStrVal,
+      orderStatus: statusStrVal,
+      order_status: statusStrVal,
       payee_recipients_name: tx.payee_recipients_name || "Monexo Merchant",
       pnname: tx.payee_recipients_name || "Monexo Merchant",
       name: tx.payee_recipients_name || "Monexo Merchant",
@@ -8723,10 +8811,13 @@ async function getRechargeHistory(req: any, res: any) {
       crtDate: debitTimeSec * 1000,
       uptDate: dealTimeSec * 1000,
       fnsDate: finishTimeSec ? finishTimeSec * 1000 : 0,
+      "Debit time": debitTimeStr,
       debitTime: debitTimeStr,
       debit_time: debitTimeStr,
+      "Deal time": dealTimeStr,
       dealTime: dealTimeStr,
       deal_time: dealTimeStr,
+      "Finish time": finishTimeStr,
       finishTime: finishTimeStr,
       finish_time: finishTimeStr,
       secLimit: tx.countdown || 1800
@@ -9128,6 +9219,27 @@ async function getSellHistory(req: any, res: any) {
       ctName: mapCtTypeToName(sellerCtType),
       ct_name: mapCtTypeToName(sellerCtType),
       channel: mapCtTypeToUpiType(sellerCtType),
+      // History detail modal fields
+      "UPI ID": (function() {
+        const bUpi = (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || "";
+        if (bUpi && bUpi.includes('@')) {
+          const parts = bUpi.split('@');
+          if (parts[0].length >= 6) return `${parts[0].slice(0, 3)}****${parts[0].slice(-3)}@${parts[1]}`;
+        }
+        return bUpi;
+      })(),
+      upi_id: (tx as any).ct_account || (tx as any).payer_upi || (tx as any).ctAccount || "",
+      "Kyc Partner": mapCtTypeToName(sellerCtType),
+      kycPartner: mapCtTypeToName(sellerCtType),
+      kyc_partner: mapCtTypeToName(sellerCtType),
+      "Payee Upi": sellerReceiveUpi,
+      payeeUpi: sellerReceiveUpi,
+      payee_upi: sellerReceiveUpi,
+      "Debit time": debitTimeStr,
+      "Deal time": dealTimeStr,
+      "Utr": tx.utr || (tx as any).ref_no || "",
+      "Order status": (effectivePayerStatus === 3 || orderState === 3) ? "Success" : (effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5) ? "Cancelled" : (effectivePayerStatus === 1 || orderState === 1) ? "Paying" : "In Review",
+      "Finish time": finishTimeStr,
       receiveAccount: sellerReceiveUpi,
       upi: sellerReceiveUpi,
       account: sellerReceiveUpi,
