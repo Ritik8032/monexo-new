@@ -292,6 +292,8 @@ var userSchema = new import_mongoose.default.Schema({
   referralCode: { type: String, sparse: true, index: true },
   referral_code: { type: String },
   inviteFriendsClaimedAmt: { type: Number, default: 0 },
+  claimedInviteNewbieCount: { type: Number, default: 0 },
+  inviteNewbieClaimedAmt: { type: Number, default: 0 },
   newbieParams: { type: String, default: "" },
   newbieDone: { type: Number, default: 0 },
   isBlocked: { type: Boolean, default: false },
@@ -3083,14 +3085,25 @@ app.get("/xxapi/newbieStepTotal/init", async (req, res) => {
 async function getInviteNewbieData(req) {
   const user = await getUserByToken(req);
   if (!user) return null;
-  const inviteCode = user.ownInviteCode || user.referralCode || "";
+  const userCodes = Array.from(new Set([
+    user.ownInviteCode,
+    user.referralCode,
+    user.referral_code,
+    user.inviteCode,
+    user.invitercode,
+    user.phone,
+    user.mobileNo,
+    user._id ? user._id.toString() : "",
+    user.providerId
+  ].filter(Boolean)));
   const directMembers = await User.find({
     $or: [
-      { invitercode: inviteCode },
-      { parentUser: inviteCode },
-      ...user.providerId ? [{ invitercode: user.providerId }, { parentUser: user.providerId }] : []
+      { invitercode: { $in: userCodes } },
+      { parentUser: { $in: userCodes } },
+      { referralCode: { $in: userCodes } },
+      { inviterPhone: { $in: userCodes } }
     ]
-  });
+  }).lean();
   const paramsObj = {};
   let completedCount = 0;
   for (const m of directMembers) {
@@ -3105,8 +3118,8 @@ async function getInviteNewbieData(req) {
           ...m.mobileNo ? [{ phone: m.mobileNo }] : []
         ],
         payer_status: 3,
-        type: { $ne: "sell" }
-      });
+        type: { $in: ["recharge", "buy", "deposit", "buyitoken"] }
+      }).lean();
       friendTotalBought = boughtTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
     }
     const friendDone = isFriendDone || friendTotalBought >= 1e3;
@@ -3117,8 +3130,20 @@ async function getInviteNewbieData(req) {
       paramsObj[friendPhone] = "0";
     }
   }
-  const claimedCount = user.claimedInviteNewbieCount || 0;
-  const claimedAmt = claimedCount * 200;
+  const inviteRewardTxs = await Transaction.find({
+    userId: user._id,
+    payer_status: 3,
+    $or: [
+      { reason_for_rejection: /Invite Newbie Reward|Invite Reward|oldRptNew/i },
+      { description: /Invite Newbie Reward|Invite Reward|oldRptNew/i },
+      { rptNo: /^INV/i }
+    ]
+  }).lean();
+  const txClaimedAmt = inviteRewardTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const userFieldClaimedCount = Number(user.claimedInviteNewbieCount || 0);
+  const userFieldClaimedAmt = Number(user.inviteNewbieClaimedAmt || 0);
+  const claimedAmt = Math.max(txClaimedAmt, userFieldClaimedCount * 200, userFieldClaimedAmt);
+  const claimedCount = Math.floor(claimedAmt / 200);
   return {
     user,
     directMembers,
@@ -3129,7 +3154,7 @@ async function getInviteNewbieData(req) {
     claimedAmt
   };
 }
-app.get(["/xxapi/inviteNewbieStepTotal/init", "/xxapi/oldRptNew/init"], async (req, res) => {
+app.get(["/xxapi/inviteNewbieStepTotal/init", "/xxapi/oldRptNew/init", "/xxapi/invite_newbie_step_total/init"], async (req, res) => {
   const data = await getInviteNewbieData(req);
   if (!data) return res.json({ code: 403, msg: "Unauthorized" });
   const { paramsObj, completedCount, claimedCount, claimedAmt } = data;
@@ -3159,7 +3184,7 @@ app.get(["/xxapi/inviteNewbieStepTotal/init", "/xxapi/oldRptNew/init"], async (r
     }
   });
 });
-app.post("/xxapi/oldRptNew/reward", async (req, res) => {
+app.post(["/xxapi/oldRptNew/reward", "/xxapi/inviteNewbieStepTotal/reward", "/xxapi/invite_newbie_step_total/reward"], async (req, res) => {
   const data = await getInviteNewbieData(req);
   if (!data) return res.json({ code: 403, msg: "Unauthorized" });
   const { user, completedCount, claimedCount } = data;
@@ -3169,7 +3194,10 @@ app.post("/xxapi/oldRptNew/reward", async (req, res) => {
   }
   const rewardAmt = unclaimedCount * 200;
   user.balance = (user.balance || 0) + rewardAmt;
-  user.claimedInviteNewbieCount = claimedCount + unclaimedCount;
+  const newClaimedCount = claimedCount + unclaimedCount;
+  const newClaimedAmt = newClaimedCount * 200;
+  user.claimedInviteNewbieCount = newClaimedCount;
+  user.inviteNewbieClaimedAmt = newClaimedAmt;
   await user.save();
   const rptNo = "INV" + Date.now() + Math.floor(Math.random() * 1e3);
   const newTx = new Transaction({
@@ -3184,8 +3212,8 @@ app.post("/xxapi/oldRptNew/reward", async (req, res) => {
     currentStep: 2
   });
   await newTx.save();
-  console.log(`[Invite Reward] User ${user.phone} claimed \u20B9${rewardAmt} for ${unclaimedCount} friends.`);
-  return res.json({ code: 0, msg: "success", data: { rewardAmt } });
+  console.log(`[Invite Newbie Reward] User ${user.phone} claimed \u20B9${rewardAmt} for ${unclaimedCount} friends.`);
+  return res.json({ code: 0, msg: "success", data: { rewardAmt, reward: rewardAmt, settleAmt: rewardAmt } });
 });
 app.all([
   "/xxapi/newbieDayStep/reward",
@@ -4893,24 +4921,6 @@ app.post("/xxapi/inviteFriends/reward", async (req, res) => {
   } catch (e) {
     return res.json({ code: 500, msg: e.message });
   }
-});
-app.get("/xxapi/oldRptNew/init", async (req, res) => {
-  return res.json({
-    code: 0,
-    msg: "success",
-    data: {
-      oldRptNewReward: {
-        rule: JSON.stringify({ "1": 10, "3": 30 }),
-        fixed: 10
-      },
-      activityRecord: {
-        rewardAmt: 0,
-        params: "{}",
-        condition: 0,
-        settleAmt: 0
-      }
-    }
-  });
 });
 app.all(["/xxapi/deviceInfo", "/xxapi/referral*", "/xxapi/team/edit/ratio", "/xxapi/transfertochilder", "/xxapi/linkKyc", "/xxapi/bscAddress", "/xxapi/buyUsdt/binanceWithdrawalQuote", "/xxapi/uploadimage*", "/xxapi/mark-as-read*", "/xxapi/mark-all-as-read", "/xxapi/cw_inviterank", "/xxapi/cw_profitrank", "/xxapi/cwkyc", "/xxapi/inviteFriends/*", "/xxapi/returnToRpt/*", "/xxapi/buyInrActivity/*", "/xxapi/subBuyReward/*", "/xxapi/sevenDayCharge/*"], async (req, res) => {
   return res.json({ code: 0, msg: "success", data: {} });
