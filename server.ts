@@ -7592,82 +7592,123 @@ async function creditBuyerForCompletedOrder(tx: any): Promise<boolean> {
   if (!tx || Number(tx.payer_status) !== 3) {
     return false;
   }
-  if (tx.buyerCredited || tx.isBalanceCredited) {
-    return false; // Already credited
+
+  // If tx is a Sell transaction, find the counterpart Buy transaction first or use buyerUserId/buyerPhone
+  let buyTx = tx;
+  const isSellTx = tx.type === 'sell' || String(tx.rptNo || '').startsWith('SELL_');
+  if (isSellTx) {
+    const rootRptNo = String(tx.rptNo || '').replace(/^SELL_/, '');
+    const foundBuyTx = await Transaction.findOne({ rptNo: rootRptNo, type: { $ne: 'sell' } });
+    if (foundBuyTx) {
+      buyTx = foundBuyTx;
+    }
   }
 
-  const txId = tx._id;
-  // Atomically claim crediting right to prevent duplicate wallet credits
+  if (buyTx.buyerCredited || buyTx.isBalanceCredited) {
+    return false; // Already credited to buyer
+  }
+
+  const buyTxId = buyTx._id;
+  // Atomically claim crediting right on the BUY transaction
   const claimedTx = await Transaction.findOneAndUpdate(
-    { _id: txId, payer_status: 3, buyerCredited: { $ne: true } },
+    { _id: buyTxId, payer_status: 3, buyerCredited: { $ne: true } },
     { $set: { buyerCredited: true, isBalanceCredited: true } },
     { new: true }
   );
 
   if (!claimedTx) {
-    return false; // Already claimed by another thread
+    if (tx._id && String(tx._id) !== String(buyTxId)) {
+      await Transaction.updateOne({ _id: tx._id }, { $set: { buyerCredited: true, isBalanceCredited: true } }).catch(() => {});
+    }
+    return false; // Already claimed or credited
   }
 
-  const principalAmt = Number(claimedTx.amount || tx.amount || 0);
+  const principalAmt = Number(claimedTx.amount || buyTx.amount || tx.amount || 0);
   if (!principalAmt || principalAmt <= 0) return false;
 
   const reward4Pct = Math.round((principalAmt * 0.04) * 100) / 100;
   const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
 
-  // Search candidate phone numbers
-  const candidatePhones = [claimedTx.buyerPhone, tx.buyerPhone, claimedTx.phone, tx.phone].filter(Boolean).map(p => String(p));
-  let cleanPhones: string[] = [];
-  candidatePhones.forEach(p => {
+  // STRICT BUYER IDENTIFICATION:
+  // Must exclude sellerId and sellerPhone to prevent accidental crediting of seller!
+  const sellerIdStr = String(claimedTx.sellerId || buyTx.sellerId || tx.sellerId || '');
+  const sellerPhoneStr = String(claimedTx.sellerPhone || buyTx.sellerPhone || tx.sellerPhone || '');
+
+  // Extract candidate buyer IDs (excluding seller ID)
+  const candidateBuyerIds = [
+    claimedTx.buyerUserId, buyTx.buyerUserId, tx.buyerUserId,
+    claimedTx.userId, buyTx.userId
+  ].filter(Boolean).map(id => String(id)).filter(id => id !== sellerIdStr);
+
+  // Extract candidate buyer phones (excluding seller phone)
+  const candidateBuyerPhones = [
+    claimedTx.buyerPhone, buyTx.buyerPhone, tx.buyerPhone,
+    claimedTx.phone, buyTx.phone
+  ].filter(Boolean).map(p => String(p)).filter(p => p !== sellerPhoneStr);
+
+  let cleanBuyerPhones: string[] = [];
+  candidateBuyerPhones.forEach(p => {
     const clean = String(p).replace(/\D/g, '').slice(-10);
-    if (clean.length === 10) cleanPhones.push(clean);
+    if (clean.length === 10 && clean !== sellerPhoneStr.replace(/\D/g, '').slice(-10)) {
+      cleanBuyerPhones.push(clean);
+    }
   });
 
   let buyer: any = null;
 
-  // 1. Try finding buyer by buyerUserId or userId directly using ObjectId/findById
-  const rawBuyerId = claimedTx.buyerUserId || tx.buyerUserId || claimedTx.userId || tx.userId;
-  if (rawBuyerId) {
+  // 1. Try candidate buyer IDs directly
+  for (const bId of candidateBuyerIds) {
+    if (!bId || bId === sellerIdStr) continue;
     try {
-      if (mongoose.Types.ObjectId.isValid(rawBuyerId)) {
-        buyer = await User.findById(rawBuyerId);
+      if (mongoose.Types.ObjectId.isValid(bId)) {
+        buyer = await User.findById(bId);
       } else {
-        buyer = await User.findOne({ _id: rawBuyerId });
+        buyer = await User.findOne({ _id: bId });
       }
+      if (buyer) break;
     } catch (e) {}
   }
 
-  // 2. Try finding buyer by buyerPhone or phone
-  if (!buyer) {
-    const rawBuyerPhone = claimedTx.buyerPhone || tx.buyerPhone;
-    if (rawBuyerPhone) {
-      buyer = await User.findOne({
-        $or: [
-          { phone: rawBuyerPhone },
-          { mobileNo: rawBuyerPhone }
-        ]
-      });
-    }
-  }
-
-  // 3. Try finding by 10-digit clean phones
-  if (!buyer && cleanPhones.length > 0) {
+  // 2. Try candidate buyer phones
+  if (!buyer && candidateBuyerPhones.length > 0) {
     buyer = await User.findOne({
       $or: [
-        { phone: { $in: cleanPhones } },
-        { mobileNo: { $in: cleanPhones } }
+        { phone: { $in: candidateBuyerPhones } },
+        { mobileNo: { $in: candidateBuyerPhones } }
       ]
     });
   }
 
-  // 4. Try finding by buyerVpas in collectionTools / upiDetails
+  // 3. Try clean 10-digit buyer phones
+  if (!buyer && cleanBuyerPhones.length > 0) {
+    buyer = await User.findOne({
+      $or: [
+        { phone: { $in: cleanBuyerPhones } },
+        { mobileNo: { $in: cleanBuyerPhones } }
+      ]
+    });
+  }
+
+  // 4. Try matching buyerVpas from buyer's collection tools (excluding seller)
   if (!buyer && Array.isArray(claimedTx.buyerVpas) && claimedTx.buyerVpas.length > 0) {
     buyer = await User.findOne({
-      $or: [
-        { 'collectionTools.upi': { $in: claimedTx.buyerVpas } },
-        { 'collectionTools.account': { $in: claimedTx.buyerVpas } },
-        { 'upiDetails.upi': { $in: claimedTx.buyerVpas } }
+      $and: [
+        { _id: { $ne: sellerIdStr } },
+        {
+          $or: [
+            { 'collectionTools.upi': { $in: claimedTx.buyerVpas } },
+            { 'collectionTools.account': { $in: claimedTx.buyerVpas } },
+            { 'upiDetails.upi': { $in: claimedTx.buyerVpas } }
+          ]
+        }
       ]
     });
+  }
+
+  // Safety sanity check: Make sure buyer is NOT the seller!
+  if (buyer && sellerIdStr && String(buyer._id) === sellerIdStr) {
+    console.error(`[Credit Buyer CRITICAL ERROR] Matched user is SELLER ${buyer.phone}! Aborting credit to prevent crediting seller.`);
+    return false;
   }
 
   if (buyer) {
@@ -7680,11 +7721,15 @@ async function creditBuyerForCompletedOrder(tx: any): Promise<boolean> {
     claimedTx.isBalanceCredited = true;
     await claimedTx.save().catch(() => {});
 
+    if (tx._id && String(tx._id) !== String(buyTxId)) {
+      await Transaction.updateOne({ _id: tx._id }, { $set: { buyerCredited: true, isBalanceCredited: true } }).catch(() => {});
+    }
+
     await distributeTeamCommission(buyer, principalAmt).catch(() => {});
-    console.log(`[Credit Buyer Success] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} (4% commission) = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
+    console.log(`[Credit Buyer SUCCESS] Buyer ${buyer.phone} (ID: ${buyer._id}) credited principal +₹${principalAmt} + ₹${reward4Pct} (4% commission) = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
     return true;
   } else {
-    console.warn(`[Credit Buyer Warning] Buyer not found for completed order ${claimedTx.rptNo}`);
+    console.warn(`[Credit Buyer Warning] Buyer NOT found for order ${claimedTx.rptNo}. Seller was: ${sellerPhoneStr}`);
     return false;
   }
 }

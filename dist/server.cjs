@@ -6449,67 +6449,104 @@ async function creditBuyerForCompletedOrder(tx) {
   if (!tx || Number(tx.payer_status) !== 3) {
     return false;
   }
-  if (tx.buyerCredited || tx.isBalanceCredited) {
+  let buyTx = tx;
+  const isSellTx = tx.type === "sell" || String(tx.rptNo || "").startsWith("SELL_");
+  if (isSellTx) {
+    const rootRptNo = String(tx.rptNo || "").replace(/^SELL_/, "");
+    const foundBuyTx = await Transaction.findOne({ rptNo: rootRptNo, type: { $ne: "sell" } });
+    if (foundBuyTx) {
+      buyTx = foundBuyTx;
+    }
+  }
+  if (buyTx.buyerCredited || buyTx.isBalanceCredited) {
     return false;
   }
-  const txId = tx._id;
+  const buyTxId = buyTx._id;
   const claimedTx = await Transaction.findOneAndUpdate(
-    { _id: txId, payer_status: 3, buyerCredited: { $ne: true } },
+    { _id: buyTxId, payer_status: 3, buyerCredited: { $ne: true } },
     { $set: { buyerCredited: true, isBalanceCredited: true } },
     { new: true }
   );
   if (!claimedTx) {
+    if (tx._id && String(tx._id) !== String(buyTxId)) {
+      await Transaction.updateOne({ _id: tx._id }, { $set: { buyerCredited: true, isBalanceCredited: true } }).catch(() => {
+      });
+    }
     return false;
   }
-  const principalAmt = Number(claimedTx.amount || tx.amount || 0);
+  const principalAmt = Number(claimedTx.amount || buyTx.amount || tx.amount || 0);
   if (!principalAmt || principalAmt <= 0) return false;
   const reward4Pct = Math.round(principalAmt * 0.04 * 100) / 100;
   const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
-  const candidatePhones = [claimedTx.buyerPhone, tx.buyerPhone, claimedTx.phone, tx.phone].filter(Boolean).map((p) => String(p));
-  let cleanPhones = [];
-  candidatePhones.forEach((p) => {
+  const sellerIdStr = String(claimedTx.sellerId || buyTx.sellerId || tx.sellerId || "");
+  const sellerPhoneStr = String(claimedTx.sellerPhone || buyTx.sellerPhone || tx.sellerPhone || "");
+  const candidateBuyerIds = [
+    claimedTx.buyerUserId,
+    buyTx.buyerUserId,
+    tx.buyerUserId,
+    claimedTx.userId,
+    buyTx.userId
+  ].filter(Boolean).map((id) => String(id)).filter((id) => id !== sellerIdStr);
+  const candidateBuyerPhones = [
+    claimedTx.buyerPhone,
+    buyTx.buyerPhone,
+    tx.buyerPhone,
+    claimedTx.phone,
+    buyTx.phone
+  ].filter(Boolean).map((p) => String(p)).filter((p) => p !== sellerPhoneStr);
+  let cleanBuyerPhones = [];
+  candidateBuyerPhones.forEach((p) => {
     const clean = String(p).replace(/\D/g, "").slice(-10);
-    if (clean.length === 10) cleanPhones.push(clean);
+    if (clean.length === 10 && clean !== sellerPhoneStr.replace(/\D/g, "").slice(-10)) {
+      cleanBuyerPhones.push(clean);
+    }
   });
   let buyer = null;
-  const rawBuyerId = claimedTx.buyerUserId || tx.buyerUserId || claimedTx.userId || tx.userId;
-  if (rawBuyerId) {
+  for (const bId of candidateBuyerIds) {
+    if (!bId || bId === sellerIdStr) continue;
     try {
-      if (import_mongoose.default.Types.ObjectId.isValid(rawBuyerId)) {
-        buyer = await User.findById(rawBuyerId);
+      if (import_mongoose.default.Types.ObjectId.isValid(bId)) {
+        buyer = await User.findById(bId);
       } else {
-        buyer = await User.findOne({ _id: rawBuyerId });
+        buyer = await User.findOne({ _id: bId });
       }
+      if (buyer) break;
     } catch (e) {
     }
   }
-  if (!buyer) {
-    const rawBuyerPhone = claimedTx.buyerPhone || tx.buyerPhone;
-    if (rawBuyerPhone) {
-      buyer = await User.findOne({
-        $or: [
-          { phone: rawBuyerPhone },
-          { mobileNo: rawBuyerPhone }
-        ]
-      });
-    }
-  }
-  if (!buyer && cleanPhones.length > 0) {
+  if (!buyer && candidateBuyerPhones.length > 0) {
     buyer = await User.findOne({
       $or: [
-        { phone: { $in: cleanPhones } },
-        { mobileNo: { $in: cleanPhones } }
+        { phone: { $in: candidateBuyerPhones } },
+        { mobileNo: { $in: candidateBuyerPhones } }
+      ]
+    });
+  }
+  if (!buyer && cleanBuyerPhones.length > 0) {
+    buyer = await User.findOne({
+      $or: [
+        { phone: { $in: cleanBuyerPhones } },
+        { mobileNo: { $in: cleanBuyerPhones } }
       ]
     });
   }
   if (!buyer && Array.isArray(claimedTx.buyerVpas) && claimedTx.buyerVpas.length > 0) {
     buyer = await User.findOne({
-      $or: [
-        { "collectionTools.upi": { $in: claimedTx.buyerVpas } },
-        { "collectionTools.account": { $in: claimedTx.buyerVpas } },
-        { "upiDetails.upi": { $in: claimedTx.buyerVpas } }
+      $and: [
+        { _id: { $ne: sellerIdStr } },
+        {
+          $or: [
+            { "collectionTools.upi": { $in: claimedTx.buyerVpas } },
+            { "collectionTools.account": { $in: claimedTx.buyerVpas } },
+            { "upiDetails.upi": { $in: claimedTx.buyerVpas } }
+          ]
+        }
       ]
     });
+  }
+  if (buyer && sellerIdStr && String(buyer._id) === sellerIdStr) {
+    console.error(`[Credit Buyer CRITICAL ERROR] Matched user is SELLER ${buyer.phone}! Aborting credit to prevent crediting seller.`);
+    return false;
   }
   if (buyer) {
     buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
@@ -6520,12 +6557,16 @@ async function creditBuyerForCompletedOrder(tx) {
     claimedTx.isBalanceCredited = true;
     await claimedTx.save().catch(() => {
     });
+    if (tx._id && String(tx._id) !== String(buyTxId)) {
+      await Transaction.updateOne({ _id: tx._id }, { $set: { buyerCredited: true, isBalanceCredited: true } }).catch(() => {
+      });
+    }
     await distributeTeamCommission(buyer, principalAmt).catch(() => {
     });
-    console.log(`[Credit Buyer Success] Buyer ${buyer.phone} wallet credited principal +\u20B9${principalAmt} + \u20B9${reward4Pct} (4% commission) = Total +\u20B9${totalCredit}. New balance: \u20B9${buyer.balance}`);
+    console.log(`[Credit Buyer SUCCESS] Buyer ${buyer.phone} (ID: ${buyer._id}) credited principal +\u20B9${principalAmt} + \u20B9${reward4Pct} (4% commission) = Total +\u20B9${totalCredit}. New balance: \u20B9${buyer.balance}`);
     return true;
   } else {
-    console.warn(`[Credit Buyer Warning] Buyer not found for completed order ${claimedTx.rptNo}`);
+    console.warn(`[Credit Buyer Warning] Buyer NOT found for order ${claimedTx.rptNo}. Seller was: ${sellerPhoneStr}`);
     return false;
   }
 }
