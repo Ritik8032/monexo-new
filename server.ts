@@ -8849,47 +8849,40 @@ app.post('/xxapi/transferTokenHistory', getTransferTokenHistory);
 // 11. SELL AND WITHDRAWAL ENDPOINTS
 async function getSellHistory(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  const user = await getUserByToken(req);
-  if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
+  try {
+    const user = await getUserByToken(req);
+    if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
 
-  const userIds = [user._id, user._id ? user._id.toString() : ''].filter(Boolean);
-  const userObjIds = userIds.map(id => {
-    try { return new mongoose.Types.ObjectId(id); } catch (e) { return null; }
-  }).filter(Boolean);
-  const allUserIds = [...userIds, ...userObjIds];
-  const phones = [user.phone, user.mobileNo].filter(Boolean);
+    const userIds = [user._id, user._id ? user._id.toString() : ''].filter(Boolean);
+    const userObjIds = userIds.map(id => {
+      try { return new mongoose.Types.ObjectId(id); } catch (e) { return null; }
+    }).filter(Boolean);
+    const allUserIds = [...userIds, ...userObjIds];
+    const phones = [user.phone, user.mobileNo].filter(Boolean);
 
-  const sellerOrConditions: any[] = [
-    { sellerId: { $in: allUserIds } },
-    { 'sellerId': { $in: userIds.map(String) } },
-    { sellerPhone: { $in: phones } },
-    { seller_phone: { $in: phones } },
-    { userId: { $in: allUserIds }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
-    { phone: { $in: phones }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
-    { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
-  ];
+    const sellerOrConditions: any[] = [
+      { sellerId: { $in: allUserIds } },
+      { 'sellerId': { $in: userIds.map(String) } },
+      { sellerPhone: { $in: phones } },
+      { seller_phone: { $in: phones } },
+      { userId: { $in: allUserIds }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
+      { phone: { $in: phones }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
+      { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
+    ];
 
-  const queryFilter: any = { $or: sellerOrConditions };
+    const queryFilter: any = { $or: sellerOrConditions };
 
-  // Parse status/tab filter from query or body
-  const rawStatus = (
-    req.query.status ?? req.body?.status ??
-    req.query.state ?? req.body?.state ??
-    req.query.orderState ?? req.body?.orderState ??
-    req.query.order_state ?? req.body?.order_state ??
-    req.query.tab ?? req.body?.tab ?? ''
-  );
-  const statusStr = String(rawStatus).toLowerCase().trim();
+    // Parse status/tab filter from query or body
+    const rawStatus = (
+      req.query.status ?? req.body?.status ??
+      req.query.state ?? req.body?.state ??
+      req.query.orderState ?? req.body?.orderState ??
+      req.query.order_state ?? req.body?.order_state ??
+      req.query.tab ?? req.body?.tab ?? ''
+    );
+    const statusStr = String(rawStatus).toLowerCase().trim();
 
-  if (['1', '2', 'paying', 'dispatched', 'undispatched', 'pending', 'in_progress', 'active'].includes(statusStr)) {
-    queryFilter.payer_status = { $in: [1, 2] };
-  } else if (['3', 'success', 'successfully', 'done', 'completed'].includes(statusStr)) {
-    queryFilter.payer_status = 3;
-  } else if (['4', '5', 'cancel', 'cancelled', 'failed', 'offline'].includes(statusStr)) {
-    queryFilter.payer_status = { $in: [4, 5] };
-  }
-
-  const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).limit(100).lean();
+    const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).limit(200).lean();
 
   // BATCH QUERY BUYER COUNTERPARTS FOR ULTRA-FAST RESOLUTION (NO N+1 QUERIES)
   const baseRpts = Array.from(new Set(allSellerTxs.map(tx => String(tx.rptNo || '').replace(/^SELL_/i, '').trim()).filter(Boolean)));
@@ -9074,6 +9067,17 @@ async function getSellHistory(req: any, res: any) {
       list: mappedList
     }
   });
+  } catch (err: any) {
+    console.error('[getSellHistory error]', err);
+    return res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        total: 0,
+        list: []
+      }
+    });
+  }
 }
 
 app.get('/xxapi/sell/history', getSellHistory);

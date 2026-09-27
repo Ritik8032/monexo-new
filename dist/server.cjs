@@ -7567,183 +7567,188 @@ app.get("/xxapi/transferTokenHistory", getTransferTokenHistory);
 app.post("/xxapi/transferTokenHistory", getTransferTokenHistory);
 async function getSellHistory(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  const user = await getUserByToken(req);
-  if (!user) return res.json({ code: 403, msg: "Unauthorized" });
-  const userIds = [user._id, user._id ? user._id.toString() : ""].filter(Boolean);
-  const userObjIds = userIds.map((id) => {
-    try {
-      return new import_mongoose.default.Types.ObjectId(id);
-    } catch (e) {
-      return null;
+  try {
+    const user = await getUserByToken(req);
+    if (!user) return res.json({ code: 403, msg: "Unauthorized" });
+    const userIds = [user._id, user._id ? user._id.toString() : ""].filter(Boolean);
+    const userObjIds = userIds.map((id) => {
+      try {
+        return new import_mongoose.default.Types.ObjectId(id);
+      } catch (e) {
+        return null;
+      }
+    }).filter(Boolean);
+    const allUserIds = [...userIds, ...userObjIds];
+    const phones = [user.phone, user.mobileNo].filter(Boolean);
+    const sellerOrConditions = [
+      { sellerId: { $in: allUserIds } },
+      { "sellerId": { $in: userIds.map(String) } },
+      { sellerPhone: { $in: phones } },
+      { seller_phone: { $in: phones } },
+      { userId: { $in: allUserIds }, type: { $in: ["sell", "SELL", "withdraw"] } },
+      { phone: { $in: phones }, type: { $in: ["sell", "SELL", "withdraw"] } },
+      { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
+    ];
+    const queryFilter = { $or: sellerOrConditions };
+    const rawStatus = req.query.status ?? req.body?.status ?? req.query.state ?? req.body?.state ?? req.query.orderState ?? req.body?.orderState ?? req.query.order_state ?? req.body?.order_state ?? req.query.tab ?? req.body?.tab ?? "";
+    const statusStr = String(rawStatus).toLowerCase().trim();
+    const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).limit(200).lean();
+    const baseRpts = Array.from(new Set(allSellerTxs.map((tx) => String(tx.rptNo || "").replace(/^SELL_/i, "").trim()).filter(Boolean)));
+    const buyerTxsList = baseRpts.length > 0 ? await Transaction.find({ rptNo: { $in: baseRpts } }).lean() : [];
+    const buyerTxMap = /* @__PURE__ */ new Map();
+    for (const bTx of buyerTxsList) {
+      if (bTx && bTx.rptNo) buyerTxMap.set(String(bTx.rptNo).trim(), bTx);
     }
-  }).filter(Boolean);
-  const allUserIds = [...userIds, ...userObjIds];
-  const phones = [user.phone, user.mobileNo].filter(Boolean);
-  const sellerOrConditions = [
-    { sellerId: { $in: allUserIds } },
-    { "sellerId": { $in: userIds.map(String) } },
-    { sellerPhone: { $in: phones } },
-    { seller_phone: { $in: phones } },
-    { userId: { $in: allUserIds }, type: { $in: ["sell", "SELL", "withdraw"] } },
-    { phone: { $in: phones }, type: { $in: ["sell", "SELL", "withdraw"] } },
-    { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
-  ];
-  const queryFilter = { $or: sellerOrConditions };
-  const rawStatus = req.query.status ?? req.body?.status ?? req.query.state ?? req.body?.state ?? req.query.orderState ?? req.body?.orderState ?? req.query.order_state ?? req.body?.order_state ?? req.query.tab ?? req.body?.tab ?? "";
-  const statusStr = String(rawStatus).toLowerCase().trim();
-  if (["1", "2", "paying", "dispatched", "undispatched", "pending", "in_progress", "active"].includes(statusStr)) {
-    queryFilter.payer_status = { $in: [1, 2] };
-  } else if (["3", "success", "successfully", "done", "completed"].includes(statusStr)) {
-    queryFilter.payer_status = 3;
-  } else if (["4", "5", "cancel", "cancelled", "failed", "offline"].includes(statusStr)) {
-    queryFilter.payer_status = { $in: [4, 5] };
-  }
-  const allSellerTxs = await Transaction.find(queryFilter).sort({ ctime: -1, _id: -1 }).limit(100).lean();
-  const baseRpts = Array.from(new Set(allSellerTxs.map((tx) => String(tx.rptNo || "").replace(/^SELL_/i, "").trim()).filter(Boolean)));
-  const buyerTxsList = baseRpts.length > 0 ? await Transaction.find({ rptNo: { $in: baseRpts } }).lean() : [];
-  const buyerTxMap = /* @__PURE__ */ new Map();
-  for (const bTx of buyerTxsList) {
-    if (bTx && bTx.rptNo) buyerTxMap.set(String(bTx.rptNo).trim(), bTx);
-  }
-  const uniqueTxMap = /* @__PURE__ */ new Map();
-  for (const tx of allSellerTxs) {
-    const rawRpt = tx.rptNo || (tx._id ? tx._id.toString() : "");
-    const baseRpt = rawRpt.replace(/^SELL_/i, "").trim();
-    const buyerTx = buyerTxMap.get(baseRpt);
-    const isCancelled = tx.payer_status === 4 || tx.payer_status === 5 || buyerTx?.payer_status === 4 || buyerTx?.payer_status === 5 || isOrderCancelledForUser("", baseRpt) || baseRpt && orderSlipMap.get(baseRpt)?.payer_status === 4;
-    const isSuccess = tx.payer_status === 3 || buyerTx?.payer_status === 3;
-    let realStatus = tx.payer_status;
-    if (isCancelled) realStatus = 4;
-    else if (isSuccess) realStatus = 3;
-    tx.payer_status = realStatus;
-    if (buyerTx?.cancelled_by) tx.cancelled_by = buyerTx.cancelled_by;
-    const existing = uniqueTxMap.get(baseRpt);
-    if (!existing) {
-      uniqueTxMap.set(baseRpt, tx);
-    } else {
-      if (tx.type === "sell" || rawRpt.startsWith("SELL_")) {
+    const uniqueTxMap = /* @__PURE__ */ new Map();
+    for (const tx of allSellerTxs) {
+      const rawRpt = tx.rptNo || (tx._id ? tx._id.toString() : "");
+      const baseRpt = rawRpt.replace(/^SELL_/i, "").trim();
+      const buyerTx = buyerTxMap.get(baseRpt);
+      const isCancelled = tx.payer_status === 4 || tx.payer_status === 5 || buyerTx?.payer_status === 4 || buyerTx?.payer_status === 5 || isOrderCancelledForUser("", baseRpt) || baseRpt && orderSlipMap.get(baseRpt)?.payer_status === 4;
+      const isSuccess = tx.payer_status === 3 || buyerTx?.payer_status === 3;
+      let realStatus = tx.payer_status;
+      if (isCancelled) realStatus = 4;
+      else if (isSuccess) realStatus = 3;
+      tx.payer_status = realStatus;
+      if (buyerTx?.cancelled_by) tx.cancelled_by = buyerTx.cancelled_by;
+      const existing = uniqueTxMap.get(baseRpt);
+      if (!existing) {
         uniqueTxMap.set(baseRpt, tx);
+      } else {
+        if (tx.type === "sell" || rawRpt.startsWith("SELL_")) {
+          uniqueTxMap.set(baseRpt, tx);
+        }
       }
     }
-  }
-  let deduplicatedTxs = Array.from(uniqueTxMap.values());
-  deduplicatedTxs = deduplicatedTxs.filter((tx) => {
-    if (!tx) return false;
-    const txType = String(tx.type || "").toLowerCase();
-    const isUserBuyer = tx.buyerUserId && (tx.buyerUserId.toString() === user._id.toString() || userIds.includes(tx.buyerUserId.toString())) || tx.buyerPhone && phones.includes(tx.buyerPhone) || tx.userId && (tx.userId.toString() === user._id.toString() || userIds.includes(tx.userId.toString())) && ["buy", "recharge", "buyitoken", "deposit", "admin"].includes(txType);
-    if (isUserBuyer || ["buy", "recharge", "buyitoken", "deposit"].includes(txType)) {
-      return false;
-    }
-    return true;
-  });
-  if (["1", "2", "paying", "dispatched", "undispatched", "pending", "in_progress", "active"].includes(statusStr)) {
-    deduplicatedTxs = deduplicatedTxs.filter((t) => t.payer_status === 1 || t.payer_status === 2);
-  } else if (["3", "success", "successfully", "done", "completed"].includes(statusStr)) {
-    deduplicatedTxs = deduplicatedTxs.filter((t) => t.payer_status === 3);
-  } else if (["4", "5", "cancel", "cancelled", "failed", "offline"].includes(statusStr)) {
-    deduplicatedTxs = deduplicatedTxs.filter((t) => t.payer_status === 4 || t.payer_status === 5);
-  }
-  const page = Number(req.query.page) || Number(req.body?.page) || 1;
-  const limit = Number(req.query.limit) || Number(req.body?.limit) || 20;
-  const start = (page - 1) * limit;
-  const list = deduplicatedTxs.slice(start, start + limit);
-  const mappedList = list.map((tx) => {
-    const rawRpt = tx.rptNo || (tx._id ? tx._id.toString() : "");
-    const cleanRptNo = String(rawRpt).replace(/^SELL_/i, "").trim();
-    const isCancelled = tx.payer_status === 4 || tx.payer_status === 5 || isOrderCancelledForUser("", cleanRptNo);
-    let effectivePayerStatus = isCancelled ? 4 : tx.payer_status;
-    let orderState = 2;
-    if (effectivePayerStatus === 1) orderState = 1;
-    else if (effectivePayerStatus === 2) orderState = 2;
-    else if (effectivePayerStatus === 3) orderState = 3;
-    else if (effectivePayerStatus === 4 || effectivePayerStatus === 5) orderState = 5;
-    const obj = tx.toObject ? tx.toObject() : { ...tx };
-    const cancelReason = tx.cancelRemark || tx.cancel_remark || tx.rejectionReason || tx.reason || tx.adminReason || "Cancelled by Buyer";
-    let sellerCtType = tx.sellerCtType;
-    if (!sellerCtType && user && user.collectionTools && Array.isArray(user.collectionTools)) {
-      const matched = user.collectionTools.find(
-        (t) => t && (t.account === tx.payee_bank_account || t.upi === tx.payee_bank_account)
-      );
-      if (matched && matched.ctType) {
-        sellerCtType = matched.ctType;
+    let deduplicatedTxs = Array.from(uniqueTxMap.values());
+    deduplicatedTxs = deduplicatedTxs.filter((tx) => {
+      if (!tx) return false;
+      const txType = String(tx.type || "").toLowerCase();
+      const isUserBuyer = tx.buyerUserId && (tx.buyerUserId.toString() === user._id.toString() || userIds.includes(tx.buyerUserId.toString())) || tx.buyerPhone && phones.includes(tx.buyerPhone) || tx.userId && (tx.userId.toString() === user._id.toString() || userIds.includes(tx.userId.toString())) && ["buy", "recharge", "buyitoken", "deposit", "admin"].includes(txType);
+      if (isUserBuyer || ["buy", "recharge", "buyitoken", "deposit"].includes(txType)) {
+        return false;
       }
+      return true;
+    });
+    if (["1", "2", "paying", "dispatched", "undispatched", "pending", "in_progress", "active"].includes(statusStr)) {
+      deduplicatedTxs = deduplicatedTxs.filter((t) => t.payer_status === 1 || t.payer_status === 2);
+    } else if (["3", "success", "successfully", "done", "completed"].includes(statusStr)) {
+      deduplicatedTxs = deduplicatedTxs.filter((t) => t.payer_status === 3);
+    } else if (["4", "5", "cancel", "cancelled", "failed", "offline"].includes(statusStr)) {
+      deduplicatedTxs = deduplicatedTxs.filter((t) => t.payer_status === 4 || t.payer_status === 5);
     }
-    if (!sellerCtType) {
-      sellerCtType = tx.ctType || tx.ct_type || 1;
-    }
-    const isUpi = tx.payment_method === 1 || String(tx.payee_bankname || "").toLowerCase().includes("upi") || !tx.payee_ifsc;
-    const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1e3);
-    const dealTimeSec = tx.dealTime || tx.utime || (effectivePayerStatus >= 2 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : debitTimeSec);
-    const finishTimeSec = tx.finishTime || tx.fnsDate || (effectivePayerStatus >= 3 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : 0);
-    const sellerReceiveUpi = tx.payee_bank_account || tx.upi || "";
-    const userPayerStatus = effectivePayerStatus === 4 || effectivePayerStatus === 5 ? 5 : effectivePayerStatus;
-    return {
-      ...obj,
-      id: cleanRptNo,
-      rptNo: cleanRptNo,
-      orderNo: cleanRptNo,
-      order_id: cleanRptNo,
-      amount: tx.amount,
-      realAmount: tx.amount,
-      orderState,
-      order_state: orderState,
-      state: orderState,
-      payer_status: userPayerStatus,
-      status: userPayerStatus,
-      real_payer_status: effectivePayerStatus,
-      cancelled_by: isCancelled ? "buyer" : tx.cancelled_by,
-      cancel_remark: cancelReason,
-      cancelRemark: cancelReason,
-      rejectionReason: cancelReason,
-      reason: cancelReason,
-      adminReason: tx.adminReason || cancelReason,
-      payment_method: isUpi ? 1 : 2,
-      method: "inr",
-      orderStateText: effectivePayerStatus === 3 || orderState === 3 ? "Success" : effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5 ? "Cancelled by Buyer" : effectivePayerStatus === 1 || orderState === 1 ? "Paying" : "In Review",
-      statusText: effectivePayerStatus === 3 || orderState === 3 ? "Success" : effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5 ? "Cancelled by Buyer" : effectivePayerStatus === 1 || orderState === 1 ? "Paying" : "In Review",
-      status_str: effectivePayerStatus === 3 || orderState === 3 ? "Success" : effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5 ? "Cancelled" : effectivePayerStatus === 1 || orderState === 1 ? "Paying" : "In Review",
-      canConfirm: isCancelled ? false : effectivePayerStatus === 2 || effectivePayerStatus === 1,
-      canAccept: isCancelled ? false : effectivePayerStatus === 2 || effectivePayerStatus === 1,
-      canPay: isCancelled ? false : effectivePayerStatus === 1,
-      payType: sellerCtType,
-      isBank: !isUpi,
-      ctType: sellerCtType,
-      ct_type: sellerCtType,
-      ctName: mapCtTypeToName(sellerCtType),
-      ct_name: mapCtTypeToName(sellerCtType),
-      channel: mapCtTypeToUpiType(sellerCtType),
-      receiveAccount: sellerReceiveUpi,
-      upi: sellerReceiveUpi,
-      account: sellerReceiveUpi,
-      acctNo: sellerReceiveUpi,
-      payAccount: sellerReceiveUpi,
-      payer_upi: tx.ct_account || tx.payer_upi || tx.ctAccount || "",
-      ctAccount: tx.ct_account || tx.payer_upi || tx.ctAccount || "",
-      ct_account: tx.ct_account || tx.payer_upi || tx.ctAccount || "",
-      utr: tx.utr || tx.ref_no || "",
-      payee_recipients_name: tx.payee_recipients_name || "Merchant Partner",
-      pnname: tx.payee_recipients_name || "Merchant Partner",
-      name: tx.payee_recipients_name || "Merchant Partner",
-      crtDate: debitTimeSec * 1e3,
-      uptDate: dealTimeSec * 1e3,
-      fnsDate: finishTimeSec ? finishTimeSec * 1e3 : 0,
-      debitTime: debitTimeStr,
-      debit_time: debitTimeStr,
-      dealTime: dealTimeStr,
-      deal_time: dealTimeStr,
-      finishTime: finishTimeStr,
-      finish_time: finishTimeStr,
-      secLimit: 0
-    };
-  });
-  return res.json({
-    code: 0,
-    msg: "success",
-    data: {
-      total: deduplicatedTxs.length,
-      list: mappedList
-    }
-  });
+    const page = Number(req.query.page) || Number(req.body?.page) || 1;
+    const limit = Number(req.query.limit) || Number(req.body?.limit) || 20;
+    const start = (page - 1) * limit;
+    const list = deduplicatedTxs.slice(start, start + limit);
+    const mappedList = list.map((tx) => {
+      const rawRpt = tx.rptNo || (tx._id ? tx._id.toString() : "");
+      const cleanRptNo = String(rawRpt).replace(/^SELL_/i, "").trim();
+      const isCancelled = tx.payer_status === 4 || tx.payer_status === 5 || isOrderCancelledForUser("", cleanRptNo);
+      let effectivePayerStatus = isCancelled ? 4 : tx.payer_status;
+      let orderState = 2;
+      if (effectivePayerStatus === 1) orderState = 1;
+      else if (effectivePayerStatus === 2) orderState = 2;
+      else if (effectivePayerStatus === 3) orderState = 3;
+      else if (effectivePayerStatus === 4 || effectivePayerStatus === 5) orderState = 5;
+      const obj = tx.toObject ? tx.toObject() : { ...tx };
+      const cancelReason = tx.cancelRemark || tx.cancel_remark || tx.rejectionReason || tx.reason || tx.adminReason || "Cancelled by Buyer";
+      let sellerCtType = tx.sellerCtType;
+      if (!sellerCtType && user && user.collectionTools && Array.isArray(user.collectionTools)) {
+        const matched = user.collectionTools.find(
+          (t) => t && (t.account === tx.payee_bank_account || t.upi === tx.payee_bank_account)
+        );
+        if (matched && matched.ctType) {
+          sellerCtType = matched.ctType;
+        }
+      }
+      if (!sellerCtType) {
+        sellerCtType = tx.ctType || tx.ct_type || 1;
+      }
+      const isUpi = tx.payment_method === 1 || String(tx.payee_bankname || "").toLowerCase().includes("upi") || !tx.payee_ifsc;
+      const debitTimeSec = tx.ctime || Math.floor(Date.now() / 1e3);
+      const dealTimeSec = tx.dealTime || tx.utime || (effectivePayerStatus >= 2 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : debitTimeSec);
+      const finishTimeSec = tx.finishTime || tx.fnsDate || (effectivePayerStatus >= 3 ? tx.updatedAt ? Math.floor(new Date(tx.updatedAt).getTime() / 1e3) : debitTimeSec : 0);
+      const sellerReceiveUpi = tx.payee_bank_account || tx.upi || "";
+      const userPayerStatus = effectivePayerStatus === 4 || effectivePayerStatus === 5 ? 5 : effectivePayerStatus;
+      return {
+        ...obj,
+        id: cleanRptNo,
+        rptNo: cleanRptNo,
+        orderNo: cleanRptNo,
+        order_id: cleanRptNo,
+        amount: tx.amount,
+        realAmount: tx.amount,
+        orderState,
+        order_state: orderState,
+        state: orderState,
+        payer_status: userPayerStatus,
+        status: userPayerStatus,
+        real_payer_status: effectivePayerStatus,
+        cancelled_by: isCancelled ? "buyer" : tx.cancelled_by,
+        cancel_remark: cancelReason,
+        cancelRemark: cancelReason,
+        rejectionReason: cancelReason,
+        reason: cancelReason,
+        adminReason: tx.adminReason || cancelReason,
+        payment_method: isUpi ? 1 : 2,
+        method: "inr",
+        orderStateText: effectivePayerStatus === 3 || orderState === 3 ? "Success" : effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5 ? "Cancelled by Buyer" : effectivePayerStatus === 1 || orderState === 1 ? "Paying" : "In Review",
+        statusText: effectivePayerStatus === 3 || orderState === 3 ? "Success" : effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5 ? "Cancelled by Buyer" : effectivePayerStatus === 1 || orderState === 1 ? "Paying" : "In Review",
+        status_str: effectivePayerStatus === 3 || orderState === 3 ? "Success" : effectivePayerStatus === 4 || effectivePayerStatus === 5 || orderState === 4 || orderState === 5 ? "Cancelled" : effectivePayerStatus === 1 || orderState === 1 ? "Paying" : "In Review",
+        canConfirm: isCancelled ? false : effectivePayerStatus === 2 || effectivePayerStatus === 1,
+        canAccept: isCancelled ? false : effectivePayerStatus === 2 || effectivePayerStatus === 1,
+        canPay: isCancelled ? false : effectivePayerStatus === 1,
+        payType: sellerCtType,
+        isBank: !isUpi,
+        ctType: sellerCtType,
+        ct_type: sellerCtType,
+        ctName: mapCtTypeToName(sellerCtType),
+        ct_name: mapCtTypeToName(sellerCtType),
+        channel: mapCtTypeToUpiType(sellerCtType),
+        receiveAccount: sellerReceiveUpi,
+        upi: sellerReceiveUpi,
+        account: sellerReceiveUpi,
+        acctNo: sellerReceiveUpi,
+        payAccount: sellerReceiveUpi,
+        payer_upi: tx.ct_account || tx.payer_upi || tx.ctAccount || "",
+        ctAccount: tx.ct_account || tx.payer_upi || tx.ctAccount || "",
+        ct_account: tx.ct_account || tx.payer_upi || tx.ctAccount || "",
+        utr: tx.utr || tx.ref_no || "",
+        payee_recipients_name: tx.payee_recipients_name || "Merchant Partner",
+        pnname: tx.payee_recipients_name || "Merchant Partner",
+        name: tx.payee_recipients_name || "Merchant Partner",
+        crtDate: debitTimeSec * 1e3,
+        uptDate: dealTimeSec * 1e3,
+        fnsDate: finishTimeSec ? finishTimeSec * 1e3 : 0,
+        debitTime: debitTimeStr,
+        debit_time: debitTimeStr,
+        dealTime: dealTimeStr,
+        deal_time: dealTimeStr,
+        finishTime: finishTimeStr,
+        finish_time: finishTimeStr,
+        secLimit: 0
+      };
+    });
+    return res.json({
+      code: 0,
+      msg: "success",
+      data: {
+        total: deduplicatedTxs.length,
+        list: mappedList
+      }
+    });
+  } catch (err) {
+    console.error("[getSellHistory error]", err);
+    return res.json({
+      code: 0,
+      msg: "success",
+      data: {
+        total: 0,
+        list: []
+      }
+    });
+  }
 }
 app.get("/xxapi/sell/history", getSellHistory);
 app.post("/xxapi/sell/history", getSellHistory);
