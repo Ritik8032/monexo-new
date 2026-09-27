@@ -3893,17 +3893,16 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
         const methodVal = isBank ? 2 : 1;
         const sellerIdStr = seller._id ? seller._id.toString() : "";
         const sellerPhoneStr = seller.phone ? String(seller.phone) : "";
-        const sellerRawBal = Math.max(Number(seller.itoken || 0), Number(seller.balance || 0), Number(seller.commission || 0));
-        const effectiveSellBal = Math.max(sellerRawBal, 1e4);
+        const realSellerBal = Math.max(0, Number(seller.balance || 0), Number(seller.itoken || 0));
         const pendingSum = (sellerIdStr ? pendingSumMap.get(sellerIdStr) : 0) || (sellerPhoneStr ? pendingSumMap.get(sellerPhoneStr) : 0) || 0;
-        const availableBalance = Math.max(0, effectiveSellBal - pendingSum);
-        if (availableBalance < 10) continue;
+        const availableBalance = Math.max(0, realSellerBal - pendingSum);
+        if (availableBalance < 100) continue;
         const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
-        let combinedAmounts = baseChunks;
+        let combinedAmounts = baseChunks.filter((a) => a <= availableBalance);
         if (minAmt !== void 0 || maxAmt !== void 0) {
           const lower = minAmt !== void 0 ? minAmt : 0;
           const upper = maxAmt !== void 0 ? maxAmt : 99999999;
-          combinedAmounts = combinedAmounts.filter((a) => a >= lower && a <= upper);
+          combinedAmounts = combinedAmounts.filter((a) => a >= lower && a <= upper && a <= availableBalance);
         }
         combinedAmounts.forEach((amt) => {
           if (amt < 1) return;
