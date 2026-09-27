@@ -6488,24 +6488,28 @@ async function autoCheckAndApproveOrderFromAutomation(tx) {
         tx.finishTime = nowSec;
         tx.fnsDate = nowSec;
         await tx.save();
+        const cleanPhone = tx.buyerPhone || tx.phone ? String(tx.buyerPhone || tx.phone).replace(/\D/g, "").slice(-10) : "";
         const buyer = await User.findOne({
           $or: [
             { _id: tx.buyerUserId || tx.userId },
             { phone: tx.buyerPhone || tx.phone },
-            { mobileNo: tx.phone }
+            { mobileNo: tx.buyerPhone || tx.phone },
+            ...cleanPhone ? [{ phone: cleanPhone }, { mobileNo: cleanPhone }] : []
           ].filter(Boolean)
         });
         if (buyer) {
-          const reward4Pct = Math.round((tx.amount || 0) * 0.04 * 100) / 100;
+          const principalAmt = Number(tx.amount || 0);
+          const reward4Pct = Math.round(principalAmt * 0.04 * 100) / 100;
+          const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
           tx.reward = reward4Pct;
           await tx.save().catch(() => {
           });
-          buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-          buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
+          buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
+          buyer.recharge = Math.round(((buyer.recharge || 0) + principalAmt) * 100) / 100;
           await buyer.save();
-          await distributeTeamCommission(buyer, tx.amount || 0).catch(() => {
+          await distributeTeamCommission(buyer, principalAmt).catch(() => {
           });
-          console.log(`[Payment Verified] Buyer ${buyer.phone} wallet credited +\u20B9${tx.amount} + \u20B9${reward4Pct} reward. New balance: ${buyer.balance}`);
+          console.log(`[Payment Verified] Buyer ${buyer.phone} wallet credited principal +\u20B9${principalAmt} + \u20B9${reward4Pct} reward = Total +\u20B9${totalCredit}. New balance: \u20B9${buyer.balance}`);
         }
         const sellerId = tx.sellerId;
         const sellerPhoneVal = tx.sellerPhone;
@@ -7038,17 +7042,28 @@ app.get("/xxapi/chargeUtr/:rptNo/:utr", async (req, res) => {
   tx.currentStep = 2;
   tx.payer_status = 3;
   await tx.save();
-  const buyer = await User.findOne({ phone: tx.phone });
+  const cleanPhone = tx.phone ? String(tx.phone).replace(/\D/g, "").slice(-10) : "";
+  const buyer = await User.findOne({
+    $or: [
+      { _id: tx.userId || tx.buyerUserId },
+      { phone: tx.phone || tx.buyerPhone },
+      { mobileNo: tx.phone || tx.buyerPhone },
+      ...cleanPhone ? [{ phone: cleanPhone }, { mobileNo: cleanPhone }] : []
+    ].filter(Boolean)
+  });
   if (buyer) {
-    const reward4Pct = Math.round((tx.amount || 0) * 0.04 * 100) / 100;
+    const principalAmt = Number(tx.amount || 0);
+    const reward4Pct = Math.round(principalAmt * 0.04 * 100) / 100;
+    const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
     tx.reward = reward4Pct;
     await tx.save().catch(() => {
     });
-    buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-    buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
+    buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
+    buyer.recharge = Math.round(((buyer.recharge || 0) + principalAmt) * 100) / 100;
     await buyer.save();
-    await distributeTeamCommission(buyer, tx.amount || 0);
-    console.log(`[Money Rotation +4%] Buyer ${buyer.phone} wallet credited +${tx.amount} + \u20B9${reward4Pct} (4% reward). New balance: ${buyer.balance}`);
+    await distributeTeamCommission(buyer, principalAmt).catch(() => {
+    });
+    console.log(`[Money Rotation +4%] Buyer ${buyer.phone} wallet credited principal +\u20B9${principalAmt} + \u20B9${reward4Pct} (4% reward) = Total +\u20B9${totalCredit}. New balance: \u20B9${buyer.balance}`);
   }
   const sellerId = tx.sellerId;
   if (sellerId) {

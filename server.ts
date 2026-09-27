@@ -7648,24 +7648,30 @@ async function autoCheckAndApproveOrderFromAutomation(tx: any): Promise<boolean>
         (tx as any).fnsDate = nowSec;
         await tx.save();
 
-      // 1. Credit buyer balance (+ 4% reward)
+      // 1. Credit buyer balance (Principal amount + 4% reward)
+      const cleanPhone = (tx.buyerPhone || tx.phone) ? String(tx.buyerPhone || tx.phone).replace(/\D/g, '').slice(-10) : '';
       const buyer = await User.findOne({
         $or: [
           { _id: tx.buyerUserId || tx.userId },
           { phone: tx.buyerPhone || tx.phone },
-          { mobileNo: tx.phone }
+          { mobileNo: tx.buyerPhone || tx.phone },
+          ...(cleanPhone ? [{ phone: cleanPhone }, { mobileNo: cleanPhone }] : [])
         ].filter(Boolean)
       });
 
       if (buyer) {
-        const reward4Pct = Math.round(((tx.amount || 0) * 0.04) * 100) / 100;
+        const principalAmt = Number(tx.amount || 0);
+        const reward4Pct = Math.round((principalAmt * 0.04) * 100) / 100;
+        const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
+
         tx.reward = reward4Pct;
         await tx.save().catch(() => {});
-        buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-        buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
+
+        buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
+        buyer.recharge = Math.round(((buyer.recharge || 0) + principalAmt) * 100) / 100;
         await buyer.save();
-        await distributeTeamCommission(buyer, tx.amount || 0).catch(() => {});
-        console.log(`[Payment Verified] Buyer ${buyer.phone} wallet credited +₹${tx.amount} + ₹${reward4Pct} reward. New balance: ${buyer.balance}`);
+        await distributeTeamCommission(buyer, principalAmt).catch(() => {});
+        console.log(`[Payment Verified] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} reward = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
       }
 
       // 2. Debit seller balance & record sell transaction for seller
@@ -8275,17 +8281,29 @@ app.get('/xxapi/chargeUtr/:rptNo/:utr', async (req, res) => {
   tx.payer_status = 3; // Success! Auto-approve for seamless money rotation
   await tx.save();
   
-  // 1. Instant local credit to buyer balance (+ 4% buy reward)
-  const buyer = await User.findOne({ phone: tx.phone });
+  // 1. Instant local credit to buyer balance (Principal amount + 4% buy reward)
+  const cleanPhone = tx.phone ? String(tx.phone).replace(/\D/g, '').slice(-10) : '';
+  const buyer = await User.findOne({
+    $or: [
+      { _id: tx.userId || tx.buyerUserId },
+      { phone: tx.phone || tx.buyerPhone },
+      { mobileNo: tx.phone || tx.buyerPhone },
+      ...(cleanPhone ? [{ phone: cleanPhone }, { mobileNo: cleanPhone }] : [])
+    ].filter(Boolean)
+  });
   if (buyer) {
-    const reward4Pct = Math.round(((tx.amount || 0) * 0.04) * 100) / 100;
+    const principalAmt = Number(tx.amount || 0);
+    const reward4Pct = Math.round((principalAmt * 0.04) * 100) / 100;
+    const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
+
     tx.reward = reward4Pct;
     await tx.save().catch(() => {});
-    buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-    buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
+
+    buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
+    buyer.recharge = Math.round(((buyer.recharge || 0) + principalAmt) * 100) / 100;
     await buyer.save();
-    await distributeTeamCommission(buyer, tx.amount || 0);
-    console.log(`[Money Rotation +4%] Buyer ${buyer.phone} wallet credited +${tx.amount} + ₹${reward4Pct} (4% reward). New balance: ${buyer.balance}`);
+    await distributeTeamCommission(buyer, principalAmt).catch(() => {});
+    console.log(`[Money Rotation +4%] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} (4% reward) = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
   }
 
   // 2. Instant debit to seller balance & record sell transaction for seller
