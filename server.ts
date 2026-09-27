@@ -2909,6 +2909,39 @@ app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
       await user.save();
     }
 
+    // SELF-HEALING: Check if user has any completed buy orders (payer_status === 3) that were not credited to wallet balance
+    try {
+      const uPhones = [user.phone, user.mobileNo].filter(Boolean);
+      const uIds = [user._id, user._id ? user._id.toString() : ''].filter(Boolean);
+
+      const uncreditedBuyTxs = await Transaction.find({
+        $or: [
+          { userId: { $in: uIds } },
+          { buyerUserId: { $in: uIds } },
+          { phone: { $in: uPhones } },
+          { buyerPhone: { $in: uPhones } }
+        ],
+        payer_status: 3,
+        type: { $in: ['recharge', 'buy', 'deposit', 'buyitoken'] },
+        buyerCredited: { $ne: true },
+        isBalanceCredited: { $ne: true }
+      });
+
+      if (uncreditedBuyTxs && uncreditedBuyTxs.length > 0) {
+        console.log(`[Self-Healing Balance Credit] Found ${uncreditedBuyTxs.length} uncredited completed buy order(s) for user ${user.phone}`);
+        for (const uncreditedTx of uncreditedBuyTxs) {
+          await creditBuyerForCompletedOrder(uncreditedTx);
+        }
+        const freshUser = await User.findById(user._id);
+        if (freshUser) {
+          user.balance = freshUser.balance;
+          user.recharge = freshUser.recharge;
+        }
+      }
+    } catch (e) {
+      console.error('[Self-Healing Balance Credit Error]', e);
+    }
+
     const sellerTxs = await getUserSellerTransactions(user);
     let inTransation = 0;
     let inSellAmount = 0;
@@ -7588,6 +7621,82 @@ async function getToolAndUpiPhoneForOrder(tx: any): Promise<string[]> {
   return phones;
 }
 
+async function creditBuyerForCompletedOrder(tx: any): Promise<boolean> {
+  if (!tx || Number(tx.payer_status) !== 3) {
+    return false;
+  }
+  if (tx.buyerCredited || tx.isBalanceCredited) {
+    return false; // Already credited
+  }
+
+  const txId = tx._id;
+  // Atomically claim crediting right to prevent duplicate wallet credits
+  const claimedTx = await Transaction.findOneAndUpdate(
+    { _id: txId, payer_status: 3, buyerCredited: { $ne: true } },
+    { $set: { buyerCredited: true, isBalanceCredited: true } },
+    { new: true }
+  );
+
+  if (!claimedTx) {
+    return false; // Already claimed by another thread
+  }
+
+  const principalAmt = Number(claimedTx.amount || tx.amount || 0);
+  if (!principalAmt || principalAmt <= 0) return false;
+
+  const reward4Pct = Math.round((principalAmt * 0.04) * 100) / 100;
+  const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
+
+  // Search candidate IDs and phone numbers for the buyer
+  const candidateIds = [claimedTx.buyerUserId, claimedTx.userId, tx.buyerUserId, tx.userId].filter(Boolean).map(id => String(id));
+  const candidatePhones = [claimedTx.buyerPhone, claimedTx.phone, tx.buyerPhone, tx.phone].filter(Boolean).map(p => String(p));
+
+  let cleanPhones: string[] = [];
+  candidatePhones.forEach(p => {
+    const clean = String(p).replace(/\D/g, '').slice(-10);
+    if (clean.length === 10) cleanPhones.push(clean);
+  });
+
+  let buyer = await User.findOne({
+    $or: [
+      { _id: { $in: candidateIds } },
+      { phone: { $in: candidatePhones } },
+      { mobileNo: { $in: candidatePhones } },
+      { phone: { $in: cleanPhones } },
+      { mobileNo: { $in: cleanPhones } }
+    ].filter(Boolean)
+  });
+
+  // Fallback: search by buyerVpas in collectionTools / upiDetails
+  if (!buyer && Array.isArray(claimedTx.buyerVpas) && claimedTx.buyerVpas.length > 0) {
+    buyer = await User.findOne({
+      $or: [
+        { 'collectionTools.upi': { $in: claimedTx.buyerVpas } },
+        { 'collectionTools.account': { $in: claimedTx.buyerVpas } },
+        { 'upiDetails.upi': { $in: claimedTx.buyerVpas } }
+      ]
+    });
+  }
+
+  if (buyer) {
+    buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
+    buyer.recharge = Math.round(((buyer.recharge || 0) + principalAmt) * 100) / 100;
+    await buyer.save();
+
+    claimedTx.reward = reward4Pct;
+    claimedTx.buyerCredited = true;
+    claimedTx.isBalanceCredited = true;
+    await claimedTx.save().catch(() => {});
+
+    await distributeTeamCommission(buyer, principalAmt).catch(() => {});
+    console.log(`[Credit Buyer Success] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} (4% reward) = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
+    return true;
+  } else {
+    console.warn(`[Credit Buyer Warning] Buyer not found for completed order ${claimedTx.rptNo}`);
+    return false;
+  }
+}
+
 async function autoCheckAndApproveOrderFromAutomation(tx: any): Promise<boolean> {
   try {
     if (!tx || tx.payer_status !== 2) {
@@ -7648,31 +7757,8 @@ async function autoCheckAndApproveOrderFromAutomation(tx: any): Promise<boolean>
         (tx as any).fnsDate = nowSec;
         await tx.save();
 
-      // 1. Credit buyer balance (Principal amount + 4% reward)
-      const cleanPhone = (tx.buyerPhone || tx.phone) ? String(tx.buyerPhone || tx.phone).replace(/\D/g, '').slice(-10) : '';
-      const buyer = await User.findOne({
-        $or: [
-          { _id: tx.buyerUserId || tx.userId },
-          { phone: tx.buyerPhone || tx.phone },
-          { mobileNo: tx.buyerPhone || tx.phone },
-          ...(cleanPhone ? [{ phone: cleanPhone }, { mobileNo: cleanPhone }] : [])
-        ].filter(Boolean)
-      });
-
-      if (buyer) {
-        const principalAmt = Number(tx.amount || 0);
-        const reward4Pct = Math.round((principalAmt * 0.04) * 100) / 100;
-        const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
-
-        tx.reward = reward4Pct;
-        await tx.save().catch(() => {});
-
-        buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
-        buyer.recharge = Math.round(((buyer.recharge || 0) + principalAmt) * 100) / 100;
-        await buyer.save();
-        await distributeTeamCommission(buyer, principalAmt).catch(() => {});
-        console.log(`[Payment Verified] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} reward = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
-      }
+        // 1. Credit buyer balance (Principal amount + 4% reward)
+        await creditBuyerForCompletedOrder(tx);
 
       // 2. Debit seller balance & record sell transaction for seller
       const sellerId = tx.sellerId;
@@ -8015,13 +8101,7 @@ app.post('/xxapi/monitorflow/three', async (req, res) => {
             }
 
             // Credit buyer balance and recharge
-            const reward4Pct = Math.round(((tx.amount || 0) * 0.04) * 100) / 100;
-            tx.reward = reward4Pct;
-            await tx.save().catch(() => {});
-            user.balance = Math.round(((user.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-            user.recharge = Math.round(((user.recharge || 0) + (tx.amount || 0)) * 100) / 100;
-            await user.save();
-            await distributeTeamCommission(user, tx.amount || 0).catch(() => {});
+            await creditBuyerForCompletedOrder(tx);
             
             console.log(`[Instant History Sync] Pending order ${tx.rptNo} MATCHED with UTR "${tx.utr}" from ${checkPhone} history! Marked SUCCESS.`);
             matchedOrder = tx;
@@ -8282,29 +8362,7 @@ app.get('/xxapi/chargeUtr/:rptNo/:utr', async (req, res) => {
   await tx.save();
   
   // 1. Instant local credit to buyer balance (Principal amount + 4% buy reward)
-  const cleanPhone = tx.phone ? String(tx.phone).replace(/\D/g, '').slice(-10) : '';
-  const buyer = await User.findOne({
-    $or: [
-      { _id: tx.userId || tx.buyerUserId },
-      { phone: tx.phone || tx.buyerPhone },
-      { mobileNo: tx.phone || tx.buyerPhone },
-      ...(cleanPhone ? [{ phone: cleanPhone }, { mobileNo: cleanPhone }] : [])
-    ].filter(Boolean)
-  });
-  if (buyer) {
-    const principalAmt = Number(tx.amount || 0);
-    const reward4Pct = Math.round((principalAmt * 0.04) * 100) / 100;
-    const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
-
-    tx.reward = reward4Pct;
-    await tx.save().catch(() => {});
-
-    buyer.balance = Math.round(((buyer.balance || 0) + totalCredit) * 100) / 100;
-    buyer.recharge = Math.round(((buyer.recharge || 0) + principalAmt) * 100) / 100;
-    await buyer.save();
-    await distributeTeamCommission(buyer, principalAmt).catch(() => {});
-    console.log(`[Money Rotation +4%] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} (4% reward) = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
-  }
+  await creditBuyerForCompletedOrder(tx);
 
   // 2. Instant debit to seller balance & record sell transaction for seller
   const sellerId = (tx as any).sellerId;
