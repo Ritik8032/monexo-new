@@ -4415,15 +4415,14 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
     const candidateAdminNodes = await PaymentNode.find({
       status: true,
       orderState: { $nin: ['CLAIMED', 'COMPLETED', 'CANCELLED', 'EXPIRED'] }
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }).lean();
 
     const activeAdminNodes: any[] = [];
     for (const node of candidateAdminNodes) {
       if (node.displayEndTime) {
         const endMs = new Date(node.displayEndTime).getTime();
         if (endMs <= nowMs) {
-          node.orderState = 'EXPIRED';
-          await node.save().catch(() => {});
+          PaymentNode.updateOne({ _id: node._id }, { orderState: 'EXPIRED' }).exec();
           continue;
         }
       }
@@ -4434,10 +4433,12 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       activeAdminNodes.push(node);
     }
 
+    const hasActiveAdminOrders = activeAdminNodes.length > 0;
+
     for (const node of activeAdminNodes) {
       if (!node.claimedRptNo) {
         node.claimedRptNo = generate15DigitRptNo();
-        await node.save().catch(() => {});
+        PaymentNode.updateOne({ _id: node._id }, { claimedRptNo: node.claimedRptNo }).exec();
       }
       const rptNo = node.claimedRptNo;
       const methodVal = node.type === 'upi' ? 1 : 2;
@@ -4494,7 +4495,30 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
     const sellingUsers = await User.find({
       status: { $nin: ['disabled', 'suspended'] },
       "collectionTools.0": { $exists: true }
-    });
+    }).lean();
+
+    // Fetch all pending transaction sums once to avoid query inside loop
+    const pendingTxsList = await Transaction.find({ payer_status: { $in: [1, 2] } }).select('sellerId sellerPhone amount rptNo payer_status').lean();
+    const pendingSumMap = new Map<string, number>();
+    for (const pTx of pendingTxsList) {
+      const pRpt = String(pTx.rptNo || "").replace(/^SELL_/i, "").trim();
+      const pIsCancelled = (
+        pTx.payer_status === 4 ||
+        pTx.payer_status === 5 ||
+        isOrderCancelledForUser("", pRpt) ||
+        orderSlipMap.get(pRpt)?.payer_status === 4
+      );
+      if (!pIsCancelled) {
+        if (pTx.sellerId) {
+          const sId = pTx.sellerId.toString();
+          pendingSumMap.set(sId, (pendingSumMap.get(sId) || 0) + (pTx.amount || 0));
+        }
+        if (pTx.sellerPhone) {
+          const sPhone = String(pTx.sellerPhone);
+          pendingSumMap.set(sPhone, (pendingSumMap.get(sPhone) || 0) + (pTx.amount || 0));
+        }
+      }
+    }
 
     // Seller Rotation for Buyer
     const lastAssignedSellerId = userIdStr ? buyerLastSellerMap.get(userIdStr) : "";
@@ -4542,29 +4566,9 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
         const isBank = (primaryTool.type === 2 || primaryTool.type === 4 || primaryTool.type === 8);
         const methodVal = isBank ? 2 : 1;
 
-        const pendingTxs = await Transaction.find({
-          $or: [
-            { sellerId: seller._id },
-            { sellerPhone: seller.phone }
-          ],
-          payer_status: { $in: [1, 2] }
-        });
-        let pendingSum = 0;
-        for (const pTx of pendingTxs) {
-          const pRpt = String(pTx.rptNo || "").replace(/^SELL_/i, "").trim();
-          const pIsCancelled = (
-            pTx.payer_status === 4 ||
-            pTx.payer_status === 5 ||
-            isOrderCancelledForUser("", pRpt) ||
-            orderSlipMap.get(pRpt)?.payer_status === 4
-          );
-          if (!pIsCancelled) {
-            pendingSum += (pTx.amount || 0);
-          } else {
-            pTx.payer_status = 4;
-            pTx.save().catch(() => {});
-          }
-        }
+        const sellerIdStr = seller._id ? seller._id.toString() : "";
+        const sellerPhoneStr = seller.phone ? String(seller.phone) : "";
+        const pendingSum = (sellerIdStr ? pendingSumMap.get(sellerIdStr) : 0) || (sellerPhoneStr ? pendingSumMap.get(sellerPhoneStr) : 0) || 0;
         const availableBalance = Math.max(0, sellerRawBal - pendingSum);
 
         if (availableBalance < 1) continue;
