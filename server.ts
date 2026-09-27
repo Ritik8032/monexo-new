@@ -2805,29 +2805,6 @@ async function getUserSellerTransactions(user: any): Promise<any[]> {
   const phones = [user.phone, (user as any).mobileNo].filter(Boolean);
   const allUserIds = Array.from(new Set([...userIds, ...userIds.map(String)]));
 
-  const upiAccounts: string[] = [];
-  if (user.collectionTools && Array.isArray(user.collectionTools)) {
-    user.collectionTools.forEach((ct: any) => {
-      if (ct && ct.account) upiAccounts.push(ct.account);
-      if (ct && ct.upi) upiAccounts.push(ct.upi);
-    });
-  }
-  if (user.bankDetails && Array.isArray(user.bankDetails)) {
-    user.bankDetails.forEach((b: any) => {
-      if (b) {
-        if (b.accountNo) upiAccounts.push(b.accountNo);
-        if (b.payAccount) upiAccounts.push(b.payAccount);
-      }
-    });
-  }
-  if (user.upiDetails && Array.isArray(user.upiDetails)) {
-    user.upiDetails.forEach((u: any) => {
-      if (u && u.upi) upiAccounts.push(u.upi);
-      else if (typeof u === 'string') upiAccounts.push(u);
-    });
-  }
-  const cleanUpis = Array.from(new Set(upiAccounts.map(a => String(a).trim()).filter(Boolean)));
-
   const sellerOrConditions: any[] = [
     { sellerId: { $in: allUserIds } },
     { 'sellerId': { $in: userIds.map(String) } },
@@ -2838,11 +2815,7 @@ async function getUserSellerTransactions(user: any): Promise<any[]> {
     { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
   ];
 
-  if (cleanUpis.length > 0) {
-    sellerOrConditions.push({ payee_bank_account: { $in: cleanUpis } });
-  }
-
-  const allSellerTxs = await Transaction.find({ $or: sellerOrConditions }).sort({ ctime: -1, _id: -1 });
+  const allSellerTxs = await Transaction.find({ $or: sellerOrConditions }).sort({ ctime: -1, _id: -1 }).lean();
 
   const seenOrders = new Set<string>();
   const uniqueTxs: any[] = [];
@@ -2857,6 +2830,7 @@ async function getUserSellerTransactions(user: any): Promise<any[]> {
 
 // 3. USERINFO ENDPOINT
 app.get(['/xxapi/userinfo', '/userinfo'], async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   try {
     const user = await getUserByToken(req);
     if (!user) {
@@ -8421,6 +8395,7 @@ async function cancelTransactionHandler(req: any, res: any) {
 }
 
 async function getRechargeHistory(req: any, res: any) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
 
@@ -8882,6 +8857,7 @@ app.post('/xxapi/transferTokenHistory', getTransferTokenHistory);
 
 // 11. SELL AND WITHDRAWAL ENDPOINTS
 async function getSellHistory(req: any, res: any) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: 'Unauthorized' });
 
@@ -8892,38 +8868,6 @@ async function getSellHistory(req: any, res: any) {
   const allUserIds = [...userIds, ...userObjIds];
   const phones = [user.phone, user.mobileNo].filter(Boolean);
 
-  const upiAccounts: string[] = [];
-  if (user.upi) upiAccounts.push(user.upi);
-  if (user.upiId) upiAccounts.push(user.upiId);
-  if (user.upi_id) upiAccounts.push(user.upi_id);
-  if (user.phone) {
-    
-    
-  }
-  if (user.collectionTools && Array.isArray(user.collectionTools)) {
-    user.collectionTools.forEach((t: any) => {
-      if (t) {
-        if (t.account) upiAccounts.push(t.account);
-        if (t.upi) upiAccounts.push(t.upi);
-        if (t.bankAcc) upiAccounts.push(t.bankAcc);
-      }
-    });
-  }
-  if (user.bankDetails && Array.isArray(user.bankDetails)) {
-    user.bankDetails.forEach((b: any) => {
-      if (b) {
-        if (b.accountNo) upiAccounts.push(b.accountNo);
-        if (b.payAccount) upiAccounts.push(b.payAccount);
-      }
-    });
-  }
-  if (user.upiDetails && Array.isArray(user.upiDetails)) {
-    user.upiDetails.forEach((u: any) => {
-      if (u && u.upi) upiAccounts.push(u.upi);
-    });
-  }
-  const cleanUpis = Array.from(new Set(upiAccounts.map(a => String(a).trim()).filter(Boolean)));
-
   const sellerOrConditions: any[] = [
     { sellerId: { $in: allUserIds } },
     { 'sellerId': { $in: userIds.map(String) } },
@@ -8933,10 +8877,6 @@ async function getSellHistory(req: any, res: any) {
     { phone: { $in: phones }, type: { $in: ['sell', 'SELL', 'withdraw'] } },
     { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
   ];
-
-  if (cleanUpis.length > 0) {
-    sellerOrConditions.push({ payee_bank_account: { $in: cleanUpis } });
-  }
 
   const queryFilter: any = { $or: sellerOrConditions };
 

@@ -2326,28 +2326,6 @@ async function getUserSellerTransactions(user) {
   const userIds = [user._id, user.id, user.userId, user.providerId].filter(Boolean);
   const phones = [user.phone, user.mobileNo].filter(Boolean);
   const allUserIds = Array.from(/* @__PURE__ */ new Set([...userIds, ...userIds.map(String)]));
-  const upiAccounts = [];
-  if (user.collectionTools && Array.isArray(user.collectionTools)) {
-    user.collectionTools.forEach((ct) => {
-      if (ct && ct.account) upiAccounts.push(ct.account);
-      if (ct && ct.upi) upiAccounts.push(ct.upi);
-    });
-  }
-  if (user.bankDetails && Array.isArray(user.bankDetails)) {
-    user.bankDetails.forEach((b) => {
-      if (b) {
-        if (b.accountNo) upiAccounts.push(b.accountNo);
-        if (b.payAccount) upiAccounts.push(b.payAccount);
-      }
-    });
-  }
-  if (user.upiDetails && Array.isArray(user.upiDetails)) {
-    user.upiDetails.forEach((u) => {
-      if (u && u.upi) upiAccounts.push(u.upi);
-      else if (typeof u === "string") upiAccounts.push(u);
-    });
-  }
-  const cleanUpis = Array.from(new Set(upiAccounts.map((a) => String(a).trim()).filter(Boolean)));
   const sellerOrConditions = [
     { sellerId: { $in: allUserIds } },
     { "sellerId": { $in: userIds.map(String) } },
@@ -2357,10 +2335,7 @@ async function getUserSellerTransactions(user) {
     { phone: { $in: phones }, type: { $in: ["sell", "SELL", "withdraw"] } },
     { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
   ];
-  if (cleanUpis.length > 0) {
-    sellerOrConditions.push({ payee_bank_account: { $in: cleanUpis } });
-  }
-  const allSellerTxs = await Transaction.find({ $or: sellerOrConditions }).sort({ ctime: -1, _id: -1 });
+  const allSellerTxs = await Transaction.find({ $or: sellerOrConditions }).sort({ ctime: -1, _id: -1 }).lean();
   const seenOrders = /* @__PURE__ */ new Set();
   const uniqueTxs = [];
   for (const tx of allSellerTxs) {
@@ -2372,6 +2347,7 @@ async function getUserSellerTransactions(user) {
   return uniqueTxs;
 }
 app.get(["/xxapi/userinfo", "/userinfo"], async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   try {
     const user = await getUserByToken(req);
     if (!user) {
@@ -7188,6 +7164,7 @@ async function cancelTransactionHandler(req, res) {
   return res.json({ code: 0, msg: "success" });
 }
 async function getRechargeHistory(req, res) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: "Unauthorized" });
   const currencyVal = String(req.query.currency || req.body?.currency || "").toLowerCase();
@@ -7598,6 +7575,7 @@ app.post("/xxapi/transferToken/history", getTransferTokenHistory);
 app.get("/xxapi/transferTokenHistory", getTransferTokenHistory);
 app.post("/xxapi/transferTokenHistory", getTransferTokenHistory);
 async function getSellHistory(req, res) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   const user = await getUserByToken(req);
   if (!user) return res.json({ code: 403, msg: "Unauthorized" });
   const userIds = [user._id, user._id ? user._id.toString() : ""].filter(Boolean);
@@ -7610,35 +7588,6 @@ async function getSellHistory(req, res) {
   }).filter(Boolean);
   const allUserIds = [...userIds, ...userObjIds];
   const phones = [user.phone, user.mobileNo].filter(Boolean);
-  const upiAccounts = [];
-  if (user.upi) upiAccounts.push(user.upi);
-  if (user.upiId) upiAccounts.push(user.upiId);
-  if (user.upi_id) upiAccounts.push(user.upi_id);
-  if (user.phone) {
-  }
-  if (user.collectionTools && Array.isArray(user.collectionTools)) {
-    user.collectionTools.forEach((t) => {
-      if (t) {
-        if (t.account) upiAccounts.push(t.account);
-        if (t.upi) upiAccounts.push(t.upi);
-        if (t.bankAcc) upiAccounts.push(t.bankAcc);
-      }
-    });
-  }
-  if (user.bankDetails && Array.isArray(user.bankDetails)) {
-    user.bankDetails.forEach((b) => {
-      if (b) {
-        if (b.accountNo) upiAccounts.push(b.accountNo);
-        if (b.payAccount) upiAccounts.push(b.payAccount);
-      }
-    });
-  }
-  if (user.upiDetails && Array.isArray(user.upiDetails)) {
-    user.upiDetails.forEach((u) => {
-      if (u && u.upi) upiAccounts.push(u.upi);
-    });
-  }
-  const cleanUpis = Array.from(new Set(upiAccounts.map((a) => String(a).trim()).filter(Boolean)));
   const sellerOrConditions = [
     { sellerId: { $in: allUserIds } },
     { "sellerId": { $in: userIds.map(String) } },
@@ -7648,9 +7597,6 @@ async function getSellHistory(req, res) {
     { phone: { $in: phones }, type: { $in: ["sell", "SELL", "withdraw"] } },
     { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
   ];
-  if (cleanUpis.length > 0) {
-    sellerOrConditions.push({ payee_bank_account: { $in: cleanUpis } });
-  }
   const queryFilter = { $or: sellerOrConditions };
   const rawStatus = req.query.status ?? req.body?.status ?? req.query.state ?? req.body?.state ?? req.query.orderState ?? req.body?.orderState ?? req.query.order_state ?? req.body?.order_state ?? req.query.tab ?? req.body?.tab ?? "";
   const statusStr = String(rawStatus).toLowerCase().trim();
