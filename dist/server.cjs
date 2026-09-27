@@ -2409,35 +2409,6 @@ app.get(["/xxapi/userinfo", "/userinfo"], async (req, res) => {
     if (needsSave) {
       await user.save();
     }
-    try {
-      const uPhones = [user.phone, user.mobileNo].filter(Boolean);
-      const uIds = [user._id, user._id ? user._id.toString() : ""].filter(Boolean);
-      const uncreditedBuyTxs = await Transaction.find({
-        $or: [
-          { userId: { $in: uIds } },
-          { buyerUserId: { $in: uIds } },
-          { phone: { $in: uPhones } },
-          { buyerPhone: { $in: uPhones } }
-        ],
-        payer_status: 3,
-        type: { $in: ["recharge", "buy", "deposit", "buyitoken"] },
-        buyerCredited: { $ne: true },
-        isBalanceCredited: { $ne: true }
-      });
-      if (uncreditedBuyTxs && uncreditedBuyTxs.length > 0) {
-        console.log(`[Self-Healing Balance Credit] Found ${uncreditedBuyTxs.length} uncredited completed buy order(s) for user ${user.phone}`);
-        for (const uncreditedTx of uncreditedBuyTxs) {
-          await creditBuyerForCompletedOrder(uncreditedTx);
-        }
-        const freshUser = await User.findById(user._id);
-        if (freshUser) {
-          user.balance = freshUser.balance;
-          user.recharge = freshUser.recharge;
-        }
-      }
-    } catch (e) {
-      console.error("[Self-Healing Balance Credit Error]", e);
-    }
     const sellerTxs = await getUserSellerTransactions(user);
     let inTransation = 0;
     let inSellAmount = 0;
