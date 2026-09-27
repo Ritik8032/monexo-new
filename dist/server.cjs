@@ -588,8 +588,9 @@ async function distributeTeamCommission(buyer, buyAmount) {
       if (l1Comm > 0) {
         level1Parent.commission = Math.round(((level1Parent.commission || 0) + l1Comm) * 1e4) / 1e4;
         level1Parent.todayProfit = Math.round(((level1Parent.todayProfit || 0) + l1Comm) * 1e4) / 1e4;
+        level1Parent.balance = Math.round(((level1Parent.balance || 0) + l1Comm) * 1e4) / 1e4;
         await level1Parent.save();
-        console.log(`[Team Commission L1] Parent ${level1Parent.phone} received 0.3% (${l1Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+        console.log(`[Team Commission L1] Parent ${level1Parent.phone} received 0.3% (${l1Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount}). New wallet balance: ${level1Parent.balance}`);
       }
       const level2Parent = await findParentUser(level1Parent);
       if (level2Parent && level2Parent._id.toString() !== level1Parent._id.toString() && level2Parent._id.toString() !== buyer._id.toString()) {
@@ -597,8 +598,9 @@ async function distributeTeamCommission(buyer, buyAmount) {
         if (l2Comm > 0) {
           level2Parent.commission = Math.round(((level2Parent.commission || 0) + l2Comm) * 1e4) / 1e4;
           level2Parent.todayProfit = Math.round(((level2Parent.todayProfit || 0) + l2Comm) * 1e4) / 1e4;
+          level2Parent.balance = Math.round(((level2Parent.balance || 0) + l2Comm) * 1e4) / 1e4;
           await level2Parent.save();
-          console.log(`[Team Commission L2] Parent ${level2Parent.phone} received 0.2% (${l2Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+          console.log(`[Team Commission L2] Parent ${level2Parent.phone} received 0.2% (${l2Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount}). New wallet balance: ${level2Parent.balance}`);
         }
         const level3Parent = await findParentUser(level2Parent);
         if (level3Parent && level3Parent._id.toString() !== level2Parent._id.toString() && level3Parent._id.toString() !== level1Parent._id.toString() && level3Parent._id.toString() !== buyer._id.toString()) {
@@ -606,8 +608,9 @@ async function distributeTeamCommission(buyer, buyAmount) {
           if (l3Comm > 0) {
             level3Parent.commission = Math.round(((level3Parent.commission || 0) + l3Comm) * 1e4) / 1e4;
             level3Parent.todayProfit = Math.round(((level3Parent.todayProfit || 0) + l3Comm) * 1e4) / 1e4;
+            level3Parent.balance = Math.round(((level3Parent.balance || 0) + l3Comm) * 1e4) / 1e4;
             await level3Parent.save();
-            console.log(`[Team Commission L3] Parent ${level3Parent.phone} received 0.1% (${l3Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount})`);
+            console.log(`[Team Commission L3] Parent ${level3Parent.phone} received 0.1% (${l3Comm}) from buyer ${buyer.phone} (Buy: ${buyAmount}). New wallet balance: ${level3Parent.balance}`);
           }
         }
       }
@@ -4932,7 +4935,36 @@ app.post("/xxapi/inviteFriends/reward", async (req, res) => {
     return res.json({ code: 500, msg: e.message });
   }
 });
-app.all(["/xxapi/deviceInfo", "/xxapi/referral*", "/xxapi/team/edit/ratio", "/xxapi/transfertochilder", "/xxapi/linkKyc", "/xxapi/bscAddress", "/xxapi/buyUsdt/binanceWithdrawalQuote", "/xxapi/uploadimage*", "/xxapi/mark-as-read*", "/xxapi/mark-all-as-read", "/xxapi/cw_inviterank", "/xxapi/cw_profitrank", "/xxapi/cwkyc", "/xxapi/inviteFriends/*", "/xxapi/returnToRpt/*", "/xxapi/buyInrActivity/*", "/xxapi/subBuyReward/*", "/xxapi/sevenDayCharge/*"], async (req, res) => {
+app.post(["/xxapi/linkKyc", "/xxapi/cwkyc"], async (req, res) => {
+  const user = await getUserByToken(req);
+  if (!user) return res.json({ code: 0, msg: "success", data: {} });
+  const { id, ct_id, ctid, upi, upi_id, selectedUpi } = req.body || {};
+  const targetToolId = id || ct_id || ctid;
+  const targetUpi = String(upi || upi_id || selectedUpi || "").trim();
+  if (targetUpi && targetUpi.includes("@") && targetUpi !== "Pending verification") {
+    let tool = findUserTool(user.collectionTools || [], targetToolId);
+    if (!tool && user.collectionTools) {
+      tool = user.collectionTools.find((t) => t && (t.backup_upi?.includes(targetUpi) || t.upi === targetUpi));
+    }
+    if (tool) {
+      tool.upi = targetUpi;
+      tool.state = 2;
+      tool.status = 1;
+      tool.inSell = 1;
+      tool.in_sell = 1;
+      tool.insell = 1;
+      delete tool.relinkPending;
+      delete tool.savedOriginalState;
+      tool.relinkedAt = Date.now();
+      user.markModified("collectionTools");
+      await user.save().catch(() => {
+      });
+      console.log(`[Link KYC] Activated tool ${tool.id} with UPI ${targetUpi} for user ${user.phone}`);
+    }
+  }
+  return res.json({ code: 0, msg: "success", data: {} });
+});
+app.all(["/xxapi/deviceInfo", "/xxapi/referral*", "/xxapi/team/edit/ratio", "/xxapi/transfertochilder", "/xxapi/bscAddress", "/xxapi/buyUsdt/binanceWithdrawalQuote", "/xxapi/uploadimage*", "/xxapi/mark-as-read*", "/xxapi/mark-all-as-read", "/xxapi/cw_inviterank", "/xxapi/cw_profitrank", "/xxapi/inviteFriends/*", "/xxapi/returnToRpt/*", "/xxapi/buyInrActivity/*", "/xxapi/subBuyReward/*", "/xxapi/sevenDayCharge/*"], async (req, res) => {
   return res.json({ code: 0, msg: "success", data: {} });
 });
 app.post(["/xxapi/uploadPaymentProof", "/xxapi/uploadPaymentProof/*"], async (req, res) => {
@@ -5253,29 +5285,6 @@ async function healAndGetCleanTools(user) {
     user.collectionTools = [];
   }
   let modified = false;
-  if (Array.isArray(user.collectionTools)) {
-    user.collectionTools.forEach((t) => {
-      if (t && t.savedOriginalState) {
-        if (t.savedOriginalState.upi) t.upi = t.savedOriginalState.upi;
-        if (t.savedOriginalState.backup_upi) t.backup_upi = t.savedOriginalState.backup_upi;
-        if (t.savedOriginalState.account) t.account = t.savedOriginalState.account;
-        if (t.savedOriginalState.phone) t.phone = t.savedOriginalState.phone;
-        if (t.savedOriginalState.pnname) t.pnname = t.savedOriginalState.pnname;
-        if (t.savedOriginalState.state !== void 0) t.state = t.savedOriginalState.state;
-        if (t.savedOriginalState.status !== void 0) t.status = t.savedOriginalState.status;
-        if (t.savedOriginalState.inSell !== void 0) t.inSell = t.savedOriginalState.inSell;
-        delete t.savedOriginalState;
-        delete t.relinkPending;
-        modified = true;
-      } else if (t && t.savedUpi && (!t.upi || t.upi === "Pending verification")) {
-        t.upi = t.savedUpi;
-        t.state = 2;
-        t.status = 1;
-        delete t.relinkPending;
-        modified = true;
-      }
-    });
-  }
   let rawTools = (user.collectionTools || []).filter(
     (t) => t && t.id && !t.id.startsWith("tool-paytm-business") && !t.id.startsWith("tool-phonepe-business") && !t.id.startsWith("tool-amazon") && (t.upi && typeof t.upi === "string" && t.upi.includes("@") || t.savedUpi || t.savedOriginalState || t.account) && !t.isNewDraft
   );
@@ -5327,30 +5336,13 @@ async function healAndGetCleanTools(user) {
     let resolvedStatus = t.status !== void 0 && t.status !== null ? Number(t.status) : 1;
     const isPaytm = isPaytmTool(typeVal, t.pnname || t.name, t.upi || t.account);
     const isUnlinkedByReview = activeReviewOrders.some((order) => !isPaytm && isToolUsedForOrder(t, order));
-    const isRelinkedByUser = Boolean(
-      hasValidUpi && !t.relinkPending && (t.relinkedAt && Date.now() - t.relinkedAt < 864e5 || t.status === 1 && t.state === 2)
-    );
-    if (isRelinkedByUser) {
-      resolvedState = 2;
-      resolvedStatus = 1;
-    } else if (isUnlinkedByReview) {
+    const isExplicitlyUnlinked = Boolean(t.relinkPending || resolvedState === 5 || resolvedStatus === 0 || resolvedState === 7);
+    if (isExplicitlyUnlinked || isUnlinkedByReview || !hasValidUpi) {
       resolvedState = 5;
       resolvedStatus = 0;
     } else {
-      if (isPaytm) {
-        if (resolvedState !== 7 && hasValidUpi) {
-          resolvedState = 2;
-          resolvedStatus = 1;
-        } else if (!hasValidUpi) {
-          resolvedState = 5;
-          resolvedStatus = 0;
-        }
-      } else {
-        if (!hasValidUpi || t.relinkPending || resolvedState === 5 || resolvedStatus === 0) {
-          resolvedState = 5;
-          resolvedStatus = 0;
-        }
-      }
+      resolvedState = 2;
+      resolvedStatus = 1;
     }
     t.state = resolvedState;
     t.status = resolvedStatus;
@@ -6738,24 +6730,16 @@ app.post("/xxapi/monitorflow/three", async (req, res) => {
       if (tool) {
         if (tool.isNewDraft) {
           user.collectionTools = user.collectionTools.filter((t) => t.id !== tool.id);
-        } else if (tool.savedOriginalState) {
-          tool.upi = tool.savedOriginalState.upi;
-          tool.backup_upi = tool.savedOriginalState.backup_upi;
-          tool.account = tool.savedOriginalState.account;
-          tool.phone = tool.savedOriginalState.phone;
-          if (tool.savedOriginalState.pnname) tool.pnname = tool.savedOriginalState.pnname;
-          tool.state = tool.savedOriginalState.state;
-          tool.status = tool.savedOriginalState.status;
-          tool.inSell = tool.savedOriginalState.inSell;
-          delete tool.savedOriginalState;
         } else {
-          if (tool.savedUpi) tool.upi = tool.savedUpi;
-          if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
-          if (tool.upi && tool.upi !== "Pending verification" && tool.upi.includes("@")) {
-            tool.state = 2;
-            tool.status = 1;
-            tool.inSell = 1;
-          }
+          tool.state = 5;
+          tool.status = 0;
+          tool.inSell = 0;
+          tool.in_sell = 0;
+          tool.insell = 0;
+          tool.relinkPending = true;
+          tool.upi = "Pending verification";
+          delete tool.savedOriginalState;
+          delete tool.savedUpi;
         }
         user.markModified("collectionTools");
         await user.save().catch(() => {
@@ -6777,24 +6761,16 @@ app.post("/xxapi/monitorflow/three", async (req, res) => {
       if (tool) {
         if (tool.isNewDraft) {
           user.collectionTools = user.collectionTools.filter((t) => t.id !== tool.id);
-        } else if (tool.savedOriginalState) {
-          tool.upi = tool.savedOriginalState.upi;
-          tool.backup_upi = tool.savedOriginalState.backup_upi;
-          tool.account = tool.savedOriginalState.account;
-          tool.phone = tool.savedOriginalState.phone;
-          if (tool.savedOriginalState.pnname) tool.pnname = tool.savedOriginalState.pnname;
-          tool.state = tool.savedOriginalState.state;
-          tool.status = tool.savedOriginalState.status;
-          tool.inSell = tool.savedOriginalState.inSell;
-          delete tool.savedOriginalState;
         } else {
-          if (tool.savedUpi) tool.upi = tool.savedUpi;
-          if (tool.savedBackupUpi) tool.backup_upi = tool.savedBackupUpi;
-          if (tool.upi && tool.upi !== "Pending verification" && tool.upi.includes("@")) {
-            tool.state = 2;
-            tool.status = 1;
-            tool.inSell = 1;
-          }
+          tool.state = 5;
+          tool.status = 0;
+          tool.inSell = 0;
+          tool.in_sell = 0;
+          tool.insell = 0;
+          tool.relinkPending = true;
+          tool.upi = "Pending verification";
+          delete tool.savedOriginalState;
+          delete tool.savedUpi;
         }
         user.markModified("collectionTools");
         await user.save().catch(() => {
