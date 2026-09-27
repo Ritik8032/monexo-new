@@ -2330,6 +2330,24 @@ async function getUserSellerTransactions(user) {
   const userIds = [user._id, user.id, user.userId, user.providerId].filter(Boolean);
   const phones = [user.phone, user.mobileNo].filter(Boolean);
   const allUserIds = Array.from(/* @__PURE__ */ new Set([...userIds, ...userIds.map(String)]));
+  const sellerUpis = [];
+  if (Array.isArray(user.collectionTools)) {
+    user.collectionTools.forEach((t) => {
+      if (t.upi && typeof t.upi === "string" && t.upi.includes("@") && t.upi !== "Pending verification") sellerUpis.push(t.upi);
+      if (t.account && typeof t.account === "string" && t.account.includes("@")) sellerUpis.push(t.account);
+      if (Array.isArray(t.backup_upi)) {
+        t.backup_upi.forEach((b) => {
+          if (b && typeof b === "string" && b.includes("@")) sellerUpis.push(b);
+        });
+      }
+    });
+  }
+  if (Array.isArray(user.upiDetails)) {
+    user.upiDetails.forEach((u) => {
+      if (u && u.upi && typeof u.upi === "string" && u.upi.includes("@")) sellerUpis.push(u.upi);
+    });
+  }
+  const cleanSellerUpis = Array.from(new Set(sellerUpis));
   const sellerOrConditions = [
     { sellerId: { $in: allUserIds } },
     { "sellerId": { $in: userIds.map(String) } },
@@ -2339,6 +2357,10 @@ async function getUserSellerTransactions(user) {
     { phone: { $in: phones }, type: { $in: ["sell", "SELL", "withdraw"] } },
     { rptNo: /^SELL_/i, $or: [{ userId: { $in: allUserIds } }, { phone: { $in: phones } }] }
   ];
+  if (cleanSellerUpis.length > 0) {
+    sellerOrConditions.push({ payee_bank_account: { $in: cleanSellerUpis } });
+    sellerOrConditions.push({ upi: { $in: cleanSellerUpis } });
+  }
   const allSellerTxs = await Transaction.find({ $or: sellerOrConditions }).sort({ ctime: -1, _id: -1 }).lean();
   const seenOrders = /* @__PURE__ */ new Set();
   const uniqueTxs = [];
@@ -5336,8 +5358,8 @@ async function healAndGetCleanTools(user) {
     let resolvedStatus = t.status !== void 0 && t.status !== null ? Number(t.status) : 1;
     const isPaytm = isPaytmTool(typeVal, t.pnname || t.name, t.upi || t.account);
     const isUnlinkedByReview = activeReviewOrders.some((order) => !isPaytm && isToolUsedForOrder(t, order));
-    const isExplicitlyUnlinked = Boolean(t.relinkPending || resolvedState === 5 || resolvedStatus === 0 || resolvedState === 7);
-    if (isExplicitlyUnlinked || isUnlinkedByReview || !hasValidUpi) {
+    const isExplicitlyUnlinked = Boolean(t.relinkPending || isUnlinkedByReview || !hasValidUpi);
+    if (isExplicitlyUnlinked) {
       resolvedState = 5;
       resolvedStatus = 0;
     } else {
@@ -6562,6 +6584,75 @@ async function creditBuyerForCompletedOrder(tx) {
     return false;
   }
 }
+async function settleAndCompleteOrder(tx, utrVal, adminReasonVal) {
+  if (!tx) return false;
+  try {
+    const nowSec = Math.floor(Date.now() / 1e3);
+    const finalUtr = utrVal || tx.utr || "";
+    tx.payer_status = 3;
+    tx.currentStep = 2;
+    if (finalUtr) tx.utr = finalUtr;
+    tx.finishTime = nowSec;
+    tx.fnsDate = nowSec;
+    if (adminReasonVal) tx.adminReason = adminReasonVal;
+    await tx.save();
+    await creditBuyerForCompletedOrder(tx);
+    const sellerIdVal = tx.sellerId;
+    const sellerPhoneVal = tx.sellerPhone;
+    const recUpi = String(tx.payee_bank_account || tx.upi || "").trim();
+    let seller = await User.findOne({
+      $or: [
+        { _id: sellerIdVal },
+        { phone: sellerPhoneVal },
+        { mobileNo: sellerPhoneVal },
+        ...recUpi ? [{ "collectionTools.upi": recUpi }, { "collectionTools.account": recUpi }, { "upiDetails.upi": recUpi }] : []
+      ].filter(Boolean)
+    });
+    const orderAmt = Number(tx.amount || 0);
+    if (seller && orderAmt > 0) {
+      seller.balance = Math.round(Math.max(0, (seller.balance || 0) - orderAmt) * 100) / 100;
+      await seller.save();
+      console.log(`[Order Settle] Seller ${seller.phone} wallet debited -\u20B9${orderAmt}. New balance: \u20B9${seller.balance}`);
+      const baseRptNo = String(tx.rptNo || "").replace(/^SELL_/, "").trim();
+      const sellRptNo = `SELL_${baseRptNo}`;
+      let sellTx = await Transaction.findOne({ rptNo: sellRptNo });
+      if (!sellTx) {
+        sellTx = new Transaction({
+          userId: seller._id,
+          sellerId: seller._id,
+          sellerPhone: seller.phone,
+          phone: seller.phone,
+          buyerPhone: tx.buyerPhone || tx.phone || "",
+          buyerUserId: tx.buyerUserId || tx.userId,
+          rptNo: sellRptNo,
+          amount: orderAmt,
+          payer_status: 3,
+          type: "sell",
+          orderType: "sell",
+          payee_bank_account: tx.payee_bank_account,
+          payee_recipients_name: tx.payee_recipients_name,
+          utr: finalUtr,
+          ctime: tx.ctime || nowSec,
+          finishTime: nowSec,
+          fnsDate: nowSec
+        });
+        await sellTx.save();
+      } else {
+        sellTx.payer_status = 3;
+        sellTx.sellerId = seller._id;
+        sellTx.sellerPhone = seller.phone;
+        sellTx.utr = finalUtr;
+        sellTx.finishTime = nowSec;
+        sellTx.fnsDate = nowSec;
+        await sellTx.save();
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error("[settleAndCompleteOrder error]", err);
+    return false;
+  }
+}
 async function autoCheckAndApproveOrderFromAutomation(tx) {
   try {
     if (!tx || tx.payer_status !== 2) {
@@ -6598,55 +6689,7 @@ async function autoCheckAndApproveOrderFromAutomation(tx) {
           console.log(`[Automation Match] Order ${tx.rptNo} was ALREADY approved/credited by another thread. Skipping double credit.`);
           return true;
         }
-        tx.utr = matchResult.utr;
-        tx.currentStep = 2;
-        tx.payer_status = 3;
-        const nowSec = Math.floor(Date.now() / 1e3);
-        tx.finishTime = nowSec;
-        tx.fnsDate = nowSec;
-        await tx.save();
-        await creditBuyerForCompletedOrder(tx);
-        const sellerId = tx.sellerId;
-        const sellerPhoneVal = tx.sellerPhone;
-        if (sellerId || sellerPhoneVal) {
-          const seller = await User.findOne({
-            $or: [
-              { _id: sellerId },
-              { phone: sellerPhoneVal }
-            ].filter(Boolean)
-          });
-          if (seller) {
-            seller.balance = Math.max(0, (seller.balance || 0) - (tx.amount || 0));
-            await seller.save();
-            console.log(`[Payment Verified] Seller ${seller.phone} wallet debited -\u20B9${tx.amount}. New balance: ${seller.balance}`);
-          }
-        }
-        const sellRptNo = `SELL_${tx.rptNo}`;
-        let sellTx = await Transaction.findOne({ rptNo: sellRptNo });
-        if (sellTx) {
-          sellTx.utr = tx.utr;
-          sellTx.payer_status = 3;
-          sellTx.currentStep = 2;
-          sellTx.finishTime = nowSec;
-          sellTx.fnsDate = nowSec;
-          await sellTx.save();
-        } else if (sellerId || sellerPhoneVal) {
-          const seller = await User.findOne({ $or: [{ _id: sellerId }, { phone: sellerPhoneVal }].filter(Boolean) });
-          if (seller) {
-            await Transaction.create({
-              userId: seller._id,
-              phone: seller.phone,
-              rptNo: sellRptNo,
-              amount: tx.amount,
-              payer_status: 3,
-              utr: tx.utr,
-              type: "sell",
-              payee_bank_account: tx.payee_bank_account,
-              payee_recipients_name: tx.payee_recipients_name,
-              ctime: Math.floor(Date.now() / 1e3)
-            });
-          }
-        }
+        await settleAndCompleteOrder(tx, matchResult.utr);
         if (tx.rptNo) {
           await PaymentNode.updateOne({ claimedRptNo: tx.rptNo }, { orderState: "COMPLETED", utr: matchResult.utr }).catch(() => {
           });
@@ -6654,10 +6697,11 @@ async function autoCheckAndApproveOrderFromAutomation(tx) {
         return true;
       }
     }
+    return false;
   } catch (err) {
-    console.error("[autoCheckAndApproveOrderFromAutomation Error]", err);
+    console.error("[autoCheckAndApproveOrderFromAutomation error]", err);
+    return false;
   }
-  return false;
 }
 app.post("/xxapi/monitorflow/three", async (req, res) => {
   const user = await getUserByToken(req);
@@ -6879,24 +6923,8 @@ app.post("/xxapi/monitorflow/three", async (req, res) => {
           const matchResult = await fetchAutomationHistoryAndMatch(checkPhone, chType, tx);
           if (matchResult.matched) {
             matchedUtrVal = matchResult.utr;
-            tx.utr = matchResult.utr || tx.utr || "";
-            tx.payer_status = 3;
-            tx.currentStep = 2;
-            const nowSec = Math.floor(Date.now() / 1e3);
-            tx.finishTime = nowSec;
-            tx.fnsDate = nowSec;
-            await tx.save();
-            const isSellTx = tx.type === "sell" || String(tx.rptNo).startsWith("SELL_");
-            const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, "") : `SELL_${tx.rptNo}`;
-            const counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
-            if (counterpartTx) {
-              counterpartTx.utr = tx.utr;
-              counterpartTx.payer_status = 3;
-              counterpartTx.currentStep = 2;
-              await counterpartTx.save();
-            }
-            await creditBuyerForCompletedOrder(tx);
-            console.log(`[Instant History Sync] Pending order ${tx.rptNo} MATCHED with UTR "${tx.utr}" from ${checkPhone} history! Marked SUCCESS.`);
+            await settleAndCompleteOrder(tx, matchResult.utr);
+            console.log(`[Instant History Sync] Pending order ${tx.rptNo} MATCHED with UTR "${tx.utr}" from ${checkPhone} history! Marked SUCCESS & Settled.`);
             matchedOrder = tx;
             break;
           } else {
@@ -7109,41 +7137,7 @@ app.get("/xxapi/chargeUtr/:rptNo/:utr", async (req, res) => {
   if (!atomicTx) {
     return res.json({ code: 0, msg: "Transaction already processed", data: tx });
   }
-  tx.utr = utr;
-  tx.currentStep = 2;
-  tx.payer_status = 3;
-  await tx.save();
-  await creditBuyerForCompletedOrder(tx);
-  const sellerId = tx.sellerId;
-  if (sellerId) {
-    try {
-      const seller = await User.findById(sellerId);
-      if (seller) {
-        seller.balance = Math.max(0, (seller.balance || 0) - tx.amount);
-        await seller.save();
-        console.log(`[Money Rotation] Seller ${seller.phone} wallet debited -${tx.amount}. New balance: ${seller.balance}`);
-        const sellRptNo = `SELL_${tx.rptNo}`;
-        const existingSellTx = await Transaction.findOne({ rptNo: sellRptNo });
-        if (!existingSellTx) {
-          const sellTx = new Transaction({
-            userId: seller._id,
-            phone: seller.phone,
-            rptNo: sellRptNo,
-            amount: tx.amount,
-            payer_status: 3,
-            // Success
-            type: "sell",
-            payee_bank_account: tx.payee_bank_account,
-            payee_recipients_name: tx.payee_recipients_name,
-            ctime: Math.floor(Date.now() / 1e3)
-          });
-          await sellTx.save();
-        }
-      }
-    } catch (err) {
-      console.error("[Money Rotation] Error debiting seller or saving sell transaction:", err);
-    }
-  }
+  await settleAndCompleteOrder(tx, utr);
   return res.json({ code: 0, msg: "success", data: tx });
 });
 async function cancelTransactionHandler(req, res) {
@@ -10735,38 +10729,15 @@ app.post("/xxapi/admin/updateOrderStatus", requireAdmin, async (req, res) => {
     const previousStatus = tx.payer_status;
     const isApprove = action === "success" || action === "successfully" || action === "approve";
     if (isApprove) {
-      tx.payer_status = 3;
-      tx.currentStep = 2;
-      if (utr) {
-        tx.utr = String(utr).trim();
-      }
-      tx.adminReason = adminReason || "Manually approved by admin";
-      tx.adminActionAt = /* @__PURE__ */ new Date();
-      await tx.save();
       if (previousStatus !== 3) {
-        await creditBuyerForCompletedOrder(tx);
-        const isSellTx = tx.type === "sell" || String(tx.rptNo).startsWith("SELL_");
-        const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, "") : `SELL_${tx.rptNo}`;
-        let counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
-        if (counterpartTx) {
-          counterpartTx.payer_status = 3;
-          if (utr) counterpartTx.utr = String(utr).trim();
-          counterpartTx.adminReason = adminReason || "Synced with order approval";
-          await counterpartTx.save();
-        }
-        if (tx.sellerId || tx.sellerPhone) {
-          const seller = await User.findOne({
-            $or: [
-              { _id: tx.sellerId },
-              { phone: tx.sellerPhone },
-              { mobileNo: tx.sellerPhone }
-            ].filter(Boolean)
-          });
-          if (seller) {
-            seller.balance = Math.max(0, (seller.balance || 0) - (tx.amount || 0));
-            await seller.save();
-          }
-        }
+        await settleAndCompleteOrder(tx, utr, adminReason || "Manually approved by admin");
+      } else {
+        tx.payer_status = 3;
+        tx.currentStep = 2;
+        if (utr) tx.utr = String(utr).trim();
+        tx.adminReason = adminReason || "Manually approved by admin";
+        tx.adminActionAt = /* @__PURE__ */ new Date();
+        await tx.save();
       }
     } else if (action === "reject" || action === "failed" || action === "cancel") {
       tx.payer_status = 4;
@@ -11815,19 +11786,7 @@ Aapka enter kiya gaya OTP code galat hai. Order ID: <code>${pendingId}</code> ca
             } else if (tx.payer_status === 4) {
               alreadyStatusReason = "already_cancelled";
             } else {
-              tx.payer_status = 3;
-              await tx.save();
-              const buyer = await User.findOne({ _id: tx.userId }) || await User.findOne({ phone: tx.phone });
-              if (buyer) {
-                const reward4Pct = Math.round((tx.amount || 0) * 0.04 * 100) / 100;
-                tx.reward = reward4Pct;
-                await tx.save().catch(() => {
-                });
-                buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-                buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
-                await buyer.save();
-                await distributeTeamCommission(buyer, tx.amount || 0);
-              }
+              await settleAndCompleteOrder(tx, void 0, "Approved via Telegram Support");
               actionSuccess = true;
             }
           }
