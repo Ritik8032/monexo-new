@@ -3696,27 +3696,40 @@ async function getInviteNewbieData(req: any) {
   const user = await getUserByToken(req);
   if (!user) return null;
 
-  // STRICT LEVEL 1 DIRECT INVITES ONLY
-  const userCodes = Array.from(new Set([
+  const userIdStr = user._id ? user._id.toString() : '';
+  const userPhones = Array.from(new Set([user.phone, user.mobileNo, user.id, user.providerId].filter(Boolean).map(String)));
+
+  // Codes that THIS user owns to invite friends (excluding user.invitercode which belongs to the parent inviter)
+  const myInviteCodes = Array.from(new Set([
     user.ownInviteCode,
     user.referralCode,
     user.referral_code,
     user.inviteCode,
-    user.invitercode,
     user.phone,
     user.mobileNo,
-    user._id ? user._id.toString() : '',
     user.providerId
-  ].filter(Boolean)));
+  ].filter(Boolean).map(String)));
 
-  const directMembers = await User.find({
+  let directMembers = await User.find({
+    _id: { $ne: user._id },
+    phone: { $nin: userPhones },
     $or: [
-      { invitercode: { $in: userCodes } },
-      { parentUser: { $in: userCodes } },
-      { referralCode: { $in: userCodes } },
-      { inviterPhone: { $in: userCodes } }
+      { invitercode: { $in: myInviteCodes } },
+      { parentUser: { $in: myInviteCodes } },
+      { referralCode: { $in: myInviteCodes } },
+      { inviterPhone: { $in: myInviteCodes } }
     ]
   }).lean();
+
+  // EXPLICIT FILTER: Strictly exclude current user's own account
+  directMembers = directMembers.filter(m => {
+    if (!m) return false;
+    const mId = m._id ? m._id.toString() : '';
+    const mPhone = String(m.phone || m.mobileNo || '');
+    if (mId && mId === userIdStr) return false;
+    if (mPhone && userPhones.includes(mPhone)) return false;
+    return true;
+  });
 
   const paramsObj: Record<string, string> = {};
   let completedCount = 0;

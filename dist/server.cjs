@@ -3085,25 +3085,35 @@ app.get("/xxapi/newbieStepTotal/init", async (req, res) => {
 async function getInviteNewbieData(req) {
   const user = await getUserByToken(req);
   if (!user) return null;
-  const userCodes = Array.from(new Set([
+  const userIdStr = user._id ? user._id.toString() : "";
+  const userPhones = Array.from(new Set([user.phone, user.mobileNo, user.id, user.providerId].filter(Boolean).map(String)));
+  const myInviteCodes = Array.from(new Set([
     user.ownInviteCode,
     user.referralCode,
     user.referral_code,
     user.inviteCode,
-    user.invitercode,
     user.phone,
     user.mobileNo,
-    user._id ? user._id.toString() : "",
     user.providerId
-  ].filter(Boolean)));
-  const directMembers = await User.find({
+  ].filter(Boolean).map(String)));
+  let directMembers = await User.find({
+    _id: { $ne: user._id },
+    phone: { $nin: userPhones },
     $or: [
-      { invitercode: { $in: userCodes } },
-      { parentUser: { $in: userCodes } },
-      { referralCode: { $in: userCodes } },
-      { inviterPhone: { $in: userCodes } }
+      { invitercode: { $in: myInviteCodes } },
+      { parentUser: { $in: myInviteCodes } },
+      { referralCode: { $in: myInviteCodes } },
+      { inviterPhone: { $in: myInviteCodes } }
     ]
   }).lean();
+  directMembers = directMembers.filter((m) => {
+    if (!m) return false;
+    const mId = m._id ? m._id.toString() : "";
+    const mPhone = String(m.phone || m.mobileNo || "");
+    if (mId && mId === userIdStr) return false;
+    if (mPhone && userPhones.includes(mPhone)) return false;
+    return true;
+  });
   const paramsObj = {};
   let completedCount = 0;
   for (const m of directMembers) {
