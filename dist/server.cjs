@@ -3801,12 +3801,7 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
     }
     const sellingUsers = await User.find({
       status: { $nin: ["disabled", "suspended"] },
-      $or: [
-        { "collectionTools.0": { $exists: true } },
-        { "upiDetails.0": { $exists: true } },
-        { "zoopayUpis.0": { $exists: true } },
-        { collectionTools: { $exists: true, $ne: [] } }
-      ]
+      "collectionTools.0": { $exists: true }
     }).lean();
     const pendingTxsList = await Transaction.find({ payer_status: { $in: [1, 2] } }).select("sellerId sellerPhone amount rptNo payer_status").lean();
     const pendingSumMap = /* @__PURE__ */ new Map();
@@ -3836,54 +3831,15 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
       if (currentUser && (seller._id.toString() === userIdStr || seller.phone === userPhone2)) {
         continue;
       }
-      let tools = Array.isArray(seller.collectionTools) ? [...seller.collectionTools] : [];
-      if (Array.isArray(seller.upiDetails)) {
-        seller.upiDetails.forEach((u, idx) => {
-          const upiVal = u.upi || u.account || "";
-          if (upiVal && upiVal.includes("@")) {
-            const existingTool = tools.find((t) => t && (t.upi === upiVal || t.account === upiVal));
-            if (!existingTool) {
-              tools.push({
-                id: `upi_detail_${idx}`,
-                upi: upiVal,
-                account: seller.phone || seller.mobileNo || "",
-                pnname: u.pnname || u.name || seller.realName || seller.fullName || "Merchant Partner",
-                inSell: 1,
-                state: 2,
-                status: 1,
-                type: 1
-              });
-            }
-          }
-        });
-      }
-      if (Array.isArray(seller.zoopayUpis)) {
-        seller.zoopayUpis.forEach((zUpi, idx) => {
-          if (zUpi && zUpi.includes("@")) {
-            const existingTool = tools.find((t) => t && (t.upi === zUpi || t.account === zUpi));
-            if (!existingTool) {
-              tools.push({
-                id: `zoopay_${idx}`,
-                upi: zUpi,
-                account: seller.phone || seller.mobileNo || "",
-                pnname: seller.realName || seller.fullName || "Merchant Partner",
-                inSell: 1,
-                state: 2,
-                status: 1,
-                type: 1
-              });
-            }
-          }
-        });
-      }
+      const tools = Array.isArray(seller.collectionTools) ? seller.collectionTools : [];
       const activeTools = tools.filter((t) => {
         if (!t) return false;
         const upiVal = String(t.upi || t.account || "").trim();
         const hasValidUpi = upiVal.includes("@") && upiVal !== "Pending verification";
-        const isState2 = Number(t.state) === 2 || t.state === 2 || t.state === "2";
-        const isStatus1 = Number(t.status) === 1 || t.status === 1 || t.status === "1" || t.status === void 0;
-        const isNotUnlinked = Number(t.state) !== 5 && t.state !== 5 && Number(t.state) !== 7 && t.state !== 7 && !t.relinkPending;
-        const isSellEnabled = t.inSell !== 0 && t.inSell !== "0" && t.inSell !== false && t.in_sell !== 0 && t.in_sell !== "0";
+        const isState2 = Number(t.state) === 2;
+        const isStatus1 = Number(t.status) === 1;
+        const isNotUnlinked = Number(t.state) !== 5 && Number(t.state) !== 7 && !t.relinkPending;
+        const isSellEnabled = Number(t.inSell) === 1 || Number(t.in_sell) === 1 || t.inSell === true;
         const isNotBuyerUpi = !buyerUpiList.includes(upiVal.toLowerCase());
         return hasValidUpi && isState2 && isStatus1 && isNotUnlinked && isSellEnabled && isNotBuyerUpi;
       });
