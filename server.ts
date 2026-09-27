@@ -4560,48 +4560,57 @@ app.get('/xxapi/buyitoken/waitpayerpaymentslip', async (req, res) => {
       if (Array.isArray(seller.upiDetails)) {
         seller.upiDetails.forEach((u: any, idx: number) => {
           const upiVal = u.upi || u.account || '';
-          if (upiVal && upiVal.includes('@') && !tools.some((t: any) => t && (t.upi === upiVal || t.account === upiVal))) {
-            tools.push({
-              id: `upi_detail_${idx}`,
-              upi: upiVal,
-              account: seller.phone || seller.mobileNo || '',
-              pnname: u.pnname || u.name || seller.realName || seller.fullName || 'Merchant Partner',
-              inSell: 1,
-              state: 2,
-              status: 1,
-              type: 1
-            });
+          if (upiVal && upiVal.includes('@')) {
+            const existingTool = tools.find((t: any) => t && (t.upi === upiVal || t.account === upiVal));
+            if (!existingTool) {
+              tools.push({
+                id: `upi_detail_${idx}`,
+                upi: upiVal,
+                account: seller.phone || seller.mobileNo || '',
+                pnname: u.pnname || u.name || seller.realName || seller.fullName || 'Merchant Partner',
+                inSell: 1,
+                state: 2,
+                status: 1,
+                type: 1
+              });
+            }
           }
         });
       }
 
       if (Array.isArray(seller.zoopayUpis)) {
         seller.zoopayUpis.forEach((zUpi: string, idx: number) => {
-          if (zUpi && zUpi.includes('@') && !tools.some((t: any) => t && (t.upi === zUpi || t.account === zUpi))) {
-            tools.push({
-              id: `zoopay_${idx}`,
-              upi: zUpi,
-              account: seller.phone || seller.mobileNo || '',
-              pnname: seller.realName || seller.fullName || 'Merchant Partner',
-              inSell: 1,
-              state: 2,
-              status: 1,
-              type: 1
-            });
+          if (zUpi && zUpi.includes('@')) {
+            const existingTool = tools.find((t: any) => t && (t.upi === zUpi || t.account === zUpi));
+            if (!existingTool) {
+              tools.push({
+                id: `zoopay_${idx}`,
+                upi: zUpi,
+                account: seller.phone || seller.mobileNo || '',
+                pnname: seller.realName || seller.fullName || 'Merchant Partner',
+                inSell: 1,
+                state: 2,
+                status: 1,
+                type: 1
+              });
+            }
           }
         });
       }
 
-      // Active Seller Tool check: state === 2, not unlinked, valid UPI handle
+      // Active Seller Tool check: STRICTLY state === 2, status === 1, inSell === 1, NOT unlinked, NOT relinkPending
       const activeTools = tools.filter((t: any) => {
         if (!t) return false;
         const upiVal = String(t.upi || t.account || '').trim();
         const hasValidUpi = upiVal.includes('@') && upiVal !== 'Pending verification';
+        
+        const isState2 = Number(t.state) === 2 || t.state === 2 || t.state === '2';
+        const isStatus1 = Number(t.status) === 1 || t.status === 1 || t.status === '1' || t.status === undefined;
         const isNotUnlinked = Number(t.state) !== 5 && t.state !== 5 && Number(t.state) !== 7 && t.state !== 7 && !t.relinkPending;
-        const isNotSellOff = t.inSell !== 0 && t.inSell !== '0' && t.inSell !== false && t.in_sell !== 0 && t.in_sell !== '0';
+        const isSellEnabled = t.inSell !== 0 && t.inSell !== '0' && t.inSell !== false && t.in_sell !== 0 && t.in_sell !== '0';
         const isNotBuyerUpi = !buyerUpiList.includes(upiVal.toLowerCase());
 
-        return hasValidUpi && isNotUnlinked && isNotSellOff && isNotBuyerUpi;
+        return hasValidUpi && isState2 && isStatus1 && isNotUnlinked && isSellEnabled && isNotBuyerUpi;
       });
       
       if (activeTools.length > 0) {
@@ -5179,6 +5188,28 @@ app.post('/xxapi/buyitoken/pickuppaymentslip', async (req, res) => {
     if (!sellerObj || sellerObj.status === 'disabled' || sellerObj.status === 'suspended') {
       return res.json({ code: 400, msg: 'Seller is no longer active.' });
     }
+
+    // STRICT UNLINKED / OFFLINE UPI CHECK FOR SELLER
+    if (payee_bank_account && !isAdminOrder) {
+      const targetPayeeUpi = String(payee_bank_account).toLowerCase().trim();
+      const sTools = Array.isArray(sellerObj.collectionTools) ? sellerObj.collectionTools : [];
+      const matchedTool = sTools.find((t: any) => {
+        if (!t) return false;
+        const tUpi = String(t.upi || t.account || '').toLowerCase().trim();
+        return tUpi === targetPayeeUpi || (tUpi && targetPayeeUpi && tUpi.split('@')[0] === targetPayeeUpi.split('@')[0]);
+      });
+
+      if (matchedTool) {
+        const isUnlinked = Number(matchedTool.state) === 5 || matchedTool.state === 5 || Number(matchedTool.state) === 7 || matchedTool.state === 7 || matchedTool.relinkPending;
+        const isSellOff = matchedTool.inSell === 0 || matchedTool.inSell === '0' || matchedTool.inSell === false || matchedTool.in_sell === 0 || matchedTool.in_sell === '0';
+        const isOffline = Number(matchedTool.status) === 0 || matchedTool.status === 0;
+
+        if (isUnlinked || isSellOff || isOffline) {
+          return res.json({ code: 400, msg: 'Seller UPI is currently unlinked or offline for selling. Please select another order.' });
+        }
+      }
+    }
+
     const activePending = await Transaction.find({
       $or: [
         { sellerId: sellerObj._id },
@@ -9125,22 +9156,34 @@ async function getSellHistory(req: any, res: any) {
 
   let deduplicatedTxs = Array.from(uniqueTxMap.values());
 
-  // STRICT RULE: Exclude buy/recharge/deposit orders where current user is the buyer from Sell History
+  // STRICT RULE: Keep ALL sell orders for the seller (including status 1 Paying and status 2 In Review)
+  // Only exclude orders where current user is strictly the buyer and NOT the seller!
   deduplicatedTxs = deduplicatedTxs.filter(tx => {
     if (!tx) return false;
-    const txType = String(tx.type || '').toLowerCase();
-    
-    // Check if user is the buyer on this transaction
+
+    const isUserSeller = (
+      (tx.sellerId && (tx.sellerId.toString() === user._id.toString() || userIds.includes(tx.sellerId.toString()))) ||
+      (tx.sellerPhone && phones.includes(tx.sellerPhone)) ||
+      (tx.payee_bank_account && cleanSellerUpis.includes(tx.payee_bank_account)) ||
+      (tx.upi && cleanSellerUpis.includes(tx.upi)) ||
+      tx.type === 'sell' ||
+      String(tx.rptNo || '').startsWith('SELL_')
+    );
+
+    if (isUserSeller) {
+      return true; // ALWAYS keep seller's sell orders (Paying, In Review, Success, Cancelled)
+    }
+
     const isUserBuyer = (
       (tx.buyerUserId && (tx.buyerUserId.toString() === user._id.toString() || userIds.includes(tx.buyerUserId.toString()))) ||
       (tx.buyerPhone && phones.includes(tx.buyerPhone)) ||
-      (tx.userId && (tx.userId.toString() === user._id.toString() || userIds.includes(tx.userId.toString())) && ['buy', 'recharge', 'buyitoken', 'deposit', 'admin'].includes(txType))
+      (tx.userId && (tx.userId.toString() === user._id.toString() || userIds.includes(tx.userId.toString())))
     );
 
-    // If user is the buyer or order is explicitly a buy/recharge order, exclude from sell history
-    if (isUserBuyer || ['buy', 'recharge', 'buyitoken', 'deposit'].includes(txType)) {
-      return false;
+    if (isUserBuyer) {
+      return false; // Exclude buy orders where current user is purely buyer
     }
+
     return true;
   });
 
