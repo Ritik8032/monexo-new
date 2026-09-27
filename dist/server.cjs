@@ -3688,54 +3688,6 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
     const currentUser = await getUserByToken(req).catch(() => null);
     const userPhone2 = currentUser ? currentUser.phone : "";
     const userIdStr = currentUser ? currentUser._id.toString() : "";
-    if (userPhone2 && buyerActiveOrderMap.has(userPhone2)) {
-      const cached = buyerActiveOrderMap.get(userPhone2);
-      const cachedAmt = Number(cached?.orderObj?.amount || 0);
-      let amountMatches = true;
-      if (reqAmtParam !== void 0 && reqAmtParam > 0) {
-        if (cachedAmt !== reqAmtParam) amountMatches = false;
-      }
-      if (minAmt !== void 0 && maxAmt !== void 0) {
-        if (cachedAmt < minAmt || cachedAmt > maxAmt) amountMatches = false;
-      }
-      const cachedRpt = cached?.rptNo || cached?.orderObj?.rptNo || "";
-      const isCancelledInDb = cachedRpt ? await Transaction.exists({
-        rptNo: { $in: [cachedRpt, `SELL_${cachedRpt}`, cachedRpt.replace(/^SELL_/i, "")] },
-        payer_status: { $in: [4, 5] }
-      }) : false;
-      const isSlipCancelled = cachedRpt ? orderSlipMap.get(cachedRpt)?.payer_status === 4 : false;
-      const isUserCancelled = cachedRpt ? isOrderCancelledForUser(userPhone2, cachedRpt) || cached?.orderObj?.nodeId && isOrderCancelledForUser(userPhone2, cached.orderObj.nodeId) : false;
-      if (cached && !isCancelledInDb && !isSlipCancelled && !isUserCancelled && cached.createdAt && Date.now() - cached.createdAt < 6e5 && amountMatches) {
-        let isNodeStillActive = true;
-        if (cached.orderObj?.isAdminNode || cached.orderObj?.nodeId || cached.slipItem?.nodeId) {
-          const nId = cached.orderObj?.nodeId || cached.slipItem?.nodeId;
-          if (nId) {
-            const activeNodeExists = await PaymentNode.exists({
-              _id: nId,
-              status: true,
-              orderState: { $nin: ["COMPLETED", "CANCELLED", "EXPIRED"] }
-            });
-            if (!activeNodeExists) {
-              isNodeStillActive = false;
-            }
-          }
-        }
-        if (isNodeStillActive) {
-          return res.json({
-            code: 0,
-            msg: "success",
-            data: {
-              total: 1,
-              list: [cached.orderObj]
-            }
-          });
-        } else {
-          buyerActiveOrderMap.delete(userPhone2);
-        }
-      } else {
-        buyerActiveOrderMap.delete(userPhone2);
-      }
-    }
     const list = [];
     const nowMs = Date.now();
     const candidateAdminNodes = await PaymentNode.find({
@@ -6474,55 +6426,6 @@ async function autoCheckAndApproveOrderFromAutomation(tx) {
     }
     const orderAmount = Number(tx.amount || 0);
     if (!orderAmount || orderAmount <= 0) return false;
-    let isAdminOrder = Boolean(tx.isAdminNode);
-    if (!isAdminOrder && tx.rptNo) {
-      const adminNode = await PaymentNode.findOne({ claimedRptNo: tx.rptNo });
-      if (adminNode) isAdminOrder = true;
-    }
-    if (!isAdminOrder && tx.payee_bank_account) {
-      const adminNode = await PaymentNode.findOne({ accountNumber: tx.payee_bank_account, status: true });
-      if (adminNode) isAdminOrder = true;
-    }
-    if (isAdminOrder) {
-      console.log(`[Admin Order Auto-Approve] Admin panel order ${tx.rptNo} automatically approved for buyer!`);
-      const atomicTx = await Transaction.findOneAndUpdate(
-        { _id: tx._id, payer_status: { $ne: 3 } },
-        { $set: { payer_status: 3, currentStep: 2, finishTime: Math.floor(Date.now() / 1e3) } },
-        { new: true }
-      );
-      if (!atomicTx) {
-        console.log(`[Admin Order Auto-Approve] Order ${tx.rptNo} was ALREADY approved/credited by another thread. Skipping double credit.`);
-        return true;
-      }
-      tx.payer_status = 3;
-      const nowSec = Math.floor(Date.now() / 1e3);
-      tx.finishTime = nowSec;
-      tx.fnsDate = nowSec;
-      const buyer = await User.findOne({
-        $or: [
-          { _id: tx.buyerUserId || tx.userId },
-          { phone: tx.buyerPhone || tx.phone },
-          { mobileNo: tx.phone }
-        ].filter(Boolean)
-      });
-      if (buyer) {
-        const reward4Pct = Math.round((tx.amount || 0) * 0.04 * 100) / 100;
-        tx.reward = reward4Pct;
-        await tx.save().catch(() => {
-        });
-        buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-        buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
-        await buyer.save();
-        await distributeTeamCommission(buyer, tx.amount || 0).catch(() => {
-        });
-        console.log(`[Admin Order Verified] Buyer ${buyer.phone} wallet credited +\u20B9${tx.amount} + \u20B9${reward4Pct} reward. New balance: ${buyer.balance}`);
-      }
-      if (tx.rptNo) {
-        await PaymentNode.updateOne({ claimedRptNo: tx.rptNo }, { orderState: "COMPLETED", utr: tx.utr || "" }).catch(() => {
-        });
-      }
-      return true;
-    }
     const candidatePhones = [];
     const toolPhones = await getToolAndUpiPhoneForOrder(tx);
     toolPhones.forEach((p) => candidatePhones.push(p));
