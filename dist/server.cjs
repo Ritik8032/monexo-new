@@ -6485,6 +6485,15 @@ async function autoCheckAndApproveOrderFromAutomation(tx) {
     }
     if (isAdminOrder) {
       console.log(`[Admin Order Auto-Approve] Admin panel order ${tx.rptNo} automatically approved for buyer!`);
+      const atomicTx = await Transaction.findOneAndUpdate(
+        { _id: tx._id, payer_status: { $ne: 3 } },
+        { $set: { payer_status: 3, currentStep: 2, finishTime: Math.floor(Date.now() / 1e3) } },
+        { new: true }
+      );
+      if (!atomicTx) {
+        console.log(`[Admin Order Auto-Approve] Order ${tx.rptNo} was ALREADY approved/credited by another thread. Skipping double credit.`);
+        return true;
+      }
       tx.payer_status = 3;
       const nowSec = Math.floor(Date.now() / 1e3);
       tx.finishTime = nowSec;
@@ -6534,6 +6543,15 @@ async function autoCheckAndApproveOrderFromAutomation(tx) {
       const matchResult = await fetchAutomationHistoryAndMatch(targetPhone, chType, tx);
       if (matchResult && matchResult.matched && matchResult.utr) {
         console.log(`[4-Field Verification MATCHED!] Order ${tx.rptNo} matched UTR "${matchResult.utr}" on phone ${targetPhone}! Approving order...`);
+        const atomicTx = await Transaction.findOneAndUpdate(
+          { _id: tx._id, payer_status: { $ne: 3 } },
+          { $set: { payer_status: 3, currentStep: 2, utr: matchResult.utr, finishTime: Math.floor(Date.now() / 1e3) } },
+          { new: true }
+        );
+        if (!atomicTx) {
+          console.log(`[Automation Match] Order ${tx.rptNo} was ALREADY approved/credited by another thread. Skipping double credit.`);
+          return true;
+        }
         tx.utr = matchResult.utr;
         tx.currentStep = 2;
         tx.payer_status = 3;
@@ -7076,6 +7094,17 @@ app.get("/xxapi/chargeUtr/:rptNo/:utr", async (req, res) => {
   const { rptNo, utr } = req.params;
   const tx = await Transaction.findOne({ rptNo });
   if (!tx) return res.json({ code: 404, msg: "Transaction not found" });
+  if (tx.payer_status === 3) {
+    return res.json({ code: 0, msg: "Transaction already processed", data: tx });
+  }
+  const atomicTx = await Transaction.findOneAndUpdate(
+    { _id: tx._id, payer_status: { $ne: 3 } },
+    { $set: { payer_status: 3, currentStep: 2, utr } },
+    { new: true }
+  );
+  if (!atomicTx) {
+    return res.json({ code: 0, msg: "Transaction already processed", data: tx });
+  }
   tx.utr = utr;
   tx.currentStep = 2;
   tx.payer_status = 3;
@@ -7469,22 +7498,29 @@ async function getRechargeHistory(req, res) {
       ctName: mapCtTypeToName(ctTypeVal),
       ct_name: mapCtTypeToName(ctTypeVal),
       channel: mapCtTypeToUpiType(ctTypeVal),
-      // BUYER UPI (UPI ID)
+      // BUYER UPI (meri UPI ID)
       upi: buyerSelectedUpi,
       account: buyerSelectedUpi,
       acctNo: buyerSelectedUpi,
-      payAccount: buyerSelectedUpi,
       payer_upi: buyerSelectedUpi,
+      payerUpi: buyerSelectedUpi,
       ctAccount: buyerSelectedUpi,
       ct_account: buyerSelectedUpi,
       selected_upi: buyerSelectedUpi,
       buyer_upi: buyerSelectedUpi,
-      // PAYEE UPI (jisko payment karna hai)
+      buyerUpi: buyerSelectedUpi,
+      fromAccount: buyerSelectedUpi,
+      // PAYEE UPI (jisko payment karna hai -> Merchant/Seller UPI)
       payee_bank_account: payeeUpi,
       payee_upi: payeeUpi,
+      payeeUpi,
+      payAccount: payeeUpi,
+      pnaccount: payeeUpi,
+      pn_account: payeeUpi,
       receiveAccount: payeeUpi,
       payeeAccount: payeeUpi,
       receiverUpi: payeeUpi,
+      toAccount: payeeUpi,
       utr: tx.utr || tx.ref_no || "",
       payee_recipients_name: tx.payee_recipients_name || "Monexo Merchant",
       pnname: tx.payee_recipients_name || "Monexo Merchant",
