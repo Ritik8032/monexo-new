@@ -3795,117 +3795,119 @@ app.get("/xxapi/buyitoken/waitpayerpaymentslip", async (req, res) => {
         nodeId: node._id.toString()
       });
     }
-    const buyerUpiList = [];
-    if (currentUser) {
-      if (currentUser.phone) buyerUpiList.push(String(currentUser.phone).toLowerCase().trim());
-      if (currentUser.collectionTools) {
-        currentUser.collectionTools.forEach((t) => {
-          if (t.upi) buyerUpiList.push(String(t.upi).toLowerCase().trim());
-          if (t.account) buyerUpiList.push(String(t.account).toLowerCase().trim());
-        });
-      }
-    }
-    const sellingUsers = await User.find({
-      status: { $nin: ["disabled", "suspended"] },
-      "collectionTools.0": { $exists: true }
-    }).lean();
-    const pendingTxsList = await Transaction.find({ payer_status: { $in: [1, 2] } }).select("sellerId sellerPhone amount rptNo payer_status").lean();
-    const pendingSumMap = /* @__PURE__ */ new Map();
-    for (const pTx of pendingTxsList) {
-      const pRpt = String(pTx.rptNo || "").replace(/^SELL_/i, "").trim();
-      const pIsCancelled = pTx.payer_status === 4 || pTx.payer_status === 5 || isOrderCancelledForUser("", pRpt) || orderSlipMap.get(pRpt)?.payer_status === 4;
-      if (!pIsCancelled) {
-        if (pTx.sellerId) {
-          const sId = pTx.sellerId.toString();
-          pendingSumMap.set(sId, (pendingSumMap.get(sId) || 0) + (pTx.amount || 0));
-        }
-        if (pTx.sellerPhone) {
-          const sPhone = String(pTx.sellerPhone);
-          pendingSumMap.set(sPhone, (pendingSumMap.get(sPhone) || 0) + (pTx.amount || 0));
-        }
-      }
-    }
-    const lastAssignedSellerId = userIdStr ? buyerLastSellerMap.get(userIdStr) : "";
-    const sortedSellingUsers = [...sellingUsers].sort((a, b) => {
-      if (lastAssignedSellerId) {
-        if (a._id.toString() === lastAssignedSellerId) return 1;
-        if (b._id.toString() === lastAssignedSellerId) return -1;
-      }
-      return 0;
-    });
-    for (const seller of sortedSellingUsers) {
-      if (currentUser && (seller._id.toString() === userIdStr || seller.phone === userPhone2)) {
-        continue;
-      }
-      const sellerRawBal = Math.max(Number(seller.itoken || 0), Number(seller.balance || 0));
-      if (sellerRawBal < 1) continue;
-      const tools = seller.collectionTools || [];
-      const activeTools = tools.filter(
-        (t) => t && (Number(t.state) === 2 || t.state === 2 || t.state === "2") && (Number(t.inSell) === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === "1") && t.upi && t.upi.includes("@") && t.upi !== "Pending verification" && !buyerUpiList.includes(String(t.upi).toLowerCase().trim())
-      );
-      if (activeTools.length > 0) {
-        const matchingTool = (reqCtType !== void 0 ? activeTools.find((t) => getNormalizedCtType(t.type !== void 0 ? t.type : t.ctType !== void 0 ? t.ctType : t.ct_type) === getNormalizedCtType(reqCtType)) : void 0) || activeTools[0];
-        const primaryTool = matchingTool;
-        const upiId = primaryTool.upi || primaryTool.backup_upi && primaryTool.backup_upi[0];
-        if (!upiId || !upiId.includes("@") || buyerUpiList.includes(String(upiId).toLowerCase().trim())) continue;
-        const toolCtType = primaryTool.ct_type || primaryTool.ctType || primaryTool.type || reqCtType || 1;
-        let partnerName = primaryTool.pnname || primaryTool.name || seller.realName || seller.phone || "Merchant Partner";
-        if (["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "BharatPe", "Merchant Partner", "PayTM Business", "PhonePe Business"].includes(partnerName)) {
-          partnerName = seller.phone || "Merchant Partner";
-        }
-        const isBank = primaryTool.type === 2 || primaryTool.type === 4 || primaryTool.type === 8;
-        const methodVal = isBank ? 2 : 1;
-        const sellerIdStr = seller._id ? seller._id.toString() : "";
-        const sellerPhoneStr = seller.phone ? String(seller.phone) : "";
-        const pendingSum = (sellerIdStr ? pendingSumMap.get(sellerIdStr) : 0) || (sellerPhoneStr ? pendingSumMap.get(sellerPhoneStr) : 0) || 0;
-        const availableBalance = Math.max(0, sellerRawBal - pendingSum);
-        if (availableBalance < 1) continue;
-        const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
-        let combinedAmounts = baseChunks;
-        if (minAmt !== void 0 || maxAmt !== void 0) {
-          const lower = minAmt !== void 0 ? minAmt : 0;
-          const upper = maxAmt !== void 0 ? maxAmt : 99999999;
-          combinedAmounts = combinedAmounts.filter((a) => a >= lower && a <= upper);
-        }
-        combinedAmounts.forEach((amt) => {
-          if (amt < 1) return;
-          const rptNo = generate15DigitRptNo();
-          if (userPhone2 && isOrderCancelledForUser(userPhone2, rptNo)) return;
-          const slipItem = {
-            rptNo,
-            sellerId: seller._id.toString(),
-            sellerPhone: seller.phone,
-            ctId: primaryTool.id,
-            ctType: toolCtType,
-            amount: amt,
-            method: methodVal,
-            upi: upiId,
-            pnname: partnerName,
-            ctime: Math.floor(Date.now() / 1e3)
-          };
-          orderSlipMap.set(rptNo, slipItem);
-          list.push({
-            rptNo,
-            amount: amt.toString(),
-            method: methodVal,
-            payment_method: methodVal,
-            upi: upiId,
-            account: upiId,
-            ctAccount: upiId,
-            pnaccount: upiId,
-            accountNumber: upiId,
-            payAccount: upiId,
-            acctNo: upiId,
-            pnname: partnerName,
-            name: partnerName,
-            account_name: partnerName,
-            ctType: toolCtType,
-            ct_type: toolCtType,
-            sellerPhone: seller.phone,
-            sellerId: seller._id.toString(),
-            ctId: primaryTool.id
+    if (!hasActiveAdminOrders) {
+      const buyerUpiList = [];
+      if (currentUser) {
+        if (currentUser.phone) buyerUpiList.push(String(currentUser.phone).toLowerCase().trim());
+        if (currentUser.collectionTools) {
+          currentUser.collectionTools.forEach((t) => {
+            if (t.upi) buyerUpiList.push(String(t.upi).toLowerCase().trim());
+            if (t.account) buyerUpiList.push(String(t.account).toLowerCase().trim());
           });
-        });
+        }
+      }
+      const sellingUsers = await User.find({
+        status: { $nin: ["disabled", "suspended"] },
+        "collectionTools.0": { $exists: true }
+      }).lean();
+      const pendingTxsList = await Transaction.find({ payer_status: { $in: [1, 2] } }).select("sellerId sellerPhone amount rptNo payer_status").lean();
+      const pendingSumMap = /* @__PURE__ */ new Map();
+      for (const pTx of pendingTxsList) {
+        const pRpt = String(pTx.rptNo || "").replace(/^SELL_/i, "").trim();
+        const pIsCancelled = pTx.payer_status === 4 || pTx.payer_status === 5 || isOrderCancelledForUser("", pRpt) || orderSlipMap.get(pRpt)?.payer_status === 4;
+        if (!pIsCancelled) {
+          if (pTx.sellerId) {
+            const sId = pTx.sellerId.toString();
+            pendingSumMap.set(sId, (pendingSumMap.get(sId) || 0) + (pTx.amount || 0));
+          }
+          if (pTx.sellerPhone) {
+            const sPhone = String(pTx.sellerPhone);
+            pendingSumMap.set(sPhone, (pendingSumMap.get(sPhone) || 0) + (pTx.amount || 0));
+          }
+        }
+      }
+      const lastAssignedSellerId = userIdStr ? buyerLastSellerMap.get(userIdStr) : "";
+      const sortedSellingUsers = [...sellingUsers].sort((a, b) => {
+        if (lastAssignedSellerId) {
+          if (a._id.toString() === lastAssignedSellerId) return 1;
+          if (b._id.toString() === lastAssignedSellerId) return -1;
+        }
+        return 0;
+      });
+      for (const seller of sortedSellingUsers) {
+        if (currentUser && (seller._id.toString() === userIdStr || seller.phone === userPhone2)) {
+          continue;
+        }
+        const sellerRawBal = Math.max(Number(seller.itoken || 0), Number(seller.balance || 0));
+        if (sellerRawBal < 1) continue;
+        const tools = seller.collectionTools || [];
+        const activeTools = tools.filter(
+          (t) => t && (Number(t.state) === 2 || t.state === 2 || t.state === "2") && (Number(t.inSell) === 1 || t.inSell === true || t.inSell === "1" || t.in_sell === 1 || t.in_sell === "1") && t.upi && t.upi.includes("@") && t.upi !== "Pending verification" && !buyerUpiList.includes(String(t.upi).toLowerCase().trim())
+        );
+        if (activeTools.length > 0) {
+          const matchingTool = (reqCtType !== void 0 ? activeTools.find((t) => getNormalizedCtType(t.type !== void 0 ? t.type : t.ctType !== void 0 ? t.ctType : t.ct_type) === getNormalizedCtType(reqCtType)) : void 0) || activeTools[0];
+          const primaryTool = matchingTool;
+          const upiId = primaryTool.upi || primaryTool.backup_upi && primaryTool.backup_upi[0];
+          if (!upiId || !upiId.includes("@") || buyerUpiList.includes(String(upiId).toLowerCase().trim())) continue;
+          const toolCtType = primaryTool.ct_type || primaryTool.ctType || primaryTool.type || reqCtType || 1;
+          let partnerName = primaryTool.pnname || primaryTool.name || seller.realName || seller.phone || "Merchant Partner";
+          if (["PayTM", "PhonePe", "MobiKwik", "Freecharge", "Airtel Pay", "BharatPe", "Merchant Partner", "PayTM Business", "PhonePe Business"].includes(partnerName)) {
+            partnerName = seller.phone || "Merchant Partner";
+          }
+          const isBank = primaryTool.type === 2 || primaryTool.type === 4 || primaryTool.type === 8;
+          const methodVal = isBank ? 2 : 1;
+          const sellerIdStr = seller._id ? seller._id.toString() : "";
+          const sellerPhoneStr = seller.phone ? String(seller.phone) : "";
+          const pendingSum = (sellerIdStr ? pendingSumMap.get(sellerIdStr) : 0) || (sellerPhoneStr ? pendingSumMap.get(sellerPhoneStr) : 0) || 0;
+          const availableBalance = Math.max(0, sellerRawBal - pendingSum);
+          if (availableBalance < 1) continue;
+          const baseChunks = generateOrderChunks(availableBalance, reqAmtParam);
+          let combinedAmounts = baseChunks;
+          if (minAmt !== void 0 || maxAmt !== void 0) {
+            const lower = minAmt !== void 0 ? minAmt : 0;
+            const upper = maxAmt !== void 0 ? maxAmt : 99999999;
+            combinedAmounts = combinedAmounts.filter((a) => a >= lower && a <= upper);
+          }
+          combinedAmounts.forEach((amt) => {
+            if (amt < 1) return;
+            const rptNo = generate15DigitRptNo();
+            if (userPhone2 && isOrderCancelledForUser(userPhone2, rptNo)) return;
+            const slipItem = {
+              rptNo,
+              sellerId: seller._id.toString(),
+              sellerPhone: seller.phone,
+              ctId: primaryTool.id,
+              ctType: toolCtType,
+              amount: amt,
+              method: methodVal,
+              upi: upiId,
+              pnname: partnerName,
+              ctime: Math.floor(Date.now() / 1e3)
+            };
+            orderSlipMap.set(rptNo, slipItem);
+            list.push({
+              rptNo,
+              amount: amt.toString(),
+              method: methodVal,
+              payment_method: methodVal,
+              upi: upiId,
+              account: upiId,
+              ctAccount: upiId,
+              pnaccount: upiId,
+              accountNumber: upiId,
+              payAccount: upiId,
+              acctNo: upiId,
+              pnname: partnerName,
+              name: partnerName,
+              account_name: partnerName,
+              ctType: toolCtType,
+              ct_type: toolCtType,
+              sellerPhone: seller.phone,
+              sellerId: seller._id.toString(),
+              ctId: primaryTool.id
+            });
+          });
+        }
       }
     }
     let filteredList = list.filter((item) => {
@@ -4277,13 +4279,27 @@ app.post("/xxapi/buyitoken/pickuppaymentslip", async (req, res) => {
   let isAdminOrder = false;
   if (slipData && slipData.isAdminNode) {
     isAdminOrder = true;
+    const nodeId = slipData.nodeId;
+    if (nodeId) {
+      PaymentNode.updateOne(
+        { _id: nodeId },
+        { orderState: "CLAIMED", claimedByPhone: user.phone || user.mobileNo, claimedRptNo: order_id }
+      ).exec();
+    }
+    buyerActiveOrderMap.clear();
   } else if (payee_bank_account) {
     const adminNode = await PaymentNode.findOne({
       status: true,
-      accountNumber: payee_bank_account
+      accountNumber: payee_bank_account,
+      orderState: { $nin: ["CLAIMED", "COMPLETED", "CANCELLED", "EXPIRED"] }
     });
     if (adminNode) {
       isAdminOrder = true;
+      PaymentNode.updateOne(
+        { _id: adminNode._id },
+        { orderState: "CLAIMED", claimedByPhone: user.phone || user.mobileNo, claimedRptNo: order_id }
+      ).exec();
+      buyerActiveOrderMap.clear();
     }
   }
   let payee_ifsc = "";
