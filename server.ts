@@ -7614,27 +7614,52 @@ async function creditBuyerForCompletedOrder(tx: any): Promise<boolean> {
   const reward4Pct = Math.round((principalAmt * 0.04) * 100) / 100;
   const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
 
-  // Search candidate IDs and phone numbers for the buyer
-  const candidateIds = [claimedTx.buyerUserId, claimedTx.userId, tx.buyerUserId, tx.userId].filter(Boolean).map(id => String(id));
-  const candidatePhones = [claimedTx.buyerPhone, claimedTx.phone, tx.buyerPhone, tx.phone].filter(Boolean).map(p => String(p));
-
+  // Search candidate phone numbers
+  const candidatePhones = [claimedTx.buyerPhone, tx.buyerPhone, claimedTx.phone, tx.phone].filter(Boolean).map(p => String(p));
   let cleanPhones: string[] = [];
   candidatePhones.forEach(p => {
     const clean = String(p).replace(/\D/g, '').slice(-10);
     if (clean.length === 10) cleanPhones.push(clean);
   });
 
-  let buyer = await User.findOne({
-    $or: [
-      { _id: { $in: candidateIds } },
-      { phone: { $in: candidatePhones } },
-      { mobileNo: { $in: candidatePhones } },
-      { phone: { $in: cleanPhones } },
-      { mobileNo: { $in: cleanPhones } }
-    ].filter(Boolean)
-  });
+  let buyer: any = null;
 
-  // Fallback: search by buyerVpas in collectionTools / upiDetails
+  // 1. Try finding buyer by buyerUserId or userId directly using ObjectId/findById
+  const rawBuyerId = claimedTx.buyerUserId || tx.buyerUserId || claimedTx.userId || tx.userId;
+  if (rawBuyerId) {
+    try {
+      if (mongoose.Types.ObjectId.isValid(rawBuyerId)) {
+        buyer = await User.findById(rawBuyerId);
+      } else {
+        buyer = await User.findOne({ _id: rawBuyerId });
+      }
+    } catch (e) {}
+  }
+
+  // 2. Try finding buyer by buyerPhone or phone
+  if (!buyer) {
+    const rawBuyerPhone = claimedTx.buyerPhone || tx.buyerPhone;
+    if (rawBuyerPhone) {
+      buyer = await User.findOne({
+        $or: [
+          { phone: rawBuyerPhone },
+          { mobileNo: rawBuyerPhone }
+        ]
+      });
+    }
+  }
+
+  // 3. Try finding by 10-digit clean phones
+  if (!buyer && cleanPhones.length > 0) {
+    buyer = await User.findOne({
+      $or: [
+        { phone: { $in: cleanPhones } },
+        { mobileNo: { $in: cleanPhones } }
+      ]
+    });
+  }
+
+  // 4. Try finding by buyerVpas in collectionTools / upiDetails
   if (!buyer && Array.isArray(claimedTx.buyerVpas) && claimedTx.buyerVpas.length > 0) {
     buyer = await User.findOne({
       $or: [
@@ -7656,7 +7681,7 @@ async function creditBuyerForCompletedOrder(tx: any): Promise<boolean> {
     await claimedTx.save().catch(() => {});
 
     await distributeTeamCommission(buyer, principalAmt).catch(() => {});
-    console.log(`[Credit Buyer Success] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} (4% reward) = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
+    console.log(`[Credit Buyer Success] Buyer ${buyer.phone} wallet credited principal +₹${principalAmt} + ₹${reward4Pct} (4% commission) = Total +₹${totalCredit}. New balance: ₹${buyer.balance}`);
     return true;
   } else {
     console.warn(`[Credit Buyer Warning] Buyer not found for completed order ${claimedTx.rptNo}`);
@@ -12550,36 +12575,7 @@ app.post('/xxapi/admin/updateOrderStatus', requireAdmin, async (req, res) => {
       // AUTO SYNC BALANCES FOR BUYER & SELLER IN DB
       if (previousStatus !== 3) {
         // 1. Buyer Balance Credit & Recharge sync
-        const buyer = await User.findOne({
-          $or: [
-            { _id: tx.userId },
-            { phone: tx.phone },
-            { mobileNo: tx.phone }
-          ].filter(Boolean)
-        });
-
-        if (buyer) {
-          const isUsdtTx = tx.isUsdt || tx.currency === 1 || String(tx.rptNo || '').startsWith('USDT') || (tx.usdtAmount && tx.usdtAmount > 0);
-          if (isUsdtTx) {
-            let uAmt = Number(tx.usdtAmount || 1);
-            const rate = Number(tx.exchangeRate || 111);
-            if (uAmt < 0.1 || !tx.amount || tx.amount <= 10) {
-              uAmt = 1;
-              tx.usdtAmount = 1;
-              tx.amount = Math.round(uAmt * rate);
-            } else if (tx.amount < Math.round(uAmt * rate)) {
-              tx.amount = Math.round(uAmt * rate);
-            }
-          }
-          const reward4Pct = Math.round(((tx.amount || 0) * 0.04) * 100) / 100;
-          tx.reward = reward4Pct;
-          await tx.save().catch(() => {});
-          buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-          buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
-          await buyer.save();
-          await distributeTeamCommission(buyer, tx.amount || 0);
-          console.log(`[Admin Manual Approval +4%] Credited Buyer ${buyer.phone} +₹${tx.amount} + ₹${reward4Pct} (4% reward). New Balance: ₹${buyer.balance}`);
-        }
+        await creditBuyerForCompletedOrder(tx);
 
         // 2. Sync linked transaction (if this is buy, sync sell; if this is sell, sync buy)
         const isSellTx = tx.type === 'sell' || String(tx.rptNo).startsWith('SELL_');

@@ -6465,22 +6465,43 @@ async function creditBuyerForCompletedOrder(tx) {
   if (!principalAmt || principalAmt <= 0) return false;
   const reward4Pct = Math.round(principalAmt * 0.04 * 100) / 100;
   const totalCredit = Math.round((principalAmt + reward4Pct) * 100) / 100;
-  const candidateIds = [claimedTx.buyerUserId, claimedTx.userId, tx.buyerUserId, tx.userId].filter(Boolean).map((id) => String(id));
-  const candidatePhones = [claimedTx.buyerPhone, claimedTx.phone, tx.buyerPhone, tx.phone].filter(Boolean).map((p) => String(p));
+  const candidatePhones = [claimedTx.buyerPhone, tx.buyerPhone, claimedTx.phone, tx.phone].filter(Boolean).map((p) => String(p));
   let cleanPhones = [];
   candidatePhones.forEach((p) => {
     const clean = String(p).replace(/\D/g, "").slice(-10);
     if (clean.length === 10) cleanPhones.push(clean);
   });
-  let buyer = await User.findOne({
-    $or: [
-      { _id: { $in: candidateIds } },
-      { phone: { $in: candidatePhones } },
-      { mobileNo: { $in: candidatePhones } },
-      { phone: { $in: cleanPhones } },
-      { mobileNo: { $in: cleanPhones } }
-    ].filter(Boolean)
-  });
+  let buyer = null;
+  const rawBuyerId = claimedTx.buyerUserId || tx.buyerUserId || claimedTx.userId || tx.userId;
+  if (rawBuyerId) {
+    try {
+      if (import_mongoose.default.Types.ObjectId.isValid(rawBuyerId)) {
+        buyer = await User.findById(rawBuyerId);
+      } else {
+        buyer = await User.findOne({ _id: rawBuyerId });
+      }
+    } catch (e) {
+    }
+  }
+  if (!buyer) {
+    const rawBuyerPhone = claimedTx.buyerPhone || tx.buyerPhone;
+    if (rawBuyerPhone) {
+      buyer = await User.findOne({
+        $or: [
+          { phone: rawBuyerPhone },
+          { mobileNo: rawBuyerPhone }
+        ]
+      });
+    }
+  }
+  if (!buyer && cleanPhones.length > 0) {
+    buyer = await User.findOne({
+      $or: [
+        { phone: { $in: cleanPhones } },
+        { mobileNo: { $in: cleanPhones } }
+      ]
+    });
+  }
   if (!buyer && Array.isArray(claimedTx.buyerVpas) && claimedTx.buyerVpas.length > 0) {
     buyer = await User.findOne({
       $or: [
@@ -6501,7 +6522,7 @@ async function creditBuyerForCompletedOrder(tx) {
     });
     await distributeTeamCommission(buyer, principalAmt).catch(() => {
     });
-    console.log(`[Credit Buyer Success] Buyer ${buyer.phone} wallet credited principal +\u20B9${principalAmt} + \u20B9${reward4Pct} (4% reward) = Total +\u20B9${totalCredit}. New balance: \u20B9${buyer.balance}`);
+    console.log(`[Credit Buyer Success] Buyer ${buyer.phone} wallet credited principal +\u20B9${principalAmt} + \u20B9${reward4Pct} (4% commission) = Total +\u20B9${totalCredit}. New balance: \u20B9${buyer.balance}`);
     return true;
   } else {
     console.warn(`[Credit Buyer Warning] Buyer not found for completed order ${claimedTx.rptNo}`);
@@ -10706,36 +10727,7 @@ app.post("/xxapi/admin/updateOrderStatus", requireAdmin, async (req, res) => {
       tx.adminActionAt = /* @__PURE__ */ new Date();
       await tx.save();
       if (previousStatus !== 3) {
-        const buyer = await User.findOne({
-          $or: [
-            { _id: tx.userId },
-            { phone: tx.phone },
-            { mobileNo: tx.phone }
-          ].filter(Boolean)
-        });
-        if (buyer) {
-          const isUsdtTx = tx.isUsdt || tx.currency === 1 || String(tx.rptNo || "").startsWith("USDT") || tx.usdtAmount && tx.usdtAmount > 0;
-          if (isUsdtTx) {
-            let uAmt = Number(tx.usdtAmount || 1);
-            const rate = Number(tx.exchangeRate || 111);
-            if (uAmt < 0.1 || !tx.amount || tx.amount <= 10) {
-              uAmt = 1;
-              tx.usdtAmount = 1;
-              tx.amount = Math.round(uAmt * rate);
-            } else if (tx.amount < Math.round(uAmt * rate)) {
-              tx.amount = Math.round(uAmt * rate);
-            }
-          }
-          const reward4Pct = Math.round((tx.amount || 0) * 0.04 * 100) / 100;
-          tx.reward = reward4Pct;
-          await tx.save().catch(() => {
-          });
-          buyer.balance = Math.round(((buyer.balance || 0) + (tx.amount || 0) + reward4Pct) * 100) / 100;
-          buyer.recharge = Math.round(((buyer.recharge || 0) + (tx.amount || 0)) * 100) / 100;
-          await buyer.save();
-          await distributeTeamCommission(buyer, tx.amount || 0);
-          console.log(`[Admin Manual Approval +4%] Credited Buyer ${buyer.phone} +\u20B9${tx.amount} + \u20B9${reward4Pct} (4% reward). New Balance: \u20B9${buyer.balance}`);
-        }
+        await creditBuyerForCompletedOrder(tx);
         const isSellTx = tx.type === "sell" || String(tx.rptNo).startsWith("SELL_");
         const counterpartRptNo = isSellTx ? String(tx.rptNo).replace(/^SELL_/, "") : `SELL_${tx.rptNo}`;
         let counterpartTx = await Transaction.findOne({ rptNo: counterpartRptNo });
