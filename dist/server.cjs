@@ -1509,8 +1509,8 @@ async function callExternalGetOtp(phone, forceResend = false) {
     if (!cleanPhone || cleanPhone.length < 10) return { code: 0, msg: "success" };
     const now = Date.now();
     const lastTime = lastOtpSentTimes[cleanPhone] || 0;
-    if (now - lastTime < 3e3) {
-      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} suppressed (duplicate dispatch within ${Math.round((now - lastTime) / 1e3)}s)`);
+    if (now - lastTime < 45e3) {
+      console.log(`[callExternalGetOtp] OTP request for ${cleanPhone} suppressed (duplicate dispatch within ${Math.round((now - lastTime) / 1e3)}s / 45s cooldown)`);
       return { code: 0, msg: "success" };
     }
     if (otpInFlightLocks[cleanPhone]) {
@@ -1899,7 +1899,7 @@ app.post(["/xxapi/checkSmsNew", "/xxapi/checkSms", "/xxapi/sendRegSms"], async (
       });
     }
     console.log(`[checkSmsNew] Dispatching SMS OTP for ${cleanPhone}...`);
-    await callExternalGetOtp(cleanPhone, true);
+    await callExternalGetOtp(cleanPhone, false);
     return res.json({
       code: 0,
       status: 200,
@@ -1959,21 +1959,16 @@ app.post("/xxapi/resetpassword", async (req, res) => {
     return res.json({ code: 500, msg: "Internal server error" });
   }
 });
-app.post(["/xxapi/getsendtken", "/xxapi/sendResetSms", "/xxapi/sendForgotSms", "/xxapi/getResetOtp"], async (req, res) => {
-  console.log("[getsendtken / Captcha Token] Called body:", req.body, "query:", req.query);
+app.post("/xxapi/getsendtken", async (req, res) => {
   try {
     let cleanPhone = extractPhoneFromReq(req);
     if (!cleanPhone || cleanPhone.length < 10) {
-      const user = await getUserByToken(req);
+      const user = await getUserByToken(req).catch(() => null);
       if (user && user.phone) {
         cleanPhone = getCleanPhone(user.phone).cleanPhone;
       }
     }
     const phoneToken = cleanPhone && cleanPhone.length >= 10 ? cleanPhone : "default";
-    if (cleanPhone && cleanPhone.length >= 10) {
-      console.log(`[getsendtken] Dispatching OTP for phone: ${cleanPhone}`);
-      await callExternalGetOtp(cleanPhone, true);
-    }
     return res.json({
       code: 0,
       status: 200,
@@ -1981,45 +1976,49 @@ app.post(["/xxapi/getsendtken", "/xxapi/sendResetSms", "/xxapi/sendForgotSms", "
       data: `sendtoken-${phoneToken}-${Date.now()}`
     });
   } catch (err) {
-    console.error("[getsendtken Error]", err);
-    return res.json({ code: 500, msg: "Internal server error" });
+    return res.json({ code: 0, status: 200, msg: "success", data: `sendtoken-default-${Date.now()}` });
   }
 });
-app.post(["/xxapi/sendsms", "/xxapi/sendSms"], async (req, res) => {
+app.post(["/xxapi/sendsms", "/xxapi/sendSms", "/xxapi/sendResetSms", "/xxapi/sendForgotSms", "/xxapi/getResetOtp"], async (req, res) => {
   console.log("[sendsms] Called body:", req.body, "query:", req.query);
   try {
     const rawPhone = extractPhoneFromReq(req);
     const { cleanPhone } = getCleanPhone(rawPhone);
     if (!cleanPhone || cleanPhone.length < 10) {
-      return res.json({ code: 400, msg: "Phone number is required" });
+      return res.json({ code: 400, status: 400, msg: "Phone number is required" });
     }
-    const purpose = String(req.body?.purpose || req.query?.purpose || "").toLowerCase();
+    const purpose = String(
+      req.body?.purpose || req.query?.purpose || req.body?.scene || req.query?.scene || req.body?.type || req.query?.type || req.body?.action || req.query?.action || req.body?.event || req.query?.event || req.body?.mode || req.query?.mode || ""
+    ).toLowerCase();
     await connectToDatabase();
-    if (purpose.includes("reg")) {
-      const existingUser = await User.findOne(buildPhoneQuery(cleanPhone));
+    const isRegisterMode = purpose.includes("reg") || purpose.includes("signup") || purpose.includes("create") || purpose === "1" || purpose === "register";
+    const isResetMode = purpose.includes("forgot") || purpose.includes("reset") || purpose.includes("security") || purpose.includes("forget") || purpose === "2";
+    if (isRegisterMode) {
+      const existingUser = await User.findOne(buildPhoneQuery(cleanPhone)).lean();
       if (existingUser) {
-        console.log(`[sendsms] Registration check: Phone ${cleanPhone} is ALREADY registered.`);
+        console.log(`[sendsms] Registration check: Phone ${cleanPhone} is ALREADY registered. REJECTING OTP.`);
         return res.json({
           code: 400,
           status: 400,
-          msg: "Register has existed",
-          message: "Register has existed"
+          msg: "Phone number is already registered. Please login.",
+          message: "Phone number is already registered. Please login."
         });
       }
     }
-    if (purpose.includes("forgot") || purpose.includes("reset") || purpose.includes("security")) {
-      const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone));
+    if (isResetMode) {
+      const registeredUser = await User.findOne(buildPhoneQuery(cleanPhone)).lean();
       if (!registeredUser) {
-        console.log(`[sendsms] Phone ${cleanPhone} is NOT registered for password reset.`);
+        console.log(`[sendsms] Phone ${cleanPhone} is NOT registered for password reset. REJECTING OTP.`);
         return res.json({
           code: 400,
           status: 400,
-          msg: "User does not exist. Please register first."
+          msg: "User does not exist. Please register first.",
+          message: "User does not exist. Please register first."
         });
       }
     }
-    console.log(`[sendsms] Dispatching OTP for phone: ${cleanPhone}, purpose: ${purpose}`);
-    await callExternalGetOtp(cleanPhone, true);
+    console.log(`[sendsms] Dispatching single OTP for phone: ${cleanPhone}, purpose: ${purpose}`);
+    await callExternalGetOtp(cleanPhone, false);
     return res.json({
       code: 0,
       status: 200,
@@ -2103,7 +2102,7 @@ app.post(["/xxapi/sendLoginSms", "/xxapi/sendLoginOtp", "/xxapi/loginSms"], asyn
       });
     }
     console.log(`[sendLoginSms] Password verified for ${cleanPhone}. Dispatching Login OTP...`);
-    await callExternalGetOtp(cleanPhone, true);
+    await callExternalGetOtp(cleanPhone, false);
     return res.json({
       code: 0,
       status: 200,
