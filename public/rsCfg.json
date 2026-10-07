@@ -1,0 +1,13 @@
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "okTurnstileSitekey": "1x00000000000000000000AA",
+    "rsKeyMode": 1,
+    "siteKey": "1x00000000000000000000AA",
+    "antResetPassFlag": "0",
+    "sliderSmsCaptcha": 0,
+    "appDownloadUrl": "https://csgdgbbwhmiyafwwxvxd.supabase.co/storage/v1/object/public/Apk/monexopay.apk",
+    "appVersion": "2.3.0"
+  }
+}
